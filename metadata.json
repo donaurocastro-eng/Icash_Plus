@@ -1,0 +1,5 @@
+{
+  "name": "ICASH_PLUS",
+  "description": "A comprehensive personal finance application for managing accounts, banking details, and cash flow. Built with scalability for Supabase integration.",
+  "requestFramePermissions": []
+}
