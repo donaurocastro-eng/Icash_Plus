@@ -40,9 +40,9 @@ const SettingsPage: React.FC = () => {
         return;
       }
 
-      // 2. Check if 'accounts' has 'initial_balance' column (Legacy Check)
+      // 2. Check if 'accounts' has 'currency' column (Specific Check for current error)
       const columnCheck = await db.query(
-        "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'accounts' AND column_name = 'initial_balance';"
+        "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'accounts' AND column_name = 'currency';"
       );
 
       if (!columnCheck || columnCheck.length === 0) {
@@ -127,7 +127,15 @@ const SettingsPage: React.FC = () => {
 
         const steps = [
         {
-            name: "Tipos (ENUMs)",
+            name: "Tipos (ENUMs) - Moneda",
+            sql: `
+            DO $$ BEGIN
+                CREATE TYPE public.currency_code AS ENUM ('HNL', 'USD');
+            EXCEPTION WHEN duplicate_object THEN null; END $$;
+            `
+        },
+        {
+            name: "Tipos (ENUMs) - Cuentas",
             sql: `
             DO $$ BEGIN
                 CREATE TYPE public.account_type AS ENUM ('ACTIVO', 'PASIVO');
@@ -139,14 +147,6 @@ const SettingsPage: React.FC = () => {
             sql: `
             DO $$ BEGIN
                 CREATE TYPE public.category_type AS ENUM ('GASTO', 'INGRESO');
-            EXCEPTION WHEN duplicate_object THEN null; END $$;
-            `
-        },
-        {
-            name: "Tipos (ENUMs) - Moneda",
-            sql: `
-            DO $$ BEGIN
-                CREATE TYPE public.currency_code AS ENUM ('HNL', 'USD');
             EXCEPTION WHEN duplicate_object THEN null; END $$;
             `
         },
@@ -272,8 +272,9 @@ const SettingsPage: React.FC = () => {
         addLog("🔍 Verificando estructura final...");
         await checkSchema();
         
-        addLog("✨ ¡Proceso completado! Errores corregidos.");
-        alert("¡Tablas y columnas actualizadas correctamente! Ve al Panel General.");
+        addLog("✨ ¡Éxito! Recargando aplicación...");
+        alert("¡Tablas y columnas actualizadas correctamente! La página se recargará ahora.");
+        window.location.reload();
 
     } catch (error: any) {
       console.error(error);
@@ -395,7 +396,7 @@ const SettingsPage: React.FC = () => {
           </div>
           
           <p className="text-slate-500 text-sm mb-6">
-            Usa esta herramienta si ves errores de base de datos. El sistema reparará tablas faltantes o columnas antiguas.
+            Usa esta herramienta si ves errores de base de datos (columnas faltantes, tablas no encontradas).
           </p>
           
           <button 
