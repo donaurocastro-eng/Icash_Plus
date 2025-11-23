@@ -127,7 +127,7 @@ const SettingsPage: React.FC = () => {
 
         const steps = [
         {
-            name: "Crear Tipo: Account Type",
+            name: "Tipos (ENUMs)",
             sql: `
             DO $$ BEGIN
                 CREATE TYPE public.account_type AS ENUM ('ACTIVO', 'PASIVO');
@@ -135,7 +135,7 @@ const SettingsPage: React.FC = () => {
             `
         },
         {
-            name: "Crear Tipo: Category Type",
+            name: "Tipos (ENUMs) - Categorías",
             sql: `
             DO $$ BEGIN
                 CREATE TYPE public.category_type AS ENUM ('GASTO', 'INGRESO');
@@ -143,7 +143,7 @@ const SettingsPage: React.FC = () => {
             `
         },
         {
-            name: "Crear Tipo: Currency Code",
+            name: "Tipos (ENUMs) - Moneda",
             sql: `
             DO $$ BEGIN
                 CREATE TYPE public.currency_code AS ENUM ('HNL', 'USD');
@@ -167,11 +167,12 @@ const SettingsPage: React.FC = () => {
             `
         },
         {
-            name: "Tabla: Cuentas (Reparar Columnas)",
-            sql: `
-            ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS initial_balance numeric NOT NULL DEFAULT 0;
-            ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS currency public.currency_code NOT NULL DEFAULT 'HNL';
-            `
+            name: "Reparar: Saldo Inicial (Cuentas)",
+            sql: `ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS initial_balance numeric NOT NULL DEFAULT 0;`
+        },
+        {
+            name: "Reparar: Moneda (Cuentas)",
+            sql: `ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS currency public.currency_code NOT NULL DEFAULT 'HNL';`
         },
         {
             name: "Tabla: Categorías",
@@ -246,7 +247,7 @@ const SettingsPage: React.FC = () => {
             `
         },
         {
-            name: "Tabla: Transacciones (Reparar Columnas)",
+            name: "Reparar: Propiedades (Transacciones)",
             sql: `
             ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS property_code text;
             ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS property_name text;
@@ -272,7 +273,7 @@ const SettingsPage: React.FC = () => {
         await checkSchema();
         
         addLog("✨ ¡Proceso completado! Errores corregidos.");
-        alert("¡Tablas y columnas actualizadas correctamente!");
+        alert("¡Tablas y columnas actualizadas correctamente! Ve al Panel General.");
 
     } catch (error: any) {
       console.error(error);
