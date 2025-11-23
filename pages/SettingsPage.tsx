@@ -97,7 +97,6 @@ const SettingsPage: React.FC = () => {
   };
 
   const handleInitializeStepByStep = async () => {
-    // 1. Force read from storage to ensure we have the key
     const currentStoredUrl = db.getUrl();
     
     if (!currentStoredUrl) {
@@ -107,28 +106,37 @@ const SettingsPage: React.FC = () => {
 
     if (!window.confirm("¿Estás seguro? Se enviarán comandos SQL a tu base de datos Neon.")) return;
     
-    // 2. Start UI Feedback immediately
     setInitLoading(true);
-    setInitLogs(["🚀 INICIANDO SISTEMA DE DIAGNÓSTICO..."]); 
+    setInitLogs(["🚀 INICIANDO SISTEMA DE DIAGNÓSTICO Y CREACIÓN..."]); 
     
     try {
-        addLog(`🔌 Leyendo configuración... (URL termina en ...${currentStoredUrl.slice(-10)})`);
+        addLog(`🔌 Leyendo configuración...`);
         
-        // 3. Simple Connectivity Test
-        addLog("📡 Probando conectividad básica (SELECT 1)...");
+        addLog("📡 Probando conectividad básica...");
         await db.query("SELECT 1");
         addLog("✅ Conexión establecida.");
 
+        // SEPARATE STEPS FOR EACH TYPE TO AVOID RACE CONDITIONS
         const steps = [
         {
-            name: "Tipos de Datos (ENUMs)",
+            name: "Crear Tipo: Account Type",
             sql: `
             DO $$ BEGIN
                 CREATE TYPE public.account_type AS ENUM ('ACTIVO', 'PASIVO');
             EXCEPTION WHEN duplicate_object THEN null; END $$;
+            `
+        },
+        {
+            name: "Crear Tipo: Category Type",
+            sql: `
             DO $$ BEGIN
                 CREATE TYPE public.category_type AS ENUM ('GASTO', 'INGRESO');
             EXCEPTION WHEN duplicate_object THEN null; END $$;
+            `
+        },
+        {
+            name: "Crear Tipo: Currency Code",
+            sql: `
             DO $$ BEGIN
                 CREATE TYPE public.currency_code AS ENUM ('HNL', 'USD');
             EXCEPTION WHEN duplicate_object THEN null; END $$;
@@ -232,7 +240,6 @@ const SettingsPage: React.FC = () => {
         }
         ];
 
-        // 4. Execution Loop
         for (const step of steps) {
             addLog(`⏳ Ejecutando: ${step.name}...`);
             await db.query(step.sql);
@@ -378,6 +385,10 @@ const SettingsPage: React.FC = () => {
             )}
             <span>{initLoading ? 'Inicializando...' : 'Inicializar Tablas (Paso a Paso)'}</span>
           </button>
+          
+          {!dbUrl && (
+             <p className="mt-2 text-xs text-red-500 font-medium">⚠️ Debes ingresar y guardar la URL de conexión arriba para habilitar este botón.</p>
+          )}
 
           {/* Activity Log */}
           {initLogs.length > 0 && (

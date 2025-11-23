@@ -1,11 +1,17 @@
 import { Pool } from '@neondatabase/serverless';
 
 const DB_URL_KEY = 'icash_db_url';
+// URL Pre-configurada
+const DEFAULT_CONNECTION_STRING = "postgresql://neondb_owner:npg_wEepH0lJI9zV@ep-summer-thunder-adhs34sy-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require";
 
 export const db = {
-  isConfigured: () => !!localStorage.getItem(DB_URL_KEY),
+  // Ahora siempre está configurada porque tenemos un valor por defecto
+  isConfigured: () => true,
   
-  getUrl: () => localStorage.getItem(DB_URL_KEY),
+  getUrl: () => {
+    const stored = localStorage.getItem(DB_URL_KEY);
+    return stored || DEFAULT_CONNECTION_STRING;
+  },
 
   cleanUrl: (input: string) => {
     if (!input) return '';
@@ -32,7 +38,7 @@ export const db = {
   },
 
   testConnection: async (): Promise<boolean> => {
-    const url = localStorage.getItem(DB_URL_KEY);
+    const url = db.getUrl(); // Uses default if local is empty
     if (!url) return false;
     try {
       const pool = new Pool({ connectionString: url });
@@ -50,7 +56,7 @@ export const db = {
    * Throws error if DB not configured.
    */
   query: async (text: string, params?: any[]) => {
-    const url = localStorage.getItem(DB_URL_KEY);
+    const url = db.getUrl();
     if (!url) throw new Error("Database not configured");
     
     const pool = new Pool({ connectionString: url });
