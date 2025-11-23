@@ -39,7 +39,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentRoute, onNavigate }) =
       window.removeEventListener('storage', checkStatus);
       window.removeEventListener('db-config-changed', checkStatus);
     };
-  }, []);
+  }, [currentRoute]); // Re-check on route change
 
   const NavItem = ({ route, icon: Icon, label }: { route: AppRoute; icon: any; label: string }) => {
     const isActive = currentRoute === route;
@@ -128,7 +128,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentRoute, onNavigate }) =
 
         {/* Content Area */}
         <div className="flex-1 overflow-auto p-4 lg:p-8">
-          <div className="max-w-7xl mx-auto h-full">
+          <div className="max-w-7xl mx-auto min-h-full pb-10">
             {children}
           </div>
         </div>
