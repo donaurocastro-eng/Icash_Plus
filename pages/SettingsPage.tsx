@@ -53,7 +53,6 @@ const SettingsPage: React.FC = () => {
     const cleaned = db.cleanUrl(dbUrl);
     setDbUrl(cleaned); 
     
-    // Temporarily set URL to test
     const originalUrl = db.getUrl();
     db.setUrl(cleaned); 
 
@@ -62,7 +61,6 @@ const SettingsPage: React.FC = () => {
     if (success) {
       setStatus('success');
       setMessage('¡Conexión exitosa! URL Guardada.');
-      // AUTO SAVE ON SUCCESS
       db.setUrl(cleaned); 
       window.dispatchEvent(new Event('db-config-changed'));
       checkSchema(cleaned);
@@ -70,7 +68,6 @@ const SettingsPage: React.FC = () => {
       setStatus('error');
       setMessage('No se pudo conectar. Verifica la URL.');
       setSchemaStatus('unknown');
-      // Revert if failed (optional, but keeps UI consistent)
       if (originalUrl) db.setUrl(originalUrl);
     }
   };
@@ -100,148 +97,158 @@ const SettingsPage: React.FC = () => {
   };
 
   const handleInitializeStepByStep = async () => {
-    if (!dbUrl) {
-        alert("Por favor ingresa y guarda la URL de conexión primero.");
+    // 1. Force read from storage to ensure we have the key
+    const currentStoredUrl = db.getUrl();
+    
+    if (!currentStoredUrl) {
+        alert("⚠️ No se encontró la URL guardada. Por favor ingresa la URL arriba y presiona 'Probar Conexión' o 'Guardar' primero.");
         return;
     }
-    if (!window.confirm("Se intentará crear las tablas una por una. ¿Continuar?")) return;
+
+    if (!window.confirm("¿Estás seguro? Se enviarán comandos SQL a tu base de datos Neon.")) return;
     
+    // 2. Start UI Feedback immediately
     setInitLoading(true);
-    setInitLogs([]); // Clear logs
-    addLog("🚀 Iniciando proceso de configuración...");
-
-    const steps = [
-      {
-        name: "Tipos de Datos (ENUMs)",
-        sql: `
-          DO $$ BEGIN
-              CREATE TYPE public.account_type AS ENUM ('ACTIVO', 'PASIVO');
-          EXCEPTION WHEN duplicate_object THEN null; END $$;
-          DO $$ BEGIN
-              CREATE TYPE public.category_type AS ENUM ('GASTO', 'INGRESO');
-          EXCEPTION WHEN duplicate_object THEN null; END $$;
-          DO $$ BEGIN
-              CREATE TYPE public.currency_code AS ENUM ('HNL', 'USD');
-          EXCEPTION WHEN duplicate_object THEN null; END $$;
-        `
-      },
-      {
-        name: "Tabla: Cuentas",
-        sql: `
-          CREATE TABLE IF NOT EXISTS public.accounts (
-              code text PRIMARY KEY,
-              name text NOT NULL,
-              bank_name text,
-              account_number text,
-              type public.account_type NOT NULL DEFAULT 'ACTIVO',
-              initial_balance numeric NOT NULL DEFAULT 0,
-              currency public.currency_code NOT NULL DEFAULT 'HNL',
-              is_system boolean DEFAULT false,
-              created_at timestamp with time zone DEFAULT now() NOT NULL
-          );
-        `
-      },
-      {
-        name: "Tabla: Categorías",
-        sql: `
-          CREATE TABLE IF NOT EXISTS public.categories (
-              code text PRIMARY KEY,
-              name text NOT NULL,
-              type public.category_type NOT NULL,
-              created_at timestamp with time zone DEFAULT now() NOT NULL
-          );
-        `
-      },
-      {
-        name: "Tabla: Propiedades",
-        sql: `
-          CREATE TABLE IF NOT EXISTS public.properties (
-              code text PRIMARY KEY,
-              name text NOT NULL,
-              cadastral_key text,
-              annual_tax numeric DEFAULT 0,
-              value numeric DEFAULT 0,
-              currency public.currency_code DEFAULT 'HNL',
-              created_at timestamp with time zone DEFAULT now() NOT NULL
-          );
-        `
-      },
-      {
-        name: "Tabla: Inquilinos",
-        sql: `
-          CREATE TABLE IF NOT EXISTS public.tenants (
-              code text PRIMARY KEY,
-              full_name text NOT NULL,
-              phone text,
-              email text,
-              created_at timestamp with time zone DEFAULT now() NOT NULL
-          );
-        `
-      },
-      {
-        name: "Tabla: Contratos",
-        sql: `
-          CREATE TABLE IF NOT EXISTS public.contracts (
-              code text PRIMARY KEY,
-              property_code text NOT NULL REFERENCES public.properties(code),
-              tenant_code text NOT NULL REFERENCES public.tenants(code),
-              start_date date NOT NULL,
-              end_date date NOT NULL,
-              amount numeric NOT NULL,
-              payment_day integer NOT NULL,
-              status text DEFAULT 'ACTIVE',
-              created_at timestamp with time zone DEFAULT now() NOT NULL
-          );
-        `
-      },
-      {
-        name: "Tabla: Transacciones",
-        sql: `
-          CREATE TABLE IF NOT EXISTS public.transactions (
-              code text PRIMARY KEY,
-              date date NOT NULL,
-              description text NOT NULL,
-              amount numeric NOT NULL,
-              type public.category_type NOT NULL,
-              category_code text NOT NULL,
-              category_name text NOT NULL,
-              account_code text NOT NULL,
-              account_name text NOT NULL,
-              property_code text,
-              property_name text,
-              created_at timestamp with time zone DEFAULT now() NOT NULL
-          );
-        `
-      },
-      {
-        name: "Datos Iniciales: Efectivo",
-        sql: `
-          INSERT INTO public.accounts (code, name, bank_name, account_number, type, initial_balance, currency, is_system)
-          VALUES ('EFECTIVO-01', 'Efectivo en Mano', 'Caja Fuerte', 'N/A', 'ACTIVO', 0, 'HNL', true)
-          ON CONFLICT (code) DO NOTHING;
-        `
-      }
-    ];
-
+    setInitLogs(["🚀 INICIANDO SISTEMA DE DIAGNÓSTICO..."]); 
+    
     try {
-      // Re-save URL just in case
-      db.setUrl(dbUrl);
-      
-      for (const step of steps) {
-        addLog(`⏳ Ejecutando: ${step.name}...`);
-        await db.query(step.sql);
-        addLog(`✅ ${step.name} OK.`);
-      }
-      
-      addLog("🔍 Verificando estructura final...");
-      await checkSchema();
-      
-      addLog("✨ ¡Proceso completado exitosamente!");
-      alert("Base de datos inicializada correctamente.");
+        addLog(`🔌 Leyendo configuración... (URL termina en ...${currentStoredUrl.slice(-10)})`);
+        
+        // 3. Simple Connectivity Test
+        addLog("📡 Probando conectividad básica (SELECT 1)...");
+        await db.query("SELECT 1");
+        addLog("✅ Conexión establecida.");
+
+        const steps = [
+        {
+            name: "Tipos de Datos (ENUMs)",
+            sql: `
+            DO $$ BEGIN
+                CREATE TYPE public.account_type AS ENUM ('ACTIVO', 'PASIVO');
+            EXCEPTION WHEN duplicate_object THEN null; END $$;
+            DO $$ BEGIN
+                CREATE TYPE public.category_type AS ENUM ('GASTO', 'INGRESO');
+            EXCEPTION WHEN duplicate_object THEN null; END $$;
+            DO $$ BEGIN
+                CREATE TYPE public.currency_code AS ENUM ('HNL', 'USD');
+            EXCEPTION WHEN duplicate_object THEN null; END $$;
+            `
+        },
+        {
+            name: "Tabla: Cuentas",
+            sql: `
+            CREATE TABLE IF NOT EXISTS public.accounts (
+                code text PRIMARY KEY,
+                name text NOT NULL,
+                bank_name text,
+                account_number text,
+                type public.account_type NOT NULL DEFAULT 'ACTIVO',
+                initial_balance numeric NOT NULL DEFAULT 0,
+                currency public.currency_code NOT NULL DEFAULT 'HNL',
+                is_system boolean DEFAULT false,
+                created_at timestamp with time zone DEFAULT now() NOT NULL
+            );
+            `
+        },
+        {
+            name: "Tabla: Categorías",
+            sql: `
+            CREATE TABLE IF NOT EXISTS public.categories (
+                code text PRIMARY KEY,
+                name text NOT NULL,
+                type public.category_type NOT NULL,
+                created_at timestamp with time zone DEFAULT now() NOT NULL
+            );
+            `
+        },
+        {
+            name: "Tabla: Propiedades",
+            sql: `
+            CREATE TABLE IF NOT EXISTS public.properties (
+                code text PRIMARY KEY,
+                name text NOT NULL,
+                cadastral_key text,
+                annual_tax numeric DEFAULT 0,
+                value numeric DEFAULT 0,
+                currency public.currency_code DEFAULT 'HNL',
+                created_at timestamp with time zone DEFAULT now() NOT NULL
+            );
+            `
+        },
+        {
+            name: "Tabla: Inquilinos",
+            sql: `
+            CREATE TABLE IF NOT EXISTS public.tenants (
+                code text PRIMARY KEY,
+                full_name text NOT NULL,
+                phone text,
+                email text,
+                created_at timestamp with time zone DEFAULT now() NOT NULL
+            );
+            `
+        },
+        {
+            name: "Tabla: Contratos",
+            sql: `
+            CREATE TABLE IF NOT EXISTS public.contracts (
+                code text PRIMARY KEY,
+                property_code text NOT NULL REFERENCES public.properties(code),
+                tenant_code text NOT NULL REFERENCES public.tenants(code),
+                start_date date NOT NULL,
+                end_date date NOT NULL,
+                amount numeric NOT NULL,
+                payment_day integer NOT NULL,
+                status text DEFAULT 'ACTIVE',
+                created_at timestamp with time zone DEFAULT now() NOT NULL
+            );
+            `
+        },
+        {
+            name: "Tabla: Transacciones",
+            sql: `
+            CREATE TABLE IF NOT EXISTS public.transactions (
+                code text PRIMARY KEY,
+                date date NOT NULL,
+                description text NOT NULL,
+                amount numeric NOT NULL,
+                type public.category_type NOT NULL,
+                category_code text NOT NULL,
+                category_name text NOT NULL,
+                account_code text NOT NULL,
+                account_name text NOT NULL,
+                property_code text,
+                property_name text,
+                created_at timestamp with time zone DEFAULT now() NOT NULL
+            );
+            `
+        },
+        {
+            name: "Datos Iniciales: Efectivo",
+            sql: `
+            INSERT INTO public.accounts (code, name, bank_name, account_number, type, initial_balance, currency, is_system)
+            VALUES ('EFECTIVO-01', 'Efectivo en Mano', 'Caja Fuerte', 'N/A', 'ACTIVO', 0, 'HNL', true)
+            ON CONFLICT (code) DO NOTHING;
+            `
+        }
+        ];
+
+        // 4. Execution Loop
+        for (const step of steps) {
+            addLog(`⏳ Ejecutando: ${step.name}...`);
+            await db.query(step.sql);
+            addLog(`✅ ${step.name} OK.`);
+        }
+        
+        addLog("🔍 Verificando estructura final...");
+        await checkSchema();
+        
+        addLog("✨ ¡Proceso completado exitosamente!");
+        alert("¡Tablas creadas correctamente! Ya puedes usar la aplicación.");
+
     } catch (error: any) {
       console.error(error);
-      addLog(`❌ ERROR en ${error.message || 'proceso desconocido'}`);
-      alert("Error durante la inicialización. Revisa el registro en pantalla.");
+      addLog(`❌ ERROR CRÍTICO: ${error.message || JSON.stringify(error)}`);
+      alert(`Ocurrió un error: ${error.message}. Revisa el registro en pantalla para más detalles.`);
     } finally {
       setInitLoading(false);
     }
@@ -361,7 +368,7 @@ const SettingsPage: React.FC = () => {
           
           <button 
             onClick={handleInitializeStepByStep}
-            disabled={initLoading || !dbUrl}
+            disabled={initLoading}
             className={`w-full sm:w-auto flex items-center justify-center space-x-2 px-4 py-3 text-white rounded-lg font-bold shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-indigo-600 hover:bg-indigo-700`}
           >
             {initLoading ? (
@@ -371,10 +378,6 @@ const SettingsPage: React.FC = () => {
             )}
             <span>{initLoading ? 'Inicializando...' : 'Inicializar Tablas (Paso a Paso)'}</span>
           </button>
-          
-          {!dbUrl && (
-             <p className="mt-2 text-xs text-red-500 font-medium">⚠️ Debes ingresar y guardar la URL de conexión arriba para habilitar este botón.</p>
-          )}
 
           {/* Activity Log */}
           {initLogs.length > 0 && (
