@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { X, Save, AlertCircle } from 'lucide-react';
-import { Account, AccountFormData, AccountType } from '../types';
+import { X, Save, AlertCircle, DollarSign, Coins } from 'lucide-react';
+import { Account, AccountFormData } from '../types';
 
 interface AccountModalProps {
   isOpen: boolean;
@@ -21,7 +21,9 @@ const AccountModal: React.FC<AccountModalProps> = ({
     name: '',
     bankName: '',
     accountNumber: '',
-    type: 'ACTIVO'
+    type: 'ACTIVO',
+    initialBalance: 0,
+    currency: 'HNL'
   });
   const [error, setError] = useState<string | null>(null);
 
@@ -31,10 +33,19 @@ const AccountModal: React.FC<AccountModalProps> = ({
         name: editingAccount.name,
         bankName: editingAccount.bankName,
         accountNumber: editingAccount.accountNumber,
-        type: editingAccount.type
+        type: editingAccount.type,
+        initialBalance: editingAccount.initialBalance,
+        currency: editingAccount.currency
       });
     } else {
-      setFormData({ name: '', bankName: '', accountNumber: '', type: 'ACTIVO' });
+      setFormData({ 
+        name: '', 
+        bankName: '', 
+        accountNumber: '', 
+        type: 'ACTIVO', 
+        initialBalance: 0, 
+        currency: 'HNL' 
+      });
     }
     setError(null);
   }, [editingAccount, isOpen]);
@@ -44,7 +55,7 @@ const AccountModal: React.FC<AccountModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim() || !formData.bankName.trim() || !formData.accountNumber.trim()) {
-      setError("Todos los campos son obligatorios.");
+      setError("Todos los campos marcados son obligatorios.");
       return;
     }
     
@@ -65,8 +76,8 @@ const AccountModal: React.FC<AccountModalProps> = ({
       />
 
       {/* Modal Content */}
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all scale-100">
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all scale-100 max-h-[90vh] overflow-y-auto">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 sticky top-0 z-10">
           <div>
             <h3 className="text-lg font-bold text-slate-800">
               {editingAccount ? 'Editar Cuenta' : 'Nueva Cuenta'}
@@ -88,6 +99,7 @@ const AccountModal: React.FC<AccountModalProps> = ({
             </div>
           )}
 
+          {/* Tipo de Cuenta */}
           <div className="grid grid-cols-2 gap-4">
             <div 
               className={`cursor-pointer border rounded-lg p-3 text-center transition-all ${formData.type === 'ACTIVO' ? 'bg-emerald-50 border-emerald-500 text-emerald-700 font-medium' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
@@ -103,6 +115,27 @@ const AccountModal: React.FC<AccountModalProps> = ({
             </div>
           </div>
 
+          {/* Moneda */}
+          <div className="space-y-1">
+             <label className="block text-sm font-medium text-slate-700">Moneda</label>
+             <div className="grid grid-cols-2 gap-4">
+              <div 
+                className={`flex items-center justify-center space-x-2 cursor-pointer border rounded-lg p-3 transition-all ${formData.currency === 'HNL' ? 'bg-indigo-50 border-indigo-500 text-indigo-700 font-medium' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                onClick={() => setFormData({...formData, currency: 'HNL'})}
+              >
+                <Coins size={16} />
+                <span>Lempiras (HNL)</span>
+              </div>
+              <div 
+                className={`flex items-center justify-center space-x-2 cursor-pointer border rounded-lg p-3 transition-all ${formData.currency === 'USD' ? 'bg-indigo-50 border-indigo-500 text-indigo-700 font-medium' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                onClick={() => setFormData({...formData, currency: 'USD'})}
+              >
+                <DollarSign size={16} />
+                <span>Dólares (USD)</span>
+              </div>
+            </div>
+          </div>
+
           <div className="space-y-1">
             <label className="block text-sm font-medium text-slate-700">Nombre de la Cuenta</label>
             <input
@@ -115,15 +148,33 @@ const AccountModal: React.FC<AccountModalProps> = ({
             />
           </div>
 
-          <div className="space-y-1">
-            <label className="block text-sm font-medium text-slate-700">Banco</label>
-            <input
-              type="text"
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-shadow"
-              placeholder="Ej: BBVA, Santander, Banco Estado"
-              value={formData.bankName}
-              onChange={e => setFormData({...formData, bankName: e.target.value})}
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-slate-700">Banco</label>
+              <input
+                type="text"
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-shadow"
+                placeholder="Ej: BBVA"
+                value={formData.bankName}
+                onChange={e => setFormData({...formData, bankName: e.target.value})}
+              />
+            </div>
+             <div className="space-y-1">
+              <label className="block text-sm font-medium text-slate-700">Saldo Inicial</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-medium">
+                  {formData.currency === 'HNL' ? 'L' : '$'}
+                </span>
+                <input
+                  type="number"
+                  step="0.01"
+                  className="w-full pl-8 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-shadow font-mono"
+                  placeholder="0.00"
+                  value={formData.initialBalance}
+                  onChange={e => setFormData({...formData, initialBalance: parseFloat(e.target.value) || 0})}
+                />
+              </div>
+            </div>
           </div>
 
           <div className="space-y-1">

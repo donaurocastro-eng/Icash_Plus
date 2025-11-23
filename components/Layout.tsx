@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   LayoutDashboard, 
   Wallet, 
@@ -7,9 +7,13 @@ import {
   LogOut,
   Menu,
   X,
-  Tag
+  Tag,
+  Building,
+  Cloud,
+  HardDrive
 } from 'lucide-react';
 import { AppRoute } from '../types';
+import { db } from '../services/db';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -19,6 +23,23 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children, currentRoute, onNavigate }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
+  const [dbConnected, setDbConnected] = useState(false);
+
+  useEffect(() => {
+    // Check connection status periodically or on mount
+    const checkStatus = () => setDbConnected(db.isConfigured());
+    checkStatus();
+    
+    // Listen for storage events (if changed in another tab or settings)
+    window.addEventListener('storage', checkStatus);
+    // Custom event listener if we want to trigger immediate updates from SettingsPage
+    window.addEventListener('db-config-changed', checkStatus);
+    
+    return () => {
+      window.removeEventListener('storage', checkStatus);
+      window.removeEventListener('db-config-changed', checkStatus);
+    };
+  }, []);
 
   const NavItem = ({ route, icon: Icon, label }: { route: AppRoute; icon: any; label: string }) => {
     const isActive = currentRoute === route;
@@ -49,12 +70,12 @@ const Layout: React.FC<LayoutProps> = ({ children, currentRoute, onNavigate }) =
 
       {/* Sidebar */}
       <aside className={`
-        fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 transform transition-transform duration-200 ease-in-out
+        fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 transform transition-transform duration-200 ease-in-out flex flex-col
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
         <div className="h-full flex flex-col">
           {/* Logo */}
-          <div className="h-16 flex items-center px-6 border-b border-slate-100">
+          <div className="h-16 flex items-center px-6 border-b border-slate-100 shrink-0">
             <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center mr-3 shadow-sm">
               <span className="text-white font-bold text-lg">$</span>
             </div>
@@ -62,17 +83,29 @@ const Layout: React.FC<LayoutProps> = ({ children, currentRoute, onNavigate }) =
           </div>
 
           {/* Nav */}
-          <nav className="flex-1 px-3 py-6 space-y-1">
+          <nav className="flex-1 px-3 py-6 space-y-1 overflow-y-auto">
             <NavItem route={AppRoute.DASHBOARD} icon={LayoutDashboard} label="Panel General" />
             <NavItem route={AppRoute.ACCOUNTS} icon={Wallet} label="Cuentas Bancarias" />
             <NavItem route={AppRoute.CATEGORIES} icon={Tag} label="Categorías" />
             <NavItem route={AppRoute.TRANSACTIONS} icon={ArrowRightLeft} label="Movimientos" />
+            <NavItem route={AppRoute.REAL_ESTATE} icon={Building} label="Bienes Raíces" />
             <NavItem route={AppRoute.SETTINGS} icon={Settings} label="Configuración" />
           </nav>
 
-          {/* Footer */}
-          <div className="p-4 border-t border-slate-100">
-            <button className="flex items-center space-x-2 text-slate-400 hover:text-red-500 transition-colors px-2 py-2 w-full text-sm">
+          {/* Footer Status & Logout */}
+          <div className="p-4 border-t border-slate-100 space-y-3 bg-slate-50/50">
+            {/* Connection Status Indicator */}
+            <div className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-xs font-medium border ${
+              dbConnected 
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                : 'bg-slate-100 text-slate-500 border-slate-200'
+            }`}>
+              {dbConnected ? <Cloud size={14} /> : <HardDrive size={14} />}
+              <span>{dbConnected ? 'Modo: Nube (Neon)' : 'Modo: Local'}</span>
+              <span className={`ml-auto w-2 h-2 rounded-full ${dbConnected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
+            </div>
+
+            <button className="flex items-center space-x-2 text-slate-400 hover:text-red-500 transition-colors px-2 py-1 w-full text-sm">
               <LogOut size={16} />
               <span>Cerrar Sesión</span>
             </button>

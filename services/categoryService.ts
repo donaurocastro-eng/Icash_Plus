@@ -1,30 +1,21 @@
 import { Category, CategoryFormData, CategoryType } from '../types';
+import { db } from './db';
 
 const STORAGE_KEY = 'icash_plus_categories';
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-/**
- * Logic to generate code based on Type.
- * GASTO -> CAT-EXP-XXX
- * INGRESO -> CAT-INC-XXX
- */
 const generateNextCode = (existing: Category[], type: CategoryType): string => {
   const prefix = type === 'GASTO' ? 'CAT-EXP-' : 'CAT-INC-';
   let maxId = 0;
-
   existing.forEach(cat => {
     if (cat.code.startsWith(prefix)) {
       const parts = cat.code.split('-');
-      // Expected format: CAT, EXP/INC, NUMBER
       if (parts.length === 3) {
         const num = parseInt(parts[2], 10);
-        if (!isNaN(num) && num > maxId) {
-          maxId = num;
-        }
+        if (!isNaN(num) && num > maxId) maxId = num;
       }
     }
   });
-
   const nextId = maxId + 1;
   const paddedId = nextId.toString().padStart(3, '0');
   return `${prefix}${paddedId}`;
@@ -32,70 +23,71 @@ const generateNextCode = (existing: Category[], type: CategoryType): string => {
 
 export const CategoryService = {
   getAll: async (): Promise<Category[]> => {
-    await delay(300);
-    const data = localStorage.getItem(STORAGE_KEY);
-    return data ? JSON.parse(data) : [];
+    if (db.isConfigured()) {
+      const rows = await db.query(`
+        SELECT code, name, type, created_at as "createdAt" 
+        FROM categories ORDER BY created_at DESC
+      `);
+      return rows;
+    } else {
+      await delay(300);
+      const data = localStorage.getItem(STORAGE_KEY);
+      return data ? JSON.parse(data) : [];
+    }
   },
 
   create: async (data: CategoryFormData): Promise<Category> => {
-    await delay(300);
-    const existing = await CategoryService.getAll();
-    
-    const newCode = generateNextCode(existing, data.type);
-    
-    const newCategory: Category = {
-      code: newCode,
-      name: data.name,
-      type: data.type,
-      createdAt: new Date().toISOString()
-    };
+    if (db.isConfigured()) {
+      const rows = await db.query('SELECT code FROM categories');
+      const existing = rows.map(r => ({ code: r.code } as Category));
+      const newCode = generateNextCode(existing, data.type);
 
-    const updatedList = [...existing, newCategory];
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
-    
-    return newCategory;
+      await db.query(
+        'INSERT INTO categories (code, name, type) VALUES ($1, $2, $3)',
+        [newCode, data.name, data.type]
+      );
+      
+      return { code: newCode, ...data, createdAt: new Date().toISOString() };
+    } else {
+      await delay(300);
+      const existing = await CategoryService.getAll();
+      const newCode = generateNextCode(existing, data.type);
+      const newCategory: Category = {
+        code: newCode,
+        name: data.name,
+        type: data.type,
+        createdAt: new Date().toISOString()
+      };
+      const updatedList = [...existing, newCategory];
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
+      return newCategory;
+    }
   },
 
   update: async (code: string, data: CategoryFormData): Promise<Category> => {
-    await delay(200);
-    const existing = await CategoryService.getAll();
-    const index = existing.findIndex(c => c.code === code);
-    
-    if (index === -1) throw new Error("Categoría no encontrada");
-    
-    // Note: We typically don't change the Type (GASTO/INGRESO) after creation 
-    // because it changes the Code logic. For strict integrity, we only allow name changes here,
-    // or we would need to regenerate the code if the type changes.
-    // For this version, let's allow Name changes only if Type is locked, or basic update.
-    
-    // Check if type changed to warn or regenerate (Simplifying: Don't allow type change affecting code for now)
-    if (existing[index].type !== data.type) {
-      // If user really wants to change type, in a real app we might archive old and create new.
-      // For now, we will keep the code but update the type tag, OR throw error.
-      // Let's regenerate code if type changes.
-      const newCode = generateNextCode(existing, data.type);
-       const updatedCategory: Category = {
-        ...existing[index],
-        code: newCode, // Re-ID
-        name: data.name,
-        type: data.type
-      };
-      existing[index] = updatedCategory;
+    if (db.isConfigured()) {
+       await db.query('UPDATE categories SET name=$1 WHERE code=$2', [data.name, code]);
+       // Note: Changing type in SQL would require changing code, simplified here to just name
+       return { code, name: data.name, type: data.type, createdAt: new Date().toISOString() };
     } else {
-      existing[index] = {
-        ...existing[index],
-        name: data.name
-      };
+      await delay(200);
+      const existing = await CategoryService.getAll();
+      const index = existing.findIndex(c => c.code === code);
+      if (index === -1) throw new Error("Category not found");
+      existing[index].name = data.name;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+      return existing[index];
     }
-
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
-    return existing[index];
   },
 
   delete: async (code: string): Promise<void> => {
-    await delay(200);
-    let existing = await CategoryService.getAll();
-    existing = existing.filter(c => c.code !== code);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+    if (db.isConfigured()) {
+      await db.query('DELETE FROM categories WHERE code=$1', [code]);
+    } else {
+      await delay(200);
+      let existing = await CategoryService.getAll();
+      existing = existing.filter(c => c.code !== code);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+    }
   }
 };

@@ -76,6 +76,15 @@ const AccountsPage: React.FC = () => {
     setIsModalOpen(true);
   };
 
+  // Helper to format currency
+  const formatCurrency = (amount: number, currency: 'HNL' | 'USD') => {
+    return new Intl.NumberFormat(currency === 'HNL' ? 'es-HN' : 'en-US', {
+      style: 'currency',
+      currency: currency,
+      minimumFractionDigits: 2
+    }).format(amount);
+  };
+
   // Filtering
   const filteredAccounts = accounts.filter(acc => 
     acc.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -129,18 +138,17 @@ const AccountsPage: React.FC = () => {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200">
-                <th className="px-6 py-4 font-semibold">Código</th>
-                <th className="px-6 py-4 font-semibold">Tipo</th>
+                <th className="px-6 py-4 font-semibold">Código / Tipo</th>
                 <th className="px-6 py-4 font-semibold">Cuenta</th>
-                <th className="px-6 py-4 font-semibold">Banco</th>
-                <th className="px-6 py-4 font-semibold">Número</th>
+                <th className="px-6 py-4 font-semibold">Banco / Número</th>
+                <th className="px-6 py-4 font-semibold text-right">Saldo Inicial</th>
                 <th className="px-6 py-4 font-semibold text-right">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredAccounts.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-slate-400">
+                  <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
                     <div className="flex flex-col items-center justify-center space-y-2">
                       <Search size={32} className="opacity-20" />
                       <p>No se encontraron cuentas</p>
@@ -151,26 +159,26 @@ const AccountsPage: React.FC = () => {
                 filteredAccounts.map((account) => (
                   <tr key={account.code} className="hover:bg-slate-50/80 transition-colors group">
                     <td className="px-6 py-4">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium ${
-                        account.isSystem 
-                          ? 'bg-amber-100 text-amber-800 border border-amber-200' 
-                          : 'bg-slate-100 text-slate-700 border border-slate-200'
-                      }`}>
-                        {account.code}
-                      </span>
-                    </td>
-                     <td className="px-6 py-4">
-                      {account.type === 'ACTIVO' ? (
-                        <span className="inline-flex items-center space-x-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full">
-                          <TrendingUp size={12} />
-                          <span>ACTIVO</span>
+                      <div className="flex flex-col space-y-1">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium w-fit ${
+                          account.isSystem 
+                            ? 'bg-amber-100 text-amber-800 border border-amber-200' 
+                            : 'bg-slate-100 text-slate-700 border border-slate-200'
+                        }`}>
+                          {account.code}
                         </span>
-                      ) : (
-                        <span className="inline-flex items-center space-x-1 text-xs font-semibold text-red-700 bg-red-50 px-2 py-1 rounded-full">
-                          <TrendingDown size={12} />
-                          <span>PASIVO</span>
-                        </span>
-                      )}
+                        <div className="flex items-center space-x-2">
+                          {account.type === 'ACTIVO' ? (
+                            <span className="flex items-center text-[10px] font-bold text-emerald-600 uppercase tracking-wide">
+                              <TrendingUp size={10} className="mr-1" /> Activo
+                            </span>
+                          ) : (
+                            <span className="flex items-center text-[10px] font-bold text-red-600 uppercase tracking-wide">
+                              <TrendingDown size={10} className="mr-1" /> Pasivo
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center space-x-3">
@@ -180,8 +188,17 @@ const AccountsPage: React.FC = () => {
                         <span className="font-medium text-slate-800">{account.name}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-slate-600">{account.bankName}</td>
-                    <td className="px-6 py-4 font-mono text-sm text-slate-500">{account.accountNumber}</td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col">
+                        <span className="text-slate-700 font-medium text-sm">{account.bankName}</span>
+                        <span className="text-slate-400 text-xs font-mono">{account.accountNumber}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                       <span className={`font-mono font-medium ${account.currency === 'HNL' ? 'text-indigo-600' : 'text-emerald-600'}`}>
+                         {formatCurrency(account.initialBalance, account.currency)}
+                       </span>
+                    </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end space-x-2">
                         <button 
