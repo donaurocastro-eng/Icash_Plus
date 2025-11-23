@@ -9,7 +9,7 @@ const SettingsPage: React.FC = () => {
   
   // Initialization & Schema Check State
   const [initLoading, setInitLoading] = useState(false);
-  const [schemaStatus, setSchemaStatus] = useState<'unknown' | 'ok' | 'missing'>('unknown');
+  const [schemaStatus, setSchemaStatus] = useState<'unknown' | 'ok' | 'missing' | 'incomplete'>('unknown');
   const [initLogs, setInitLogs] = useState<string[]>([]);
 
   useEffect(() => {
@@ -30,16 +30,27 @@ const SettingsPage: React.FC = () => {
     }
 
     try {
-      // Check for accounts table
-      const result = await db.query(
+      // 1. Check if table 'accounts' exists
+      const tableCheck = await db.query(
         "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'accounts';"
       );
       
-      if (result && result.length > 0) {
-        setSchemaStatus('ok');
-      } else {
+      if (!tableCheck || tableCheck.length === 0) {
         setSchemaStatus('missing');
+        return;
       }
+
+      // 2. Check if 'accounts' has 'initial_balance' column (Legacy Check)
+      const columnCheck = await db.query(
+        "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'accounts' AND column_name = 'initial_balance';"
+      );
+
+      if (!columnCheck || columnCheck.length === 0) {
+        setSchemaStatus('incomplete');
+      } else {
+        setSchemaStatus('ok');
+      }
+
     } catch (e) {
       console.error("Schema check failed:", e);
       setSchemaStatus('unknown');
@@ -104,19 +115,16 @@ const SettingsPage: React.FC = () => {
         return;
     }
 
-    if (!window.confirm("¿Estás seguro? Se enviarán comandos SQL a tu base de datos Neon.")) return;
+    if (!window.confirm("¿Estás seguro? Se revisará la estructura y se crearán las tablas/columnas faltantes.")) return;
     
     setInitLoading(true);
-    setInitLogs(["🚀 INICIANDO SISTEMA DE DIAGNÓSTICO Y CREACIÓN..."]); 
+    setInitLogs(["🚀 INICIANDO DIAGNÓSTICO Y REPARACIÓN..."]); 
     
     try {
-        addLog(`🔌 Leyendo configuración...`);
-        
-        addLog("📡 Probando conectividad básica...");
+        addLog(`🔌 Conectando...`);
         await db.query("SELECT 1");
         addLog("✅ Conexión establecida.");
 
-        // SEPARATE STEPS FOR EACH TYPE TO AVOID RACE CONDITIONS
         const steps = [
         {
             name: "Crear Tipo: Account Type",
@@ -143,7 +151,7 @@ const SettingsPage: React.FC = () => {
             `
         },
         {
-            name: "Tabla: Cuentas",
+            name: "Tabla: Cuentas (Crear)",
             sql: `
             CREATE TABLE IF NOT EXISTS public.accounts (
                 code text PRIMARY KEY,
@@ -156,6 +164,13 @@ const SettingsPage: React.FC = () => {
                 is_system boolean DEFAULT false,
                 created_at timestamp with time zone DEFAULT now() NOT NULL
             );
+            `
+        },
+        {
+            name: "Tabla: Cuentas (Reparar Columnas)",
+            sql: `
+            ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS initial_balance numeric NOT NULL DEFAULT 0;
+            ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS currency public.currency_code NOT NULL DEFAULT 'HNL';
             `
         },
         {
@@ -222,12 +237,19 @@ const SettingsPage: React.FC = () => {
                 type public.category_type NOT NULL,
                 category_code text NOT NULL,
                 category_name text NOT NULL,
-                account_code text NOT NULL,
+                account_code text NOT NULL REFERENCES public.accounts(code),
                 account_name text NOT NULL,
                 property_code text,
                 property_name text,
                 created_at timestamp with time zone DEFAULT now() NOT NULL
             );
+            `
+        },
+        {
+            name: "Tabla: Transacciones (Reparar Columnas)",
+            sql: `
+            ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS property_code text;
+            ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS property_name text;
             `
         },
         {
@@ -241,21 +263,21 @@ const SettingsPage: React.FC = () => {
         ];
 
         for (const step of steps) {
-            addLog(`⏳ Ejecutando: ${step.name}...`);
+            addLog(`⏳ ${step.name}...`);
             await db.query(step.sql);
-            addLog(`✅ ${step.name} OK.`);
+            addLog(`✅ OK`);
         }
         
         addLog("🔍 Verificando estructura final...");
         await checkSchema();
         
-        addLog("✨ ¡Proceso completado exitosamente!");
-        alert("¡Tablas creadas correctamente! Ya puedes usar la aplicación.");
+        addLog("✨ ¡Proceso completado! Errores corregidos.");
+        alert("¡Tablas y columnas actualizadas correctamente!");
 
     } catch (error: any) {
       console.error(error);
-      addLog(`❌ ERROR CRÍTICO: ${error.message || JSON.stringify(error)}`);
-      alert(`Ocurrió un error: ${error.message}. Revisa el registro en pantalla para más detalles.`);
+      addLog(`❌ ERROR: ${error.message || JSON.stringify(error)}`);
+      alert(`Error al reparar: ${error.message}`);
     } finally {
       setInitLoading(false);
     }
@@ -359,31 +381,35 @@ const SettingsPage: React.FC = () => {
                 </button>
                 <div className={`flex items-center space-x-2 px-3 py-1.5 rounded-full text-xs font-bold border ${
                     schemaStatus === 'ok' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                    schemaStatus === 'missing' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                    schemaStatus === 'missing' ? 'bg-red-50 text-red-700 border-red-200' :
+                    schemaStatus === 'incomplete' ? 'bg-amber-50 text-amber-700 border-amber-200' :
                     'bg-slate-100 text-slate-500 border-slate-200'
                 }`}>
                     {schemaStatus === 'ok' && <><CheckCircle size={14}/> <span>VERIFICADO</span></>}
                     {schemaStatus === 'missing' && <><AlertTriangle size={14}/> <span>NO DETECTADO</span></>}
+                    {schemaStatus === 'incomplete' && <><AlertTriangle size={14}/> <span>INCOMPLETO</span></>}
                     {schemaStatus === 'unknown' && <><Activity size={14}/> <span>DESCONOCIDO</span></>}
                 </div>
             </div>
           </div>
           
           <p className="text-slate-500 text-sm mb-6">
-            Usa esta herramienta si acabas de conectar una base de datos vacía. El sistema creará todas las tablas necesarias paso a paso.
+            Usa esta herramienta si ves errores de base de datos. El sistema reparará tablas faltantes o columnas antiguas.
           </p>
           
           <button 
             onClick={handleInitializeStepByStep}
             disabled={initLoading}
-            className={`w-full sm:w-auto flex items-center justify-center space-x-2 px-4 py-3 text-white rounded-lg font-bold shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-indigo-600 hover:bg-indigo-700`}
+            className={`w-full sm:w-auto flex items-center justify-center space-x-2 px-4 py-3 text-white rounded-lg font-bold shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+               schemaStatus === 'ok' ? 'bg-slate-600 hover:bg-slate-700' : 'bg-indigo-600 hover:bg-indigo-700 animate-pulse'
+            }`}
           >
             {initLoading ? (
                <RefreshCw size={18} className="animate-spin" />
             ) : (
                <Database size={18} />
             )}
-            <span>{initLoading ? 'Inicializando...' : 'Inicializar Tablas (Paso a Paso)'}</span>
+            <span>{initLoading ? 'Reparando...' : 'Inicializar / Reparar Tablas'}</span>
           </button>
           
           {!dbUrl && (

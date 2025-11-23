@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { 
   TrendingUp, 
@@ -6,9 +5,10 @@ import {
   DollarSign, 
   Building, 
   Wallet, 
-  ArrowRight,
   CreditCard,
-  Users
+  Users,
+  AlertTriangle,
+  Database
 } from 'lucide-react';
 import { AccountService } from '../services/accountService';
 import { TransactionService } from '../services/transactionService';
@@ -22,10 +22,15 @@ const DashboardPage: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
+  
+  const [schemaError, setSchemaError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadData = async () => {
       try {
+        setSchemaError(null);
+        // We catch errors individually to identify which service failed if needed, 
+        // but Promise.all is fine for a dashboard that needs everything.
         const [accData, txData, propData, contData] = await Promise.all([
           AccountService.getAll(),
           TransactionService.getAll(),
@@ -36,8 +41,13 @@ const DashboardPage: React.FC = () => {
         setTransactions(txData);
         setProperties(propData);
         setContracts(contData);
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error loading dashboard data", error);
+        const msg = error.message || '';
+        // Detect specific SQL errors related to missing schema
+        if (msg.includes('does not exist') || msg.includes('initial_balance') || msg.includes('properties')) {
+            setSchemaError(msg);
+        }
       } finally {
         setLoading(false);
       }
@@ -49,6 +59,38 @@ const DashboardPage: React.FC = () => {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600"></div>
+      </div>
+    );
+  }
+
+  // --- ERROR STATE: SCHEMA MISMATCH ---
+  if (schemaError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[80vh] p-4">
+        <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 max-w-lg w-full text-center space-y-6">
+            <div className="w-20 h-20 bg-amber-50 rounded-full flex items-center justify-center mx-auto text-amber-500 mb-4">
+                <Database size={40} />
+            </div>
+            
+            <h2 className="text-2xl font-bold text-slate-800">Actualización Requerida</h2>
+            
+            <div className="bg-slate-50 p-4 rounded-lg text-left text-sm border border-slate-200 text-slate-600 font-mono overflow-x-auto">
+                Error: {schemaError}
+            </div>
+
+            <p className="text-slate-600">
+                Tu base de datos tiene una estructura antigua. Faltan tablas o columnas necesarias (como <code>initial_balance</code>).
+            </p>
+
+            <div className="pt-2">
+                <p className="text-sm font-medium text-slate-500 mb-4">Para solucionar esto automáticamente:</p>
+                <div className="flex flex-col gap-2 text-sm text-indigo-700 bg-indigo-50 p-4 rounded-lg border border-indigo-100 text-left">
+                    <p>1. Ve a la pestaña <strong>Configuración</strong> en el menú lateral.</p>
+                    <p>2. Busca la sección <strong>Estado del Esquema</strong>.</p>
+                    <p>3. Presiona el botón <strong>"Inicializar / Reparar Tablas"</strong>.</p>
+                </div>
+            </div>
+        </div>
       </div>
     );
   }
@@ -82,7 +124,7 @@ const DashboardPage: React.FC = () => {
 
   const monthlyIncome = currentMonthTx
     .filter(t => t.type === 'INGRESO')
-    .reduce((sum, t) => sum + t.amount, 0); // Note: Assuming mixed currency summation for simplicity in chart, or dominated by HNL
+    .reduce((sum, t) => sum + t.amount, 0); 
   
   const monthlyExpense = currentMonthTx
     .filter(t => t.type === 'GASTO')
