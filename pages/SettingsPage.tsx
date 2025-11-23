@@ -24,7 +24,10 @@ const SettingsPage: React.FC = () => {
 
   const checkSchema = async (urlOverride?: string) => {
     const urlToCheck = urlOverride || db.getUrl();
-    if (!urlToCheck) return;
+    if (!urlToCheck) {
+        setSchemaStatus('unknown');
+        return;
+    }
 
     try {
       // Check for accounts table
@@ -58,7 +61,9 @@ const SettingsPage: React.FC = () => {
     
     if (success) {
       setStatus('success');
-      setMessage('¡Conexión exitosa!');
+      setMessage('¡Conexión exitosa! URL Guardada.');
+      // AUTO SAVE ON SUCCESS
+      db.setUrl(cleaned); 
       window.dispatchEvent(new Event('db-config-changed'));
       checkSchema(cleaned);
     } else {
@@ -95,6 +100,10 @@ const SettingsPage: React.FC = () => {
   };
 
   const handleInitializeStepByStep = async () => {
+    if (!dbUrl) {
+        alert("Por favor ingresa y guarda la URL de conexión primero.");
+        return;
+    }
     if (!window.confirm("Se intentará crear las tablas una por una. ¿Continuar?")) return;
     
     setInitLoading(true);
@@ -215,6 +224,9 @@ const SettingsPage: React.FC = () => {
     ];
 
     try {
+      // Re-save URL just in case
+      db.setUrl(dbUrl);
+      
       for (const step of steps) {
         addLog(`⏳ Ejecutando: ${step.name}...`);
         await db.query(step.sql);
@@ -267,7 +279,7 @@ const SettingsPage: React.FC = () => {
               <input 
                 type="password" 
                 className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none font-mono text-sm"
-                placeholder="postgres://..."
+                placeholder="Pega aquí tu URL (postgres://...)"
                 value={dbUrl}
                 onChange={(e) => setDbUrl(e.target.value)}
               />
@@ -350,9 +362,7 @@ const SettingsPage: React.FC = () => {
           <button 
             onClick={handleInitializeStepByStep}
             disabled={initLoading || !dbUrl}
-            className={`w-full sm:w-auto flex items-center justify-center space-x-2 px-4 py-2 text-white rounded-lg font-medium shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                schemaStatus === 'missing' ? 'bg-brand-600 hover:bg-brand-700' : 'bg-slate-600 hover:bg-slate-700'
-            }`}
+            className={`w-full sm:w-auto flex items-center justify-center space-x-2 px-4 py-3 text-white rounded-lg font-bold shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-indigo-600 hover:bg-indigo-700`}
           >
             {initLoading ? (
                <RefreshCw size={18} className="animate-spin" />
@@ -361,6 +371,10 @@ const SettingsPage: React.FC = () => {
             )}
             <span>{initLoading ? 'Inicializando...' : 'Inicializar Tablas (Paso a Paso)'}</span>
           </button>
+          
+          {!dbUrl && (
+             <p className="mt-2 text-xs text-red-500 font-medium">⚠️ Debes ingresar y guardar la URL de conexión arriba para habilitar este botón.</p>
+          )}
 
           {/* Activity Log */}
           {initLogs.length > 0 && (
