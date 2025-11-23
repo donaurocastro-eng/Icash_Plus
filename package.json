@@ -1,5 +1,5 @@
 {
-  "name": "icash_plus",
+  "name": "icash-plus",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -12,7 +12,9 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "lucide-react": "^0.554.0",
-    "@neondatabase/serverless": "0.9.3"
+    "@vitejs/plugin-react": "^5.1.1",
+    "vite": "^7.2.4",
+    "@neondatabase/serverless": "^1.0.2"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

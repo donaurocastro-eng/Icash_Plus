@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, CheckCircle, XCircle, AlertTriangle, Database, RefreshCw, ShieldAlert, Activity, Terminal } from 'lucide-react';
+import { Save, CheckCircle, XCircle, AlertTriangle, Database, RefreshCw, ShieldAlert, Activity, Terminal, Trash2 } from 'lucide-react';
 import { db } from '../services/db';
 
 const SettingsPage: React.FC = () => {
@@ -104,6 +104,67 @@ const SettingsPage: React.FC = () => {
       setMessage('Desconectado. Usando almacenamiento local.');
       setSchemaStatus('unknown');
       setInitLogs([]);
+    }
+  };
+
+  // --- FORCE RECREATE ACCOUNTS TABLE ---
+  const handleForceRecreateAccounts = async () => {
+    if (!window.confirm("⚠️ ¡PELIGRO! Esto BORRARÁ todos los datos de la tabla 'Cuentas' y la creará desde cero. Úsalo solo si la reparación falla. ¿Continuar?")) return;
+
+    setInitLoading(true);
+    setInitLogs(["💥 INICIANDO RECREACIÓN FORZADA DE TABLA CUENTAS..."]);
+
+    try {
+        // 1. Drop
+        addLog("🗑️ Borrando tabla 'accounts'...");
+        await db.query("DROP TABLE IF EXISTS public.accounts CASCADE;");
+        
+        // 2. Ensure Types
+        addLog("🔧 Asegurando tipos de datos...");
+        await db.query(`
+            DO $$ BEGIN
+                CREATE TYPE public.account_type AS ENUM ('ACTIVO', 'PASIVO');
+            EXCEPTION WHEN duplicate_object THEN null; END $$;
+        `);
+        await db.query(`
+            DO $$ BEGIN
+                CREATE TYPE public.currency_code AS ENUM ('HNL', 'USD');
+            EXCEPTION WHEN duplicate_object THEN null; END $$;
+        `);
+
+        // 3. Create
+        addLog("✨ Creando tabla 'accounts' nueva...");
+        await db.query(`
+            CREATE TABLE public.accounts (
+                code text PRIMARY KEY,
+                name text NOT NULL,
+                bank_name text,
+                account_number text,
+                type public.account_type NOT NULL DEFAULT 'ACTIVO',
+                initial_balance numeric NOT NULL DEFAULT 0,
+                currency public.currency_code NOT NULL DEFAULT 'HNL',
+                is_system boolean DEFAULT false,
+                created_at timestamp with time zone DEFAULT now() NOT NULL
+            );
+        `);
+
+        // 4. Seed
+        addLog("🌱 Insertando datos semilla...");
+        await db.query(`
+            INSERT INTO public.accounts (code, name, bank_name, account_number, type, initial_balance, currency, is_system)
+            VALUES ('EFECTIVO-01', 'Efectivo en Mano', 'Caja Fuerte / Billetera', 'N/A', 'ACTIVO', 0, 'HNL', true);
+        `);
+
+        addLog("✅ ¡Tabla recreada exitosamente!");
+        alert("Tabla de Cuentas recreada desde cero. El problema debería estar resuelto.");
+        window.location.reload();
+
+    } catch (error: any) {
+        console.error(error);
+        addLog(`❌ ERROR FATAL: ${error.message}`);
+        alert(`Error: ${error.message}`);
+    } finally {
+        setInitLoading(false);
     }
   };
 
@@ -396,23 +457,35 @@ const SettingsPage: React.FC = () => {
           </div>
           
           <p className="text-slate-500 text-sm mb-6">
-            Usa esta herramienta si ves errores de base de datos (columnas faltantes, tablas no encontradas).
+            Usa "Reparar" para arreglar tablas faltantes. Si eso falla, usa "Recrear (Forzar)" para borrar la tabla de cuentas y crearla de cero.
           </p>
           
-          <button 
-            onClick={handleInitializeStepByStep}
-            disabled={initLoading}
-            className={`w-full sm:w-auto flex items-center justify-center space-x-2 px-4 py-3 text-white rounded-lg font-bold shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-               schemaStatus === 'ok' ? 'bg-slate-600 hover:bg-slate-700' : 'bg-indigo-600 hover:bg-indigo-700 animate-pulse'
-            }`}
-          >
-            {initLoading ? (
-               <RefreshCw size={18} className="animate-spin" />
-            ) : (
-               <Database size={18} />
-            )}
-            <span>{initLoading ? 'Reparando...' : 'Inicializar / Reparar Tablas'}</span>
-          </button>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <button 
+                onClick={handleInitializeStepByStep}
+                disabled={initLoading}
+                className={`flex-1 flex items-center justify-center space-x-2 px-4 py-3 text-white rounded-lg font-bold shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                schemaStatus === 'ok' ? 'bg-slate-600 hover:bg-slate-700' : 'bg-indigo-600 hover:bg-indigo-700 animate-pulse'
+                }`}
+            >
+                {initLoading ? (
+                <RefreshCw size={18} className="animate-spin" />
+                ) : (
+                <Database size={18} />
+                )}
+                <span>{initLoading ? 'Procesando...' : 'Inicializar / Reparar Tablas'}</span>
+            </button>
+
+            <button 
+                onClick={handleForceRecreateAccounts}
+                disabled={initLoading}
+                className="flex items-center justify-center space-x-2 px-4 py-3 text-white rounded-lg font-bold shadow-md transition-colors bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Úsalo solo si la reparación falla. Borrará las cuentas."
+            >
+                <Trash2 size={18} />
+                <span>Recrear Cuentas (Forzar)</span>
+            </button>
+          </div>
           
           {!dbUrl && (
              <p className="mt-2 text-xs text-red-500 font-medium">⚠️ Debes ingresar y guardar la URL de conexión arriba para habilitar este botón.</p>
