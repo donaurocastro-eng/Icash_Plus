@@ -40,16 +40,7 @@ const SettingsPage: React.FC = () => {
         return;
       }
 
-      // 2. Check for currency column (Accounts Legacy Check)
-      const accountColCheck = await db.query(
-        "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'accounts' AND column_name = 'currency';"
-      );
-      if (!accountColCheck || accountColCheck.length === 0) {
-        setSchemaStatus('incomplete');
-        return;
-      }
-
-      // 3. Check for apartment_code column (Real Estate Legacy Check)
+      // 2. Check for apartment_code column (Real Estate Legacy Check)
       const contractColCheck = await db.query(
         "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'contracts' AND column_name = 'apartment_code';"
       );
@@ -116,165 +107,43 @@ const SettingsPage: React.FC = () => {
     }
   };
 
-  const handleInitializeStepByStep = async () => {
-    const currentStoredUrl = db.getUrl();
-    
-    if (!currentStoredUrl) {
-        alert("⚠️ No se encontró la URL guardada.");
-        return;
-    }
-
-    if (!window.confirm("¿Estás seguro? Se revisará la estructura y se crearán las tablas/columnas faltantes.")) return;
-    
-    setInitLoading(true);
-    setInitLogs(["🚀 INICIANDO DIAGNÓSTICO Y REPARACIÓN..."]); 
-    
-    try {
-        addLog(`🔌 Conectando...`);
-        await db.query("SELECT 1");
-        addLog("✅ Conexión establecida.");
-
-        const steps = [
-        {
-            name: "Tipos (ENUMs)",
-            sql: `
-            DO $$ BEGIN CREATE TYPE public.account_type AS ENUM ('ACTIVO', 'PASIVO'); EXCEPTION WHEN duplicate_object THEN null; END $$;
-            DO $$ BEGIN CREATE TYPE public.category_type AS ENUM ('GASTO', 'INGRESO'); EXCEPTION WHEN duplicate_object THEN null; END $$;
-            DO $$ BEGIN CREATE TYPE public.currency_code AS ENUM ('HNL', 'USD'); EXCEPTION WHEN duplicate_object THEN null; END $$;
-            `
-        },
-        {
-            name: "Tabla: Cuentas (Core)",
-            sql: `
-            CREATE TABLE IF NOT EXISTS public.accounts (
-                code text PRIMARY KEY,
-                name text NOT NULL,
-                bank_name text,
-                account_number text,
-                type public.account_type NOT NULL DEFAULT 'ACTIVO',
-                initial_balance numeric NOT NULL DEFAULT 0,
-                currency public.currency_code NOT NULL DEFAULT 'HNL',
-                is_system boolean DEFAULT false,
-                created_at timestamp with time zone DEFAULT now() NOT NULL
-            );
-            `
-        },
-        { name: "Reparar: Columnas Cuentas", sql: `ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS initial_balance numeric NOT NULL DEFAULT 0; ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS currency public.currency_code NOT NULL DEFAULT 'HNL';` },
-        {
-            name: "Tabla: Categorías",
-            sql: `CREATE TABLE IF NOT EXISTS public.categories (code text PRIMARY KEY, name text NOT NULL, type public.category_type NOT NULL, created_at timestamp with time zone DEFAULT now() NOT NULL);`
-        },
-        {
-            name: "Tabla: Propiedades",
-            sql: `CREATE TABLE IF NOT EXISTS public.properties (code text PRIMARY KEY, name text NOT NULL, cadastral_key text, annual_tax numeric DEFAULT 0, value numeric DEFAULT 0, currency public.currency_code DEFAULT 'HNL', created_at timestamp with time zone DEFAULT now() NOT NULL);`
-        },
-        {
-            name: "Tabla: Inquilinos",
-            sql: `CREATE TABLE IF NOT EXISTS public.tenants (code text PRIMARY KEY, full_name text NOT NULL, phone text, email text, status text DEFAULT 'ACTIVE', created_at timestamp with time zone DEFAULT now() NOT NULL);`
-        },
-        { name: "Reparar: Inquilinos", sql: `ALTER TABLE public.tenants ADD COLUMN IF NOT EXISTS status text DEFAULT 'ACTIVE';` },
-        {
-            name: "Tabla: Apartamentos",
-            sql: `CREATE TABLE IF NOT EXISTS public.apartments (code text PRIMARY KEY, property_code text NOT NULL REFERENCES public.properties(code), name text NOT NULL, status text DEFAULT 'AVAILABLE', created_at timestamp with time zone DEFAULT now() NOT NULL);`
-        },
-        {
-            name: "Tabla: Contratos",
-            sql: `CREATE TABLE IF NOT EXISTS public.contracts (code text PRIMARY KEY, apartment_code text, tenant_code text NOT NULL REFERENCES public.tenants(code), start_date date NOT NULL, end_date date NOT NULL, amount numeric NOT NULL, payment_day integer NOT NULL, status text DEFAULT 'ACTIVE', created_at timestamp with time zone DEFAULT now() NOT NULL);`
-        },
-        { name: "Reparar: Contratos (Apt)", sql: `ALTER TABLE public.contracts ADD COLUMN IF NOT EXISTS apartment_code text;` },
-        { name: "Reparar: Contratos (Legacy)", sql: `ALTER TABLE public.contracts ALTER COLUMN property_code DROP NOT NULL;` },
-        {
-            name: "Tabla: Transacciones",
-            sql: `CREATE TABLE IF NOT EXISTS public.transactions (code text PRIMARY KEY, date date NOT NULL, description text NOT NULL, amount numeric NOT NULL, type public.category_type NOT NULL, category_code text NOT NULL, category_name text NOT NULL, account_code text NOT NULL REFERENCES public.accounts(code), account_name text NOT NULL, property_code text, property_name text, created_at timestamp with time zone DEFAULT now() NOT NULL);`
-        },
-        { name: "Reparar: Transacciones (Prop)", sql: `ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS property_code text; ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS property_name text;` },
-        { name: "Datos Iniciales", sql: `INSERT INTO public.accounts (code, name, bank_name, account_number, type, initial_balance, currency, is_system) VALUES ('EFECTIVO-01', 'Efectivo en Mano', 'Caja Fuerte', 'N/A', 'ACTIVO', 0, 'HNL', true) ON CONFLICT (code) DO NOTHING;` }
-        ];
-
-        for (const step of steps) {
-            addLog(`⏳ ${step.name}...`);
-            try {
-                await db.query(step.sql);
-                addLog(`✅ OK`);
-            } catch(e: any) {
-                addLog(`⚠️ ${e.message}`);
-            }
-        }
-        
-        addLog("✨ ¡Proceso completado! Recargando...");
-        window.location.reload();
-
-    } catch (error: any) {
-      console.error(error);
-      addLog(`❌ ERROR: ${error.message}`);
-      alert(`Error al reparar: ${error.message}`);
-    } finally {
-      setInitLoading(false);
-    }
-  };
-
-  const handleMigrateRealEstate = async () => {
-    if (!window.confirm("Esto creará la tabla 'Apartamentos' y actualizará los contratos. ¿Continuar?")) return;
-    
-    setInitLoading(true);
-    setInitLogs(["🏗️ INICIANDO MIGRACIÓN BIENES RAÍCES..."]);
-    
-    try {
-        await db.query("SELECT 1");
-        
-        // 1. Create Apartments Table
-        addLog("🔨 Creando tabla 'apartments'...");
-        await db.query(`
-            CREATE TABLE IF NOT EXISTS public.apartments (
-                code text PRIMARY KEY,
-                property_code text NOT NULL REFERENCES public.properties(code),
-                name text NOT NULL,
-                status text DEFAULT 'AVAILABLE',
-                created_at timestamp with time zone DEFAULT now() NOT NULL
-            );
-        `);
-        addLog("✅ Tabla creada.");
-
-        // 2. Update Contracts Table
-        addLog("🔗 Actualizando tabla 'contracts'...");
-        await db.query(`
-            ALTER TABLE public.contracts ADD COLUMN IF NOT EXISTS apartment_code text;
-            ALTER TABLE public.contracts ALTER COLUMN property_code DROP NOT NULL; 
-        `);
-        addLog("✅ Estructura actualizada.");
-
-        alert("Migración completada.");
-        window.location.reload();
-
-    } catch (error: any) {
-        console.error(error);
-        addLog(`❌ ERROR: ${error.message}`);
-        alert(error.message);
-    } finally {
-        setInitLoading(false);
-    }
-  };
-
   const handlePatchContracts = async () => {
     setInitLoading(true);
-    setInitLogs(["🔧 PARCHEANDO CONTRATOS..."]);
+    setInitLogs(["🔧 INICIANDO REPARACIÓN ESPECÍFICA..."]);
     try {
-      addLog("Intentando agregar columna apartment_code...");
+      addLog("1. Creando tabla apartments si no existe...");
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS public.apartments (
+            code text PRIMARY KEY,
+            property_code text NOT NULL REFERENCES public.properties(code),
+            name text NOT NULL,
+            status text DEFAULT 'AVAILABLE',
+            created_at timestamp with time zone DEFAULT now() NOT NULL
+        );
+      `);
+      addLog("✅ Tabla Apartments verificada.");
+
+      addLog("2. Agregando columna apartment_code a contratos...");
       await db.query(`ALTER TABLE public.contracts ADD COLUMN IF NOT EXISTS apartment_code text;`);
       addLog("✅ Columna agregada.");
       
-      addLog("Haciendo property_code opcional...");
+      addLog("3. Actualizando restricciones de contratos...");
       await db.query(`ALTER TABLE public.contracts ALTER COLUMN property_code DROP NOT NULL;`);
       addLog("✅ Restricción actualizada.");
       
-      alert("¡Tabla de Contratos reparada! Recargando...");
+      alert("¡Reparación exitosa! La aplicación se recargará ahora.");
       window.location.reload();
     } catch(e: any) {
       addLog(`❌ Error: ${e.message}`);
-      alert(e.message);
+      alert(`Error al reparar: ${e.message}`);
     } finally {
       setInitLoading(false);
     }
+  };
+
+  const handleInitializeStepByStep = async () => {
+      // Use the patch logic as part of init to cover everything
+      await handlePatchContracts();
   };
 
   const handleForceRecreateAccounts = async () => {
@@ -282,7 +151,8 @@ const SettingsPage: React.FC = () => {
       setInitLoading(true);
       try {
           await db.query("DROP TABLE IF EXISTS public.accounts CASCADE");
-          await handleInitializeStepByStep(); 
+          alert("Tabla eliminada. Ahora ejecuta 'Inicializar' para recrearla.");
+          window.location.reload();
       } catch(e: any) { alert(e.message); setInitLoading(false); }
   };
 
@@ -397,54 +267,35 @@ const SettingsPage: React.FC = () => {
           </div>
           
           <p className="text-slate-500 text-sm mb-6">
-            Usa esta herramienta si ves errores de base de datos. El sistema reparará tablas faltantes o columnas antiguas.
+            Si ves errores de "column does not exist", usa el botón de reparación abajo.
           </p>
           
           <div className="space-y-3">
+            {/* PRIMARY REPAIR BUTTON */}
             <button 
-                onClick={handleInitializeStepByStep}
+                onClick={handlePatchContracts}
                 disabled={initLoading}
-                className={`w-full flex items-center justify-center space-x-2 px-4 py-3 text-white rounded-lg font-bold shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                schemaStatus === 'ok' ? 'bg-slate-600 hover:bg-slate-700' : 'bg-indigo-600 hover:bg-indigo-700 animate-pulse'
-                }`}
+                className={`w-full flex items-center justify-center space-x-2 px-4 py-4 text-white rounded-lg font-bold shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-amber-500 hover:bg-amber-600 animate-pulse`}
             >
                 {initLoading ? (
-                <RefreshCw size={18} className="animate-spin" />
+                <RefreshCw size={20} className="animate-spin" />
                 ) : (
-                <Database size={18} />
+                <Wrench size={20} />
                 )}
-                <span>{initLoading ? 'Reparando...' : 'Inicializar / Reparar Tablas'}</span>
+                <span className="text-lg">🔧 REPARAR ERROR: apartment_code</span>
             </button>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+            <div className="pt-4 border-t border-slate-100">
+                <p className="text-xs text-slate-400 mb-2 uppercase font-bold">Otras Acciones</p>
                 <button 
-                    onClick={handleMigrateRealEstate}
+                    onClick={handleForceRecreateAccounts}
                     disabled={initLoading}
-                    className="flex items-center justify-center p-3 border border-blue-200 bg-blue-50 rounded-lg text-blue-700 hover:bg-blue-100 transition-colors text-sm font-medium"
+                    className="flex items-center justify-center w-full p-3 border border-red-200 bg-red-50 rounded-lg text-red-700 hover:bg-red-100 transition-colors text-sm font-medium"
                 >
-                    <Building size={16} className="mr-2"/>
-                    Migrar Estructura (Apartamentos)
-                </button>
-                
-                {/* SPECIFIC PATCH BUTTON */}
-                <button 
-                    onClick={handlePatchContracts}
-                    disabled={initLoading}
-                    className="flex items-center justify-center p-3 border border-amber-200 bg-amber-50 rounded-lg text-amber-700 hover:bg-amber-100 transition-colors text-sm font-medium"
-                >
-                    <Wrench size={16} className="mr-2"/>
-                    🔧 Parchear Tabla Contratos
+                    <Trash2 size={16} className="mr-2"/>
+                    Forzar Reset Cuentas
                 </button>
             </div>
-            
-            <button 
-                onClick={handleForceRecreateAccounts}
-                disabled={initLoading}
-                className="w-full flex items-center justify-center p-3 border border-red-200 bg-red-50 rounded-lg text-red-700 hover:bg-red-100 transition-colors text-sm font-medium mt-2"
-            >
-                <Trash2 size={16} className="mr-2"/>
-                Forzar Reset Cuentas
-            </button>
           </div>
           
           {!dbUrl && (
