@@ -30,7 +30,7 @@ const SettingsPage: React.FC = () => {
     }
 
     try {
-      // Check for accounts table
+      // 1. Check for accounts table
       const tableCheck = await db.query(
         "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'accounts';"
       );
@@ -40,16 +40,25 @@ const SettingsPage: React.FC = () => {
         return;
       }
 
-      // Check for columns (legacy check)
-      const columnCheck = await db.query(
+      // 2. Check for currency column (Accounts Legacy Check)
+      const accountColCheck = await db.query(
         "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'accounts' AND column_name = 'currency';"
       );
-
-      if (!columnCheck || columnCheck.length === 0) {
+      if (!accountColCheck || accountColCheck.length === 0) {
         setSchemaStatus('incomplete');
-      } else {
-        setSchemaStatus('ok');
+        return;
       }
+
+      // 3. Check for apartment_code column (Real Estate Legacy Check)
+      const contractColCheck = await db.query(
+        "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'contracts' AND column_name = 'apartment_code';"
+      );
+      if (!contractColCheck || contractColCheck.length === 0) {
+        setSchemaStatus('incomplete');
+        return;
+      }
+
+      setSchemaStatus('ok');
 
     } catch (e) {
       console.error("Schema check failed:", e);
@@ -173,17 +182,23 @@ const SettingsPage: React.FC = () => {
             sql: `CREATE TABLE IF NOT EXISTS public.contracts (code text PRIMARY KEY, apartment_code text, tenant_code text NOT NULL REFERENCES public.tenants(code), start_date date NOT NULL, end_date date NOT NULL, amount numeric NOT NULL, payment_day integer NOT NULL, status text DEFAULT 'ACTIVE', created_at timestamp with time zone DEFAULT now() NOT NULL);`
         },
         { name: "Reparar: Contratos (Apt)", sql: `ALTER TABLE public.contracts ADD COLUMN IF NOT EXISTS apartment_code text;` },
+        { name: "Reparar: Contratos (Legacy)", sql: `ALTER TABLE public.contracts ALTER COLUMN property_code DROP NOT NULL;` },
         {
             name: "Tabla: Transacciones",
             sql: `CREATE TABLE IF NOT EXISTS public.transactions (code text PRIMARY KEY, date date NOT NULL, description text NOT NULL, amount numeric NOT NULL, type public.category_type NOT NULL, category_code text NOT NULL, category_name text NOT NULL, account_code text NOT NULL REFERENCES public.accounts(code), account_name text NOT NULL, property_code text, property_name text, created_at timestamp with time zone DEFAULT now() NOT NULL);`
         },
+        { name: "Reparar: Transacciones (Prop)", sql: `ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS property_code text; ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS property_name text;` },
         { name: "Datos Iniciales", sql: `INSERT INTO public.accounts (code, name, bank_name, account_number, type, initial_balance, currency, is_system) VALUES ('EFECTIVO-01', 'Efectivo en Mano', 'Caja Fuerte', 'N/A', 'ACTIVO', 0, 'HNL', true) ON CONFLICT (code) DO NOTHING;` }
         ];
 
         for (const step of steps) {
             addLog(`⏳ ${step.name}...`);
-            await db.query(step.sql);
-            addLog(`✅ OK`);
+            try {
+                await db.query(step.sql);
+                addLog(`✅ OK`);
+            } catch(e: any) {
+                addLog(`⚠️ ${e.message}`);
+            }
         }
         
         addLog("✨ ¡Proceso completado! Recargando...");

@@ -45,7 +45,7 @@ const DashboardPage: React.FC = () => {
         console.error("Error loading dashboard data", error);
         const msg = error.message || '';
         // Detect specific SQL errors related to missing schema
-        if (msg.includes('does not exist') || msg.includes('initial_balance') || msg.includes('properties')) {
+        if (msg.includes('does not exist') || msg.includes('initial_balance') || msg.includes('properties') || msg.includes('apartment_code')) {
             setSchemaError(msg);
         }
       } finally {
@@ -79,7 +79,7 @@ const DashboardPage: React.FC = () => {
             </div>
 
             <p className="text-slate-600">
-                Tu base de datos tiene una estructura antigua. Faltan tablas o columnas necesarias (como <code>initial_balance</code>).
+                Tu base de datos tiene una estructura antigua. Faltan tablas o columnas necesarias (como <code>apartment_code</code> o <code>initial_balance</code>).
             </p>
 
             <div className="pt-2">
