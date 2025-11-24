@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, CheckCircle, XCircle, AlertTriangle, Database, RefreshCw, ShieldAlert, Activity, Terminal, Trash2, Building } from 'lucide-react';
+import { Save, CheckCircle, XCircle, AlertTriangle, Database, RefreshCw, ShieldAlert, Activity, Terminal, Trash2, Building, Wrench } from 'lucide-react';
 import { db } from '../services/db';
 
 const SettingsPage: React.FC = () => {
@@ -255,6 +255,28 @@ const SettingsPage: React.FC = () => {
     }
   };
 
+  const handlePatchContracts = async () => {
+    setInitLoading(true);
+    setInitLogs(["🔧 PARCHEANDO CONTRATOS..."]);
+    try {
+      addLog("Intentando agregar columna apartment_code...");
+      await db.query(`ALTER TABLE public.contracts ADD COLUMN IF NOT EXISTS apartment_code text;`);
+      addLog("✅ Columna agregada.");
+      
+      addLog("Haciendo property_code opcional...");
+      await db.query(`ALTER TABLE public.contracts ALTER COLUMN property_code DROP NOT NULL;`);
+      addLog("✅ Restricción actualizada.");
+      
+      alert("¡Tabla de Contratos reparada! Recargando...");
+      window.location.reload();
+    } catch(e: any) {
+      addLog(`❌ Error: ${e.message}`);
+      alert(e.message);
+    } finally {
+      setInitLoading(false);
+    }
+  };
+
   const handleForceRecreateAccounts = async () => {
       if(!confirm("⚠️ PELIGRO: Esto BORRARÁ todas las cuentas. ¿Seguro?")) return;
       setInitLoading(true);
@@ -403,15 +425,26 @@ const SettingsPage: React.FC = () => {
                     <Building size={16} className="mr-2"/>
                     Migrar Estructura (Apartamentos)
                 </button>
+                
+                {/* SPECIFIC PATCH BUTTON */}
                 <button 
-                    onClick={handleForceRecreateAccounts}
+                    onClick={handlePatchContracts}
                     disabled={initLoading}
-                    className="flex items-center justify-center p-3 border border-red-200 bg-red-50 rounded-lg text-red-700 hover:bg-red-100 transition-colors text-sm font-medium"
+                    className="flex items-center justify-center p-3 border border-amber-200 bg-amber-50 rounded-lg text-amber-700 hover:bg-amber-100 transition-colors text-sm font-medium"
                 >
-                    <Trash2 size={16} className="mr-2"/>
-                    Forzar Reset Cuentas
+                    <Wrench size={16} className="mr-2"/>
+                    🔧 Parchear Tabla Contratos
                 </button>
             </div>
+            
+            <button 
+                onClick={handleForceRecreateAccounts}
+                disabled={initLoading}
+                className="w-full flex items-center justify-center p-3 border border-red-200 bg-red-50 rounded-lg text-red-700 hover:bg-red-100 transition-colors text-sm font-medium mt-2"
+            >
+                <Trash2 size={16} className="mr-2"/>
+                Forzar Reset Cuentas
+            </button>
           </div>
           
           {!dbUrl && (
