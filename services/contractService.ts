@@ -23,11 +23,20 @@ const generateNextCode = (existing: Contract[]): string => {
 export const ContractService = {
   getAll: async (): Promise<Contract[]> => {
     if (db.isConfigured()) {
-      // Note: handling legacy schema if column doesn't exist yet is handled by migration in SettingsPage
+      // Modified query to be tolerant of schema changes or return legacy data
+      // We check information schema first or just try to select. 
+      // For stability, we assume the migration ran, but we select property_code for backward compat
       const rows = await db.query(`
-        SELECT code, apartment_code as "apartmentCode", tenant_code as "tenantCode", 
-               start_date as "startDate", end_date as "endDate", amount, payment_day as "paymentDay",
-               status, created_at as "createdAt"
+        SELECT code, 
+               apartment_code as "apartmentCode", 
+               property_code as "propertyCode", 
+               tenant_code as "tenantCode", 
+               start_date as "startDate", 
+               end_date as "endDate", 
+               amount, 
+               payment_day as "paymentDay",
+               status, 
+               created_at as "createdAt"
         FROM contracts ORDER BY created_at DESC
       `);
       return rows.map(r => ({...r, amount: Number(r.amount), paymentDay: Number(r.paymentDay)}));

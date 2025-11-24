@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Plus, Search, Edit2, Trash2, Building, Users, FileText, MapPin, Upload, FileSpreadsheet, Home } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Building, Users, FileText, MapPin, Upload, FileSpreadsheet, Home, AlertTriangle } from 'lucide-react';
 import { Property, Tenant, Contract, Apartment, PropertyFormData, TenantFormData, ContractFormData, ApartmentFormData, Currency } from '../types';
 import { PropertyService } from '../services/propertyService';
 import { TenantService } from '../services/tenantService';
@@ -40,20 +40,26 @@ const RealEstatePage: React.FC = () => {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // --- LOAD DATA ROBUSTLY ---
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [p, t, c, a] = await Promise.all([
-        PropertyService.getAll(),
-        TenantService.getAll(),
-        ContractService.getAll(),
-        ApartmentService.getAll()
-      ]);
+      // We load each service independently so if one fails (e.g. DB schema mismatch), 
+      // the others still show up.
+      const p = await PropertyService.getAll().catch(e => { console.error("Error loading properties:", e); return []; });
+      const t = await TenantService.getAll().catch(e => { console.error("Error loading tenants:", e); return []; });
+      const a = await ApartmentService.getAll().catch(e => { console.error("Error loading apartments:", e); return []; });
+      const c = await ContractService.getAll().catch(e => { console.error("Error loading contracts:", e); return []; });
+
       setProperties(p);
       setTenants(t);
-      setContracts(c);
       setApartments(a);
-    } catch (e) { console.error(e); } finally { setLoading(false); }
+      setContracts(c);
+    } catch (e) { 
+        console.error("Critical error loading data", e); 
+    } finally { 
+        setLoading(false); 
+    }
   };
 
   useEffect(() => { loadAll(); }, []);
@@ -149,7 +155,6 @@ const RealEstatePage: React.FC = () => {
                 });
                 count++;
             } else if (activeTab === 'CONTRACTS') {
-                // Date parsing logic simplified for example
                 await ContractService.create({
                     apartmentCode: row['Codigo_Unidad'],
                     tenantCode: row['Codigo_Inquilino'],
@@ -163,7 +168,7 @@ const RealEstatePage: React.FC = () => {
         }
         await loadAll();
         alert(`Importados: ${count}`);
-      } catch (err) { alert("Error al importar (Revise consola)"); console.error(err); } finally { setIsImporting(false); }
+      } catch (err) { alert("Error al importar. Verifica el formato."); console.error(err); } finally { setIsImporting(false); }
     };
     reader.readAsBinaryString(file);
   };
@@ -191,7 +196,7 @@ const RealEstatePage: React.FC = () => {
       </div>
 
       <div className="border-b border-slate-200">
-        <nav className="flex space-x-6">
+        <nav className="flex space-x-6 overflow-x-auto">
           {[
             { id: 'PROPERTIES', label: 'Edificios / Propiedades', icon: MapPin },
             { id: 'UNITS', label: 'Unidades', icon: Home },
@@ -201,7 +206,7 @@ const RealEstatePage: React.FC = () => {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as Tab)}
-              className={`pb-3 flex items-center gap-2 border-b-2 font-medium text-sm ${activeTab === tab.id ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500'}`}
+              className={`pb-3 flex items-center gap-2 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === tab.id ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500'}`}
             >
               <tab.icon size={16} /> {tab.label}
             </button>
@@ -308,6 +313,18 @@ const RealEstatePage: React.FC = () => {
                             {contracts.map(c => {
                                 const apt = apartments.find(a => a.code === c.apartmentCode);
                                 const ten = tenants.find(t => t.code === c.tenantCode);
+                                
+                                // Legacy Support: Find property directly if no apartment linked
+                                let displayName = apt?.name;
+                                let displayCode = c.apartmentCode;
+                                
+                                // If no apartment found, try to find the property (legacy contract)
+                                if (!apt && (c as any).propertyCode) {
+                                    const legacyProp = properties.find(p => p.code === (c as any).propertyCode);
+                                    displayName = legacyProp?.name || 'Propiedad Antigua';
+                                    displayCode = (c as any).propertyCode;
+                                }
+
                                 return (
                                 <tr key={c.code} className="border-t border-slate-100 hover:bg-slate-50">
                                     <td className="p-4">
@@ -315,7 +332,8 @@ const RealEstatePage: React.FC = () => {
                                         <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1 rounded">ACTIVE</span>
                                     </td>
                                     <td className="p-4">
-                                        <div className="font-medium">{apt?.name || c.apartmentCode}</div>
+                                        <div className="font-medium">{displayName || displayCode || 'Sin Asignar'}</div>
+                                        <div className="text-xs text-slate-400">{displayCode}</div>
                                     </td>
                                     <td className="p-4">{ten?.fullName || c.tenantCode}</td>
                                     <td className="p-4 text-xs text-slate-500">
