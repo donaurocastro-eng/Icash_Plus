@@ -1,13 +1,13 @@
-
-import React, { useEffect, useState } from 'react';
-import { Plus, Search, Edit2, Trash2, Building, Users, FileText, MapPin } from 'lucide-react';
-import { Property, Tenant, Contract, PropertyFormData, TenantFormData, ContractFormData } from '../types';
+import React, { useEffect, useState, useRef } from 'react';
+import { Plus, Search, Edit2, Trash2, Building, Users, FileText, MapPin, Upload, FileSpreadsheet } from 'lucide-react';
+import { Property, Tenant, Contract, PropertyFormData, TenantFormData, ContractFormData, Currency } from '../types';
 import { PropertyService } from '../services/propertyService';
 import { TenantService } from '../services/tenantService';
 import { ContractService } from '../services/contractService';
 import PropertyModal from '../components/PropertyModal';
 import TenantModal from '../components/TenantModal';
 import ContractModal from '../components/ContractModal';
+import * as XLSX from 'xlsx';
 
 type Tab = 'PROPERTIES' | 'TENANTS' | 'CONTRACTS';
 
@@ -30,6 +30,9 @@ const RealEstatePage: React.FC = () => {
   const [isContractModalOpen, setIsContractModalOpen] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Initial Load
   const loadAll = async () => {
@@ -122,6 +125,87 @@ const RealEstatePage: React.FC = () => {
     if(!window.confirm(`¿Eliminar contrato ${code}?`)) return;
     await ContractService.delete(code);
     await loadAll();
+  };
+
+  // --- EXCEL LOGIC (PROPERTIES) ---
+
+  const handleDownloadTemplate = () => {
+    const headers = ['Nombre', 'Clave_Catastral', 'Impuesto_Anual', 'Valor', 'Moneda'];
+    const example = ['Apartamento 3B', '0801-2000-12345', 1500, 2500000, 'HNL'];
+    const ws = XLSX.utils.aoa_to_sheet([headers, example]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Plantilla Propiedades");
+    XLSX.writeFile(wb, "plantilla_propiedades.xlsx");
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      processExcelFile(e.target.files[0]);
+    }
+    e.target.value = '';
+  };
+
+  const processExcelFile = async (file: File) => {
+    setIsImporting(true);
+    const reader = new FileReader();
+    
+    reader.onload = async (e) => {
+      try {
+        const data = e.target?.result;
+        const workbook = XLSX.read(data, { type: 'binary' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet);
+        
+        if (jsonData.length === 0) {
+          alert("El archivo parece estar vacío.");
+          return;
+        }
+
+        let successCount = 0;
+        let errorCount = 0;
+
+        for (const row of jsonData as any[]) {
+          try {
+            const name = row['Nombre'] || row['nombre'] || row['Name'];
+            if (!name) { errorCount++; continue; }
+
+            const cadastralKey = String(row['Clave_Catastral'] || row['clave_catastral'] || row['Cadastral'] || '');
+            const annualTax = parseFloat(row['Impuesto_Anual'] || row['impuesto'] || '0') || 0;
+            const value = parseFloat(row['Valor'] || row['valor'] || '0') || 0;
+            
+            let currRaw = (row['Moneda'] || row['moneda'] || 'HNL').toString().toUpperCase().trim();
+            const currency: Currency = (currRaw === 'USD') ? 'USD' : 'HNL';
+
+            const propData: PropertyFormData = {
+              name: String(name),
+              cadastralKey: cadastralKey,
+              annualTax: annualTax,
+              value: value,
+              currency: currency
+            };
+
+            await PropertyService.create(propData);
+            successCount++;
+
+          } catch (err) {
+            console.error("Error importing row:", row, err);
+            errorCount++;
+          }
+        }
+
+        await loadAll();
+        alert(`Importación completada.\n✅ Exitosos: ${successCount}\n❌ Fallidos: ${errorCount}`);
+
+      } catch (error) {
+        console.error("Error parsing Excel:", error);
+        alert("Error al leer el archivo Excel.");
+      } finally {
+        setIsImporting(false);
+      }
+    };
+
+    reader.readAsBinaryString(file);
   };
 
 
@@ -277,7 +361,7 @@ const RealEstatePage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
             <Building className="text-brand-600" />
@@ -286,21 +370,55 @@ const RealEstatePage: React.FC = () => {
           <p className="text-slate-500">Gestión de Propiedades, Inquilinos y Contratos.</p>
         </div>
         
-        <button 
-          onClick={() => {
-            if(activeTab === 'PROPERTIES') { setEditingProp(null); setIsPropModalOpen(true); }
-            if(activeTab === 'TENANTS') { setEditingTenant(null); setIsTenantModalOpen(true); }
-            if(activeTab === 'CONTRACTS') setIsContractModalOpen(true);
-          }}
-          className="flex items-center justify-center space-x-2 bg-brand-600 text-white px-5 py-2.5 rounded-lg hover:bg-brand-700 transition-colors shadow-lg shadow-brand-500/20"
-        >
-          <Plus size={20} />
-          <span className="font-medium">
-            {activeTab === 'PROPERTIES' && 'Nueva Propiedad'}
-            {activeTab === 'TENANTS' && 'Nuevo Inquilino'}
-            {activeTab === 'CONTRACTS' && 'Nuevo Contrato'}
-          </span>
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+            {/* Excel Actions (Only for Properties Tab) */}
+            {activeTab === 'PROPERTIES' && (
+              <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
+                <input 
+                  type="file" 
+                  ref={fileInputRef} 
+                  onChange={handleFileSelect} 
+                  accept=".xlsx, .xls" 
+                  className="hidden" 
+                />
+                <button 
+                  onClick={handleDownloadTemplate}
+                  className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-brand-600 rounded-md transition-colors text-sm font-medium border-r border-slate-100"
+                  title="Descargar Plantilla Excel"
+                >
+                  <FileSpreadsheet size={16} />
+                  <span className="hidden sm:inline">Plantilla</span>
+                </button>
+                <button 
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isImporting}
+                  className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-emerald-600 rounded-md transition-colors text-sm font-medium disabled:opacity-50"
+                  title="Subir archivo Excel"
+                >
+                  {isImporting ? <div className="animate-spin h-4 w-4 border-2 border-emerald-600 border-t-transparent rounded-full"/> : <Upload size={16} />}
+                  <span className="hidden sm:inline">Importar</span>
+                </button>
+              </div>
+            )}
+
+            {activeTab === 'PROPERTIES' && <div className="w-px h-8 bg-slate-200 mx-1 hidden sm:block"></div>}
+
+            <button 
+            onClick={() => {
+                if(activeTab === 'PROPERTIES') { setEditingProp(null); setIsPropModalOpen(true); }
+                if(activeTab === 'TENANTS') { setEditingTenant(null); setIsTenantModalOpen(true); }
+                if(activeTab === 'CONTRACTS') setIsContractModalOpen(true);
+            }}
+            className="flex items-center justify-center space-x-2 bg-brand-600 text-white px-5 py-2.5 rounded-xl hover:bg-brand-700 transition-all shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 active:scale-95"
+            >
+            <Plus size={20} />
+            <span className="font-medium">
+                {activeTab === 'PROPERTIES' && 'Nueva Propiedad'}
+                {activeTab === 'TENANTS' && 'Nuevo Inquilino'}
+                {activeTab === 'CONTRACTS' && 'Nuevo Contrato'}
+            </span>
+            </button>
+        </div>
       </div>
 
       {/* Tabs */}

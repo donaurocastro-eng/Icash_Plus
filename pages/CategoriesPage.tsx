@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { Plus, Search, Edit2, Trash2, Tag, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
-import { Category, CategoryFormData } from '../types';
+import React, { useEffect, useState, useRef } from 'react';
+import { Plus, Search, Edit2, Trash2, Tag, ArrowDownCircle, ArrowUpCircle, Upload, FileSpreadsheet } from 'lucide-react';
+import { Category, CategoryFormData, CategoryType } from '../types';
 import { CategoryService } from '../services/categoryService';
 import CategoryModal from '../components/CategoryModal';
+import * as XLSX from 'xlsx';
 
 const CategoriesPage: React.FC = () => {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -13,6 +14,9 @@ const CategoriesPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load Data
   const loadCategories = async () => {
@@ -75,6 +79,88 @@ const CategoriesPage: React.FC = () => {
     setIsModalOpen(true);
   };
 
+  // --- EXCEL LOGIC ---
+
+  const handleDownloadTemplate = () => {
+    const headers = ['Nombre', 'Tipo'];
+    const example = ['Comestibles', 'GASTO'];
+    const example2 = ['Salario Mensual', 'INGRESO'];
+    const ws = XLSX.utils.aoa_to_sheet([headers, example, example2]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Plantilla Categorias");
+    XLSX.writeFile(wb, "plantilla_importar_categorias.xlsx");
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      processExcelFile(e.target.files[0]);
+    }
+    e.target.value = '';
+  };
+
+  const processExcelFile = async (file: File) => {
+    setIsImporting(true);
+    const reader = new FileReader();
+    
+    reader.onload = async (e) => {
+      try {
+        const data = e.target?.result;
+        const workbook = XLSX.read(data, { type: 'binary' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet);
+        
+        if (jsonData.length === 0) {
+          alert("El archivo parece estar vacío.");
+          return;
+        }
+
+        let successCount = 0;
+        let errorCount = 0;
+
+        for (const row of jsonData as any[]) {
+          try {
+            const name = row['Nombre'] || row['nombre'] || row['Name'];
+            let typeRaw = (row['Tipo'] || row['tipo'] || 'GASTO').toString().toUpperCase().trim();
+            
+            // Normalize Type
+            let type: CategoryType = 'GASTO';
+            if (typeRaw === 'INGRESO' || typeRaw === 'INC') type = 'INGRESO';
+            else type = 'GASTO';
+
+            if (!name) {
+              errorCount++;
+              continue;
+            }
+
+            const categoryData: CategoryFormData = {
+              name: String(name),
+              type: type
+            };
+
+            await CategoryService.create(categoryData);
+            successCount++;
+
+          } catch (err) {
+            console.error("Error importing row:", row, err);
+            errorCount++;
+          }
+        }
+
+        await loadCategories();
+        alert(`Importación completada.\n✅ Exitosos: ${successCount}\n❌ Fallidos: ${errorCount}`);
+
+      } catch (error) {
+        console.error("Error parsing Excel:", error);
+        alert("Error al leer el archivo Excel.");
+      } finally {
+        setIsImporting(false);
+      }
+    };
+
+    reader.readAsBinaryString(file);
+  };
+
   // Filtering
   const filteredCategories = categories.filter(c => 
     c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -91,18 +177,51 @@ const CategoriesPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Categorías</h1>
           <p className="text-slate-500">Clasifica tus ingresos y gastos.</p>
         </div>
-        <button 
-          onClick={openNewModal}
-          className="flex items-center justify-center space-x-2 bg-brand-600 text-white px-5 py-2.5 rounded-lg hover:bg-brand-700 transition-colors shadow-lg shadow-brand-500/20"
-        >
-          <Plus size={20} />
-          <span className="font-medium">Nueva Categoría</span>
-        </button>
+        
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Excel Actions Group */}
+          <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={handleFileSelect} 
+              accept=".xlsx, .xls" 
+              className="hidden" 
+            />
+            <button 
+              onClick={handleDownloadTemplate}
+              className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-brand-600 rounded-md transition-colors text-sm font-medium border-r border-slate-100"
+              title="Descargar Plantilla Excel"
+            >
+              <FileSpreadsheet size={16} />
+              <span className="hidden sm:inline">Plantilla</span>
+            </button>
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isImporting}
+              className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-emerald-600 rounded-md transition-colors text-sm font-medium disabled:opacity-50"
+              title="Subir archivo Excel"
+            >
+              {isImporting ? <div className="animate-spin h-4 w-4 border-2 border-emerald-600 border-t-transparent rounded-full"/> : <Upload size={16} />}
+              <span className="hidden sm:inline">Importar</span>
+            </button>
+          </div>
+
+          <div className="w-px h-8 bg-slate-200 mx-1 hidden sm:block"></div>
+
+          <button 
+            onClick={openNewModal}
+            className="flex items-center justify-center space-x-2 bg-brand-600 text-white px-5 py-2.5 rounded-xl hover:bg-brand-700 transition-all shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 active:scale-95"
+          >
+            <Plus size={20} />
+            <span className="font-bold">Nueva Categoría</span>
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
