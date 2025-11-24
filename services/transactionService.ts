@@ -23,6 +23,12 @@ const generateNextCode = (existing: Transaction[]): string => {
   return `TR-${nextId.toString().padStart(5, '0')}`;
 };
 
+// Helper to safe convert DB dates to string YYYY-MM-DD
+const toDateString = (val: any): string => {
+  if (val instanceof Date) return val.toISOString().split('T')[0];
+  return String(val);
+};
+
 // Local helper
 const updateLocalAccountBalance = async (accountCode: string, amount: number, type: 'INGRESO' | 'GASTO', isReversal: boolean = false) => {
   const accountsData = localStorage.getItem(ACCOUNTS_KEY);
@@ -51,7 +57,12 @@ export const TransactionService = {
         FROM transactions
         ORDER BY date DESC, created_at DESC
       `);
-      return rows.map(r => ({ ...r, amount: Number(r.amount) }));
+      return rows.map(r => ({ 
+        ...r, 
+        amount: Number(r.amount),
+        // Fix: Ensure date is string
+        date: toDateString(r.date)
+      }));
     } else {
       await delay(300);
       const data = localStorage.getItem(STORAGE_KEY);

@@ -20,12 +20,16 @@ const generateNextCode = (existing: Contract[]): string => {
   return `CTR-${nextId.toString().padStart(3, '0')}`;
 };
 
+// Helper to safe convert DB dates to string YYYY-MM-DD
+const toDateString = (val: any): string => {
+  if (val instanceof Date) return val.toISOString().split('T')[0];
+  return String(val);
+};
+
 export const ContractService = {
   getAll: async (): Promise<Contract[]> => {
     if (db.isConfigured()) {
       // Modified query to be tolerant of schema changes or return legacy data
-      // We check information schema first or just try to select. 
-      // For stability, we assume the migration ran, but we select property_code for backward compat
       const rows = await db.query(`
         SELECT code, 
                apartment_code as "apartmentCode", 
@@ -39,7 +43,14 @@ export const ContractService = {
                created_at as "createdAt"
         FROM contracts ORDER BY created_at DESC
       `);
-      return rows.map(r => ({...r, amount: Number(r.amount), paymentDay: Number(r.paymentDay)}));
+      return rows.map(r => ({
+        ...r, 
+        amount: Number(r.amount), 
+        paymentDay: Number(r.paymentDay),
+        // Fix: Ensure dates are strings, not Date objects, to prevent React rendering errors
+        startDate: toDateString(r.startDate),
+        endDate: toDateString(r.endDate)
+      }));
     } else {
       await delay(300);
       const data = localStorage.getItem(STORAGE_KEY);
