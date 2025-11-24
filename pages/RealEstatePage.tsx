@@ -1,6 +1,5 @@
-
 import React, { useEffect, useState, useRef } from 'react';
-import { Plus, Search, Edit2, Trash2, Building, Users, FileText, MapPin, Upload, FileSpreadsheet } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Building, Users, FileText, MapPin, Upload, FileSpreadsheet, AlertTriangle } from 'lucide-react';
 import { Property, Tenant, Contract, PropertyFormData, TenantFormData, ContractFormData, Currency } from '../types';
 import { PropertyService } from '../services/propertyService';
 import { TenantService } from '../services/tenantService';
@@ -250,8 +249,14 @@ const RealEstatePage: React.FC = () => {
                 successCount++;
             }
 
-          } catch (err) {
+          } catch (err: any) {
             console.error("Error importing row:", row, err);
+            // Detect DB Schema mismatch specifically for Tenants status
+            if (err.message && (err.message.includes('column "status" of relation "tenants" does not exist'))) {
+                alert("⚠️ ERROR DE BASE DE DATOS DETECTADO\n\nTu base de datos está desactualizada. Falta la columna 'Estado' en la tabla de Inquilinos.\n\nSOLUCIÓN:\n1. Ve al menú 'Configuración'.\n2. Presiona el botón 'Inicializar / Reparar Tablas'.\n\nLa importación se detendrá ahora.");
+                setIsImporting(false);
+                return; // Stop the loop entirely
+            }
             errorCount++;
           }
         }
