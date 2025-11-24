@@ -128,9 +128,13 @@ const SettingsPage: React.FC = () => {
       addLog("✅ apartment_code OK.");
       
       addLog("3. Agregando columna next_payment_date...");
-      await db.query(`ALTER TABLE public.contracts ADD COLUMN IF NOT EXISTS next_payment_date date;`);
-      await db.query(`UPDATE contracts SET next_payment_date = start_date WHERE next_payment_date IS NULL;`);
-      addLog("✅ next_payment_date OK.");
+      try {
+        await db.query(`ALTER TABLE public.contracts ADD COLUMN IF NOT EXISTS next_payment_date date;`);
+        await db.query(`UPDATE contracts SET next_payment_date = start_date WHERE next_payment_date IS NULL;`);
+        addLog("✅ next_payment_date OK.");
+      } catch (err: any) {
+        addLog(`⚠️ Error en fechas: ${err.message}`);
+      }
 
       addLog("4. Ajustando propiedad legacy...");
       await db.query(`ALTER TABLE public.contracts ALTER COLUMN property_code DROP NOT NULL;`);
