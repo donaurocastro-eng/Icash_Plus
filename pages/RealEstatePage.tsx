@@ -127,15 +127,30 @@ const RealEstatePage: React.FC = () => {
     await loadAll();
   };
 
-  // --- EXCEL LOGIC (PROPERTIES) ---
+  // --- EXCEL LOGIC ---
 
   const handleDownloadTemplate = () => {
-    const headers = ['Nombre', 'Clave_Catastral', 'Impuesto_Anual', 'Valor', 'Moneda'];
-    const example = ['Apartamento 3B', '0801-2000-12345', 1500, 2500000, 'HNL'];
-    const ws = XLSX.utils.aoa_to_sheet([headers, example]);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Plantilla Propiedades");
-    XLSX.writeFile(wb, "plantilla_propiedades.xlsx");
+    
+    if (activeTab === 'PROPERTIES') {
+        const headers = ['Nombre', 'Clave_Catastral', 'Impuesto_Anual', 'Valor', 'Moneda'];
+        const example = ['Apartamento 3B', '0801-2000-12345', 1500, 2500000, 'HNL'];
+        const ws = XLSX.utils.aoa_to_sheet([headers, example]);
+        XLSX.utils.book_append_sheet(wb, ws, "Propiedades");
+        XLSX.writeFile(wb, "plantilla_propiedades.xlsx");
+    } else if (activeTab === 'TENANTS') {
+        const headers = ['Nombre_Completo', 'Telefono', 'Email'];
+        const example = ['Juan Pérez', '9999-9999', 'juan@email.com'];
+        const ws = XLSX.utils.aoa_to_sheet([headers, example]);
+        XLSX.utils.book_append_sheet(wb, ws, "Inquilinos");
+        XLSX.writeFile(wb, "plantilla_inquilinos.xlsx");
+    } else if (activeTab === 'CONTRACTS') {
+        const headers = ['Codigo_Propiedad', 'Codigo_Inquilino', 'Fecha_Inicio', 'Fecha_Fin', 'Monto', 'Dia_Pago'];
+        const example = ['AP-001', 'INQ-001', '2024-01-01', '2024-12-31', 5500.00, 15];
+        const ws = XLSX.utils.aoa_to_sheet([headers, example]);
+        XLSX.utils.book_append_sheet(wb, ws, "Contratos");
+        XLSX.writeFile(wb, "plantilla_contratos.xlsx");
+    }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -152,7 +167,7 @@ const RealEstatePage: React.FC = () => {
     reader.onload = async (e) => {
       try {
         const data = e.target?.result;
-        const workbook = XLSX.read(data, { type: 'binary' });
+        const workbook = XLSX.read(data, { type: 'binary', cellDates: true });
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
         const jsonData = XLSX.utils.sheet_to_json(worksheet);
@@ -167,26 +182,68 @@ const RealEstatePage: React.FC = () => {
 
         for (const row of jsonData as any[]) {
           try {
-            const name = row['Nombre'] || row['nombre'] || row['Name'];
-            if (!name) { errorCount++; continue; }
+            if (activeTab === 'PROPERTIES') {
+                const name = row['Nombre'] || row['nombre'] || row['Name'];
+                if (!name) { errorCount++; continue; }
 
-            const cadastralKey = String(row['Clave_Catastral'] || row['clave_catastral'] || row['Cadastral'] || '');
-            const annualTax = parseFloat(row['Impuesto_Anual'] || row['impuesto'] || '0') || 0;
-            const value = parseFloat(row['Valor'] || row['valor'] || '0') || 0;
-            
-            let currRaw = (row['Moneda'] || row['moneda'] || 'HNL').toString().toUpperCase().trim();
-            const currency: Currency = (currRaw === 'USD') ? 'USD' : 'HNL';
+                const cadastralKey = String(row['Clave_Catastral'] || row['clave_catastral'] || row['Cadastral'] || '');
+                const annualTax = parseFloat(row['Impuesto_Anual'] || row['impuesto'] || '0') || 0;
+                const value = parseFloat(row['Valor'] || row['valor'] || '0') || 0;
+                
+                let currRaw = (row['Moneda'] || row['moneda'] || 'HNL').toString().toUpperCase().trim();
+                const currency: Currency = (currRaw === 'USD') ? 'USD' : 'HNL';
 
-            const propData: PropertyFormData = {
-              name: String(name),
-              cadastralKey: cadastralKey,
-              annualTax: annualTax,
-              value: value,
-              currency: currency
-            };
+                await PropertyService.create({
+                  name: String(name),
+                  cadastralKey: cadastralKey,
+                  annualTax: annualTax,
+                  value: value,
+                  currency: currency
+                });
+                successCount++;
 
-            await PropertyService.create(propData);
-            successCount++;
+            } else if (activeTab === 'TENANTS') {
+                const fullName = row['Nombre_Completo'] || row['Nombre'] || row['nombre'];
+                if (!fullName) { errorCount++; continue; }
+                
+                const phone = row['Telefono'] || row['telefono'] || '';
+                const email = row['Email'] || row['email'] || '';
+
+                await TenantService.create({
+                    fullName: String(fullName),
+                    phone: String(phone),
+                    email: String(email)
+                });
+                successCount++;
+
+            } else if (activeTab === 'CONTRACTS') {
+                const pCode = row['Codigo_Propiedad'] || row['Propiedad'];
+                const tCode = row['Codigo_Inquilino'] || row['Inquilino'];
+                
+                // Helper to format date
+                const formatDate = (d: any) => {
+                    if (d instanceof Date) return d.toISOString().split('T')[0];
+                    if (typeof d === 'string' && d.match(/^\d{4}-\d{2}-\d{2}$/)) return d;
+                    return String(d).trim();
+                };
+
+                const start = formatDate(row['Fecha_Inicio'] || row['Inicio']);
+                const end = formatDate(row['Fecha_Fin'] || row['Fin']);
+                const amount = parseFloat(row['Monto'] || '0');
+                const paymentDay = parseInt(row['Dia_Pago'] || '1');
+
+                if (!pCode || !tCode || !start || !end || !amount) { errorCount++; continue; }
+
+                await ContractService.create({
+                    propertyCode: String(pCode),
+                    tenantCode: String(tCode),
+                    startDate: start,
+                    endDate: end,
+                    amount: amount,
+                    paymentDay: paymentDay
+                });
+                successCount++;
+            }
 
           } catch (err) {
             console.error("Error importing row:", row, err);
@@ -208,6 +265,10 @@ const RealEstatePage: React.FC = () => {
     reader.readAsBinaryString(file);
   };
 
+  // Helper for currency formatting (2 decimals mandatory)
+  const formatMoney = (amount: number) => {
+    return amount.toLocaleString('es-HN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
 
   // --- Render Functions ---
 
@@ -235,10 +296,10 @@ const RealEstatePage: React.FC = () => {
                 </td>
                 <td className="px-6 py-4 text-slate-600 font-mono text-xs">{p.cadastralKey || 'N/A'}</td>
                 <td className="px-6 py-4 text-right font-medium text-slate-700">
-                   {p.value.toLocaleString()} {p.currency}
+                   {formatMoney(p.value)} {p.currency}
                 </td>
                 <td className="px-6 py-4 text-right text-slate-500">
-                   {p.annualTax.toLocaleString()}
+                   {formatMoney(p.annualTax)}
                 </td>
                 <td className="px-6 py-4 text-right">
                   <button onClick={() => { setEditingProp(p); setIsPropModalOpen(true); }} className="text-slate-400 hover:text-brand-600 mr-2"><Edit2 size={16}/></button>
@@ -342,7 +403,7 @@ const RealEstatePage: React.FC = () => {
                         <div>Hasta: {c.endDate}</div>
                     </td>
                     <td className="px-6 py-4">
-                         <div className="font-bold text-slate-700">{c.amount.toLocaleString()}</div>
+                         <div className="font-bold text-slate-700">{formatMoney(c.amount)}</div>
                          <div className="text-xs text-slate-500">Día {c.paymentDay} de cada mes</div>
                     </td>
                     <td className="px-6 py-4 text-right">
@@ -371,37 +432,35 @@ const RealEstatePage: React.FC = () => {
         </div>
         
         <div className="flex flex-wrap items-center gap-3">
-            {/* Excel Actions (Only for Properties Tab) */}
-            {activeTab === 'PROPERTIES' && (
-              <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
-                <input 
-                  type="file" 
-                  ref={fileInputRef} 
-                  onChange={handleFileSelect} 
-                  accept=".xlsx, .xls" 
-                  className="hidden" 
-                />
-                <button 
-                  onClick={handleDownloadTemplate}
-                  className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-brand-600 rounded-md transition-colors text-sm font-medium border-r border-slate-100"
-                  title="Descargar Plantilla Excel"
-                >
-                  <FileSpreadsheet size={16} />
-                  <span className="hidden sm:inline">Plantilla</span>
-                </button>
-                <button 
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isImporting}
-                  className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-emerald-600 rounded-md transition-colors text-sm font-medium disabled:opacity-50"
-                  title="Subir archivo Excel"
-                >
-                  {isImporting ? <div className="animate-spin h-4 w-4 border-2 border-emerald-600 border-t-transparent rounded-full"/> : <Upload size={16} />}
-                  <span className="hidden sm:inline">Importar</span>
-                </button>
-              </div>
-            )}
+            {/* Excel Actions Group (Available for ALL tabs now) */}
+            <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
+            <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleFileSelect} 
+                accept=".xlsx, .xls" 
+                className="hidden" 
+            />
+            <button 
+                onClick={handleDownloadTemplate}
+                className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-brand-600 rounded-md transition-colors text-sm font-medium border-r border-slate-100"
+                title="Descargar Plantilla Excel"
+            >
+                <FileSpreadsheet size={16} />
+                <span className="hidden sm:inline">Plantilla</span>
+            </button>
+            <button 
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isImporting}
+                className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-emerald-600 rounded-md transition-colors text-sm font-medium disabled:opacity-50"
+                title="Subir archivo Excel"
+            >
+                {isImporting ? <div className="animate-spin h-4 w-4 border-2 border-emerald-600 border-t-transparent rounded-full"/> : <Upload size={16} />}
+                <span className="hidden sm:inline">Importar</span>
+            </button>
+            </div>
 
-            {activeTab === 'PROPERTIES' && <div className="w-px h-8 bg-slate-200 mx-1 hidden sm:block"></div>}
+            <div className="w-px h-8 bg-slate-200 mx-1 hidden sm:block"></div>
 
             <button 
             onClick={() => {
