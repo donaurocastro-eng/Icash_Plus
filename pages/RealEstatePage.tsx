@@ -59,7 +59,6 @@ const RealEstatePage: React.FC = () => {
   useEffect(() => { loadAll(); }, []);
 
   // --- Handlers ---
-  // (Existing Handlers for Property, Tenant...)
   const handleCreateProp = async (d: PropertyFormData) => { setIsSubmitting(true); await PropertyService.create(d); await loadAll(); setIsPropModalOpen(false); setIsSubmitting(false); };
   const handleUpdateProp = async (d: PropertyFormData) => { if(!editingProp) return; setIsSubmitting(true); await PropertyService.update(editingProp.code, d); await loadAll(); setIsPropModalOpen(false); setIsSubmitting(false); };
   const handleDeleteProp = async (c: string) => { if(confirm('¿Borrar?')) { await PropertyService.delete(c); await loadAll(); } };
@@ -68,12 +67,10 @@ const RealEstatePage: React.FC = () => {
   const handleUpdateTenant = async (d: TenantFormData) => { if(!editingTenant) return; setIsSubmitting(true); await TenantService.update(editingTenant.code, d); await loadAll(); setIsTenantModalOpen(false); setIsSubmitting(false); };
   const handleDeleteTenant = async (c: string) => { if(confirm('¿Borrar?')) { await TenantService.delete(c); await loadAll(); } };
 
-  // Apartment Handlers
   const handleCreateApt = async (d: ApartmentFormData) => { setIsSubmitting(true); await ApartmentService.create(d); await loadAll(); setIsAptModalOpen(false); setIsSubmitting(false); };
   const handleUpdateApt = async (d: ApartmentFormData) => { if(!editingApt) return; setIsSubmitting(true); await ApartmentService.update(editingApt.code, d); await loadAll(); setIsAptModalOpen(false); setIsSubmitting(false); };
   const handleDeleteApt = async (c: string) => { if(confirm('¿Borrar Unidad?')) { await ApartmentService.delete(c); await loadAll(); } };
 
-  // Contract Handlers
   const handleCreateContract = async (d: ContractFormData) => { setIsSubmitting(true); await ContractService.create(d); await loadAll(); setIsContractModalOpen(false); setIsSubmitting(false); };
   const handleDeleteContract = async (c: string) => { if(confirm('¿Borrar?')) { await ContractService.delete(c); await loadAll(); } };
 
@@ -106,48 +103,21 @@ const RealEstatePage: React.FC = () => {
         sheetName = "Contratos";
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headers, example]), sheetName);
 
-        // --- HOJA DE AYUDA (CATÁLOGO) ---
-        const helpHeaders = [
-            '--- UNIDADES DISPONIBLES ---', '', '', '',
-            '--- INQUILINOS REGISTRADOS ---', ''
-        ];
-        const helpSubHeaders = [
-            'CODIGO_UNIDAD', 'NOMBRE_UNIDAD', 'EDIFICIO_PERTENECE', '',
-            'CODIGO_INQUILINO', 'NOMBRE_INQUILINO'
-        ];
-
+        const helpHeaders = ['--- UNIDADES DISPONIBLES ---', '', '', '', '--- INQUILINOS REGISTRADOS ---', ''];
+        const helpSubHeaders = ['CODIGO_UNIDAD', 'NOMBRE_UNIDAD', 'EDIFICIO_PERTENECE', '', 'CODIGO_INQUILINO', 'NOMBRE_INQUILINO'];
         const helpData: any[][] = [helpHeaders, helpSubHeaders];
-        
         const maxRows = Math.max(apartments.length, tenants.length);
-        
         for (let i = 0; i < maxRows; i++) {
             const apt = apartments[i];
             const ten = tenants[i];
-            
-            // Find parent property name for the apartment
             const parentProp = apt ? properties.find(p => p.code === apt.propertyCode) : null;
-
             helpData.push([
-                apt ? apt.code : '',
-                apt ? apt.name : '',
-                parentProp ? parentProp.name : (apt ? apt.propertyCode : ''),
-                '', // Spacer
-                ten ? ten.code : '',
-                ten ? ten.fullName : ''
+                apt ? apt.code : '', apt ? apt.name : '', parentProp ? parentProp.name : (apt ? apt.propertyCode : ''), '',
+                ten ? ten.code : '', ten ? ten.fullName : ''
             ]);
         }
-
-        const wsHelp = XLSX.utils.aoa_to_sheet(helpData);
-        
-        // Optional: Set column widths for readability
-        wsHelp['!cols'] = [
-            { wch: 15 }, { wch: 20 }, { wch: 25 }, { wch: 5 }, 
-            { wch: 15 }, { wch: 30 }
-        ];
-
-        XLSX.utils.book_append_sheet(wb, wsHelp, "Ayuda_Codigos");
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(helpData), "Ayuda_Codigos");
     }
-    
     XLSX.writeFile(wb, `plantilla_${sheetName.toLowerCase()}.xlsx`);
   };
 
@@ -159,7 +129,6 @@ const RealEstatePage: React.FC = () => {
         const data = e.target?.result;
         const wb = XLSX.read(data, { type: 'binary' });
         const json = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) as any[];
-        
         let count = 0;
         for (const row of json) {
             if (activeTab === 'UNITS') {
@@ -169,12 +138,32 @@ const RealEstatePage: React.FC = () => {
                     status: row['Estado'] || 'AVAILABLE'
                 });
                 count++;
-            } 
-            // ... other tabs logic (simplified for brevity, assume similar to before)
+            } else if (activeTab === 'TENANTS') {
+                let statusRaw = (row['Estado'] || 'ACTIVO').toString().toUpperCase();
+                const status = (statusRaw === 'INACTIVO') ? 'INACTIVE' : 'ACTIVE';
+                await TenantService.create({
+                    fullName: row['Nombre_Completo'] || row['Nombre'],
+                    phone: row['Telefono'],
+                    email: row['Email'],
+                    status: status
+                });
+                count++;
+            } else if (activeTab === 'CONTRACTS') {
+                // Date parsing logic simplified for example
+                await ContractService.create({
+                    apartmentCode: row['Codigo_Unidad'],
+                    tenantCode: row['Codigo_Inquilino'],
+                    startDate: row['Inicio'],
+                    endDate: row['Fin'],
+                    amount: row['Monto'],
+                    paymentDay: row['Dia_Pago']
+                });
+                count++;
+            }
         }
         await loadAll();
         alert(`Importados: ${count}`);
-      } catch (err) { alert("Error al importar"); } finally { setIsImporting(false); }
+      } catch (err) { alert("Error al importar (Revise consola)"); console.error(err); } finally { setIsImporting(false); }
     };
     reader.readAsBinaryString(file);
   };
@@ -220,55 +209,130 @@ const RealEstatePage: React.FC = () => {
         </nav>
       </div>
 
-      {/* RENDER CONTENT */}
-      {activeTab === 'PROPERTIES' && (
-        <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-            <table className="w-full text-sm text-left">
-                <thead className="bg-slate-50 font-medium"><tr><th className="p-4">Nombre</th><th className="p-4">Valor</th><th className="p-4 text-right">Acciones</th></tr></thead>
-                <tbody>
-                    {properties.map(p => (
-                        <tr key={p.code} className="border-t border-slate-100">
-                            <td className="p-4">
-                                <div className="font-bold">{p.name}</div>
-                                <div className="text-xs text-slate-400">{p.code}</div>
-                            </td>
-                            <td className="p-4">{formatMoney(p.value)} {p.currency}</td>
-                            <td className="p-4 text-right"><button onClick={() => handleDeleteProp(p.code)}><Trash2 size={16} className="text-slate-400 hover:text-red-600"/></button></td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
-      )}
+      {loading ? (
+        <div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600"></div></div>
+      ) : (
+        <>
+            {activeTab === 'PROPERTIES' && (
+                <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-slate-50 font-medium"><tr><th className="p-4">Nombre</th><th className="p-4">Valor</th><th className="p-4 text-right">Acciones</th></tr></thead>
+                        <tbody>
+                            {properties.map(p => (
+                                <tr key={p.code} className="border-t border-slate-100 hover:bg-slate-50">
+                                    <td className="p-4">
+                                        <div className="font-bold">{p.name}</div>
+                                        <div className="text-xs text-slate-400">{p.code}</div>
+                                    </td>
+                                    <td className="p-4">{formatMoney(p.value)} {p.currency}</td>
+                                    <td className="p-4 text-right">
+                                        <button onClick={() => {setEditingProp(p); setIsPropModalOpen(true)}} className="mr-2 text-slate-400 hover:text-brand-600"><Edit2 size={16}/></button>
+                                        <button onClick={() => handleDeleteProp(p.code)} className="text-slate-400 hover:text-red-600"><Trash2 size={16}/></button>
+                                    </td>
+                                </tr>
+                            ))}
+                            {properties.length === 0 && <tr><td colSpan={3} className="p-8 text-center text-slate-400">Sin datos</td></tr>}
+                        </tbody>
+                    </table>
+                </div>
+            )}
 
-      {activeTab === 'UNITS' && (
-        <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-            <table className="w-full text-sm text-left">
-                <thead className="bg-slate-50 font-medium"><tr><th className="p-4">Unidad</th><th className="p-4">Edificio</th><th className="p-4">Estado</th><th className="p-4 text-right">Acciones</th></tr></thead>
-                <tbody>
-                    {apartments.map(a => {
-                        const parent = properties.find(p => p.code === a.propertyCode);
-                        return (
-                        <tr key={a.code} className="border-t border-slate-100">
-                            <td className="p-4">
-                                <div className="font-bold">{a.name}</div>
-                                <div className="text-xs text-slate-400">{a.code}</div>
-                            </td>
-                            <td className="p-4 text-slate-600">{parent?.name || a.propertyCode}</td>
-                            <td className="p-4">
-                                <span className={`px-2 py-1 rounded-full text-xs font-bold ${a.status === 'AVAILABLE' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                                    {a.status}
-                                </span>
-                            </td>
-                            <td className="p-4 text-right">
-                                <button onClick={() => { setEditingApt(a); setIsAptModalOpen(true); }} className="mr-2"><Edit2 size={16} className="text-slate-400"/></button>
-                                <button onClick={() => handleDeleteApt(a.code)}><Trash2 size={16} className="text-slate-400 hover:text-red-600"/></button>
-                            </td>
-                        </tr>
-                    )})}
-                </tbody>
-            </table>
-        </div>
+            {activeTab === 'UNITS' && (
+                <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-slate-50 font-medium"><tr><th className="p-4">Unidad</th><th className="p-4">Edificio</th><th className="p-4">Estado</th><th className="p-4 text-right">Acciones</th></tr></thead>
+                        <tbody>
+                            {apartments.map(a => {
+                                const parent = properties.find(p => p.code === a.propertyCode);
+                                return (
+                                <tr key={a.code} className="border-t border-slate-100 hover:bg-slate-50">
+                                    <td className="p-4">
+                                        <div className="font-bold">{a.name}</div>
+                                        <div className="text-xs text-slate-400">{a.code}</div>
+                                    </td>
+                                    <td className="p-4 text-slate-600">{parent?.name || a.propertyCode}</td>
+                                    <td className="p-4">
+                                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${a.status === 'AVAILABLE' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                            {a.status}
+                                        </span>
+                                    </td>
+                                    <td className="p-4 text-right">
+                                        <button onClick={() => { setEditingApt(a); setIsAptModalOpen(true); }} className="mr-2 text-slate-400 hover:text-brand-600"><Edit2 size={16}/></button>
+                                        <button onClick={() => handleDeleteApt(a.code)} className="text-slate-400 hover:text-red-600"><Trash2 size={16}/></button>
+                                    </td>
+                                </tr>
+                            )})}
+                            {apartments.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400">Sin datos</td></tr>}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
+            {activeTab === 'TENANTS' && (
+                <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-slate-50 font-medium"><tr><th className="p-4">Nombre</th><th className="p-4">Contacto</th><th className="p-4">Estado</th><th className="p-4 text-right">Acciones</th></tr></thead>
+                        <tbody>
+                            {tenants.map(t => (
+                                <tr key={t.code} className="border-t border-slate-100 hover:bg-slate-50">
+                                    <td className="p-4">
+                                        <div className="font-bold">{t.fullName}</div>
+                                        <div className="text-xs text-slate-400">{t.code}</div>
+                                    </td>
+                                    <td className="p-4 text-slate-600">
+                                        <div className="text-xs">{t.phone}</div>
+                                        <div className="text-xs">{t.email}</div>
+                                    </td>
+                                    <td className="p-4">
+                                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${t.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                                            {t.status === 'ACTIVE' ? 'ACTIVO' : 'INACTIVO'}
+                                        </span>
+                                    </td>
+                                    <td className="p-4 text-right">
+                                        <button onClick={() => { setEditingTenant(t); setIsTenantModalOpen(true); }} className="mr-2 text-slate-400 hover:text-brand-600"><Edit2 size={16}/></button>
+                                        <button onClick={() => handleDeleteTenant(t.code)} className="text-slate-400 hover:text-red-600"><Trash2 size={16}/></button>
+                                    </td>
+                                </tr>
+                            ))}
+                            {tenants.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400">Sin datos</td></tr>}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
+            {activeTab === 'CONTRACTS' && (
+                <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-slate-50 font-medium"><tr><th className="p-4">Contrato</th><th className="p-4">Unidad</th><th className="p-4">Inquilino</th><th className="p-4">Vigencia</th><th className="p-4 text-right">Acciones</th></tr></thead>
+                        <tbody>
+                            {contracts.map(c => {
+                                const apt = apartments.find(a => a.code === c.apartmentCode);
+                                const ten = tenants.find(t => t.code === c.tenantCode);
+                                return (
+                                <tr key={c.code} className="border-t border-slate-100 hover:bg-slate-50">
+                                    <td className="p-4">
+                                        <div className="font-bold text-xs">{c.code}</div>
+                                        <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1 rounded">ACTIVE</span>
+                                    </td>
+                                    <td className="p-4">
+                                        <div className="font-medium">{apt?.name || c.apartmentCode}</div>
+                                    </td>
+                                    <td className="p-4">{ten?.fullName || c.tenantCode}</td>
+                                    <td className="p-4 text-xs text-slate-500">
+                                        {c.startDate} - {c.endDate}
+                                        <div className="font-bold text-slate-700 mt-1">{formatMoney(c.amount)} (Día {c.paymentDay})</div>
+                                    </td>
+                                    <td className="p-4 text-right">
+                                        <button onClick={() => handleDeleteContract(c.code)} className="text-slate-400 hover:text-red-600"><Trash2 size={16}/></button>
+                                    </td>
+                                </tr>
+                            )})}
+                            {contracts.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-400">Sin datos</td></tr>}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </>
       )}
 
       {/* Modals */}

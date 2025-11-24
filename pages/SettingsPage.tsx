@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, CheckCircle, XCircle, AlertTriangle, Database, RefreshCw, ShieldAlert, Activity, Terminal, Trash2, Building, Wrench } from 'lucide-react';
+import { Save, CheckCircle, XCircle, AlertTriangle, Database, RefreshCw, ShieldAlert, Activity, Terminal, Trash2, Building, Wrench, FileText } from 'lucide-react';
 import { db } from '../services/db';
 
 const SettingsPage: React.FC = () => {
@@ -109,9 +109,9 @@ const SettingsPage: React.FC = () => {
 
   const handlePatchContracts = async () => {
     setInitLoading(true);
-    setInitLogs(["🔧 INICIANDO REPARACIÓN ESPECÍFICA..."]);
+    setInitLogs(["🔧 INICIANDO REPARACIÓN CONTRATOS..."]);
     try {
-      addLog("1. Creando tabla apartments si no existe...");
+      addLog("1. Verificando tabla apartments...");
       await db.query(`
         CREATE TABLE IF NOT EXISTS public.apartments (
             code text PRIMARY KEY,
@@ -121,17 +121,17 @@ const SettingsPage: React.FC = () => {
             created_at timestamp with time zone DEFAULT now() NOT NULL
         );
       `);
-      addLog("✅ Tabla Apartments verificada.");
+      addLog("✅ Tabla Apartments OK.");
 
       addLog("2. Agregando columna apartment_code a contratos...");
       await db.query(`ALTER TABLE public.contracts ADD COLUMN IF NOT EXISTS apartment_code text;`);
-      addLog("✅ Columna agregada.");
+      addLog("✅ Columna OK.");
       
-      addLog("3. Actualizando restricciones de contratos...");
+      addLog("3. Quitando restricción NOT NULL de property_code...");
       await db.query(`ALTER TABLE public.contracts ALTER COLUMN property_code DROP NOT NULL;`);
-      addLog("✅ Restricción actualizada.");
+      addLog("✅ Restricción eliminada.");
       
-      alert("¡Reparación exitosa! La aplicación se recargará ahora.");
+      alert("¡Reparación exitosa! Intenta crear un contrato ahora.");
       window.location.reload();
     } catch(e: any) {
       addLog(`❌ Error: ${e.message}`);
@@ -267,7 +267,7 @@ const SettingsPage: React.FC = () => {
           </div>
           
           <p className="text-slate-500 text-sm mb-6">
-            Si ves errores de "column does not exist", usa el botón de reparación abajo.
+            Si no puedes crear Contratos, usa el botón de reparación abajo.
           </p>
           
           <div className="space-y-3">
@@ -280,9 +280,9 @@ const SettingsPage: React.FC = () => {
                 {initLoading ? (
                 <RefreshCw size={20} className="animate-spin" />
                 ) : (
-                <Wrench size={20} />
+                <FileText size={20} />
                 )}
-                <span className="text-lg">🔧 REPARAR ERROR: apartment_code</span>
+                <span className="text-lg">🔧 REPARAR TABLA CONTRATOS</span>
             </button>
 
             <div className="pt-4 border-t border-slate-100">
