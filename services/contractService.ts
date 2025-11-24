@@ -1,5 +1,6 @@
 import { Contract, ContractFormData } from '../types';
 import { db } from './db';
+import { ApartmentService } from './apartmentService';
 
 const STORAGE_KEY = 'icash_plus_contracts';
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -22,8 +23,9 @@ const generateNextCode = (existing: Contract[]): string => {
 export const ContractService = {
   getAll: async (): Promise<Contract[]> => {
     if (db.isConfigured()) {
+      // Note: handling legacy schema if column doesn't exist yet is handled by migration in SettingsPage
       const rows = await db.query(`
-        SELECT code, property_code as "propertyCode", tenant_code as "tenantCode", 
+        SELECT code, apartment_code as "apartmentCode", tenant_code as "tenantCode", 
                start_date as "startDate", end_date as "endDate", amount, payment_day as "paymentDay",
                status, created_at as "createdAt"
         FROM contracts ORDER BY created_at DESC
@@ -43,9 +45,14 @@ export const ContractService = {
       const newCode = generateNextCode(existing);
       
       await db.query(`
-        INSERT INTO contracts (code, property_code, tenant_code, start_date, end_date, amount, payment_day, status)
+        INSERT INTO contracts (code, apartment_code, tenant_code, start_date, end_date, amount, payment_day, status)
         VALUES ($1, $2, $3, $4, $5, $6, $7, 'ACTIVE')
-      `, [newCode, data.propertyCode, data.tenantCode, data.startDate, data.endDate, data.amount, data.paymentDay]);
+      `, [newCode, data.apartmentCode, data.tenantCode, data.startDate, data.endDate, data.amount, data.paymentDay]);
+
+      // Optional: Update Apartment Status to RENTED
+      try {
+         await db.query(`UPDATE apartments SET status='RENTED' WHERE code=$1`, [data.apartmentCode]);
+      } catch (e) { console.warn("Could not auto-update apartment status"); }
 
       return { code: newCode, ...data, status: 'ACTIVE', createdAt: new Date().toISOString() };
     } else {
@@ -54,7 +61,7 @@ export const ContractService = {
       const newCode = generateNextCode(existing);
       const newContract: Contract = {
         code: newCode,
-        propertyCode: data.propertyCode,
+        apartmentCode: data.apartmentCode,
         tenantCode: data.tenantCode,
         startDate: data.startDate,
         endDate: data.endDate,

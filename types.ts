@@ -1,17 +1,16 @@
-
 export type AccountType = 'ACTIVO' | 'PASIVO';
 export type CategoryType = 'GASTO' | 'INGRESO';
 export type Currency = 'HNL' | 'USD';
 
 export interface Account {
-  code: string;           // Primary Key (e.g., CTA-001, EFECTIVO-01)
-  name: string;           // Nombre de la Cuenta
-  bankName: string;       // Nombre del Banco
-  accountNumber: string;  // Número de Cuenta
-  type: AccountType;      // ACTIVO o PASIVO
-  initialBalance: number; // Saldo Inicial
-  currency: Currency;     // Moneda (HNL o USD)
-  isSystem: boolean;      // To identify special accounts like EFECTIVO-01
+  code: string;           
+  name: string;           
+  bankName: string;       
+  accountNumber: string;  
+  type: AccountType;      
+  initialBalance: number; 
+  currency: Currency;     
+  isSystem: boolean;      
   createdAt: string;
 }
 
@@ -25,9 +24,9 @@ export interface AccountFormData {
 }
 
 export interface Category {
-  code: string;           // Primary Key (e.g., CAT-EXP-001, CAT-INC-001)
+  code: string;           
   name: string;
-  type: CategoryType;     // GASTO o INGRESO
+  type: CategoryType;     
   createdAt: string;
 }
 
@@ -37,11 +36,11 @@ export interface CategoryFormData {
 }
 
 export interface Transaction {
-  code: string;           // TR-00001
-  date: string;           // ISO String YYYY-MM-DD
+  code: string;           
+  date: string;           
   description: string;
   amount: number;
-  type: CategoryType;     // GASTO | INGRESO
+  type: CategoryType;     
   
   categoryCode: string;
   categoryName: string;
@@ -49,8 +48,8 @@ export interface Transaction {
   accountCode: string;
   accountName: string;
   
-  propertyCode?: string;  // Opcional
-  propertyName?: string;  // Opcional
+  propertyCode?: string;  
+  propertyName?: string;  
   
   createdAt: string;
 }
@@ -69,7 +68,7 @@ export interface TransactionFormData {
 // --- REAL ESTATE TYPES ---
 
 export interface Property {
-  code: string;         // AP-001 or Custom
+  code: string;         // AP-001 (Now represents Building/Complex)
   name: string;
   cadastralKey?: string;
   annualTax: number;
@@ -79,7 +78,7 @@ export interface Property {
 }
 
 export interface PropertyFormData {
-  code?: string; // Optional manual code
+  code?: string; 
   name: string;
   cadastralKey?: string;
   annualTax: number;
@@ -87,12 +86,26 @@ export interface PropertyFormData {
   currency: Currency;
 }
 
+export interface Apartment {
+  code: string;         // UNIT-001
+  propertyCode: string; // Link to Parent Property
+  name: string;         // e.g. "Apt 101"
+  status: 'AVAILABLE' | 'RENTED' | 'MAINTENANCE';
+  createdAt: string;
+}
+
+export interface ApartmentFormData {
+  propertyCode: string;
+  name: string;
+  status: 'AVAILABLE' | 'RENTED' | 'MAINTENANCE';
+}
+
 export interface Tenant {
-  code: string;         // INQ-001
+  code: string;         
   fullName: string;
   phone?: string;
   email?: string;
-  status: 'ACTIVE' | 'INACTIVE'; // Nuevo campo
+  status: 'ACTIVE' | 'INACTIVE'; 
   createdAt: string;
 }
 
@@ -104,19 +117,19 @@ export interface TenantFormData {
 }
 
 export interface Contract {
-  code: string;          // CTR-001
-  propertyCode: string;
+  code: string;          
+  apartmentCode: string; // Changed from propertyCode to apartmentCode
   tenantCode: string;
-  startDate: string;     // YYYY-MM-DD
-  endDate: string;       // YYYY-MM-DD
+  startDate: string;     
+  endDate: string;       
   amount: number;
-  paymentDay: number;    // 1-31
+  paymentDay: number;    
   status: 'ACTIVE' | 'EXPIRED' | 'CANCELLED';
   createdAt: string;
 }
 
 export interface ContractFormData {
-  propertyCode: string;
+  apartmentCode: string;
   tenantCode: string;
   startDate: string;
   endDate: string;
