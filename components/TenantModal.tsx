@@ -77,41 +77,13 @@ const TenantModal: React.FC<TenantModalProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-6 space-y-5">
           {error && (
             <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg flex items-center">
               <AlertCircle size={16} className="mr-2 shrink-0" />
               {error}
             </div>
           )}
-
-          {/* Status Selector */}
-          <div className="grid grid-cols-2 gap-3 mb-2">
-            <button
-                type="button"
-                onClick={() => setFormData({...formData, status: 'ACTIVE'})}
-                className={`flex items-center justify-center space-x-2 p-2 rounded-lg border transition-all ${
-                    formData.status === 'ACTIVE' 
-                    ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-sm' 
-                    : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-                }`}
-            >
-                <CheckCircle size={16} />
-                <span className="text-sm font-bold">Activo</span>
-            </button>
-            <button
-                type="button"
-                onClick={() => setFormData({...formData, status: 'INACTIVE'})}
-                className={`flex items-center justify-center space-x-2 p-2 rounded-lg border transition-all ${
-                    formData.status === 'INACTIVE' 
-                    ? 'bg-slate-100 border-slate-400 text-slate-600 shadow-sm' 
-                    : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-                }`}
-            >
-                <XCircle size={16} />
-                <span className="text-sm font-bold">Inactivo</span>
-            </button>
-          </div>
 
           <div className="space-y-1">
             <label className="block text-sm font-medium text-slate-700">Nombre Completo</label>
@@ -156,7 +128,38 @@ const TenantModal: React.FC<TenantModalProps> = ({
             </div>
           </div>
 
-          <div className="pt-4 flex space-x-3">
+          {/* Status Selector */}
+          <div className="space-y-1 pt-1">
+            <label className="block text-sm font-medium text-slate-700">Estado del Inquilino</label>
+            <div className="grid grid-cols-2 gap-3">
+                <button
+                    type="button"
+                    onClick={() => setFormData({...formData, status: 'ACTIVE'})}
+                    className={`flex items-center justify-center space-x-2 p-2.5 rounded-lg border transition-all ${
+                        formData.status === 'ACTIVE' 
+                        ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-sm ring-1 ring-emerald-500' 
+                        : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                    }`}
+                >
+                    <CheckCircle size={18} />
+                    <span className="text-sm font-bold">Activo</span>
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setFormData({...formData, status: 'INACTIVE'})}
+                    className={`flex items-center justify-center space-x-2 p-2.5 rounded-lg border transition-all ${
+                        formData.status === 'INACTIVE' 
+                        ? 'bg-slate-100 border-slate-400 text-slate-600 shadow-sm ring-1 ring-slate-400' 
+                        : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                    }`}
+                >
+                    <XCircle size={18} />
+                    <span className="text-sm font-bold">Inactivo</span>
+                </button>
+            </div>
+          </div>
+
+          <div className="pt-4 flex space-x-3 border-t border-slate-100">
             <button
               type="button"
               onClick={onClose}
