@@ -86,20 +86,68 @@ const RealEstatePage: React.FC = () => {
         headers = ['Nombre', 'Clave_Catastral', 'Impuesto', 'Valor', 'Moneda'];
         example = ['Edificio Centro', '0801-2000', 5000, 5000000, 'HNL'];
         sheetName = "Propiedades";
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headers, example]), sheetName);
+
     } else if (activeTab === 'UNITS') {
         headers = ['Codigo_Propiedad', 'Nombre_Unidad', 'Estado'];
         example = ['AP-001', 'Apto 101', 'AVAILABLE'];
         sheetName = "Unidades";
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headers, example]), sheetName);
+
     } else if (activeTab === 'TENANTS') {
         headers = ['Nombre_Completo', 'Telefono', 'Email', 'Estado'];
         example = ['Juan Pérez', '9999', 'x@x.com', 'ACTIVO'];
         sheetName = "Inquilinos";
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headers, example]), sheetName);
+
     } else if (activeTab === 'CONTRACTS') {
         headers = ['Codigo_Unidad', 'Codigo_Inquilino', 'Inicio', 'Fin', 'Monto', 'Dia_Pago'];
         example = ['UNIT-001', 'INQ-001', '2024-01-01', '2024-12-31', 5500, 15];
         sheetName = "Contratos";
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headers, example]), sheetName);
+
+        // --- HOJA DE AYUDA (CATÁLOGO) ---
+        const helpHeaders = [
+            '--- UNIDADES DISPONIBLES ---', '', '', '',
+            '--- INQUILINOS REGISTRADOS ---', ''
+        ];
+        const helpSubHeaders = [
+            'CODIGO_UNIDAD', 'NOMBRE_UNIDAD', 'EDIFICIO_PERTENECE', '',
+            'CODIGO_INQUILINO', 'NOMBRE_INQUILINO'
+        ];
+
+        const helpData: any[][] = [helpHeaders, helpSubHeaders];
+        
+        const maxRows = Math.max(apartments.length, tenants.length);
+        
+        for (let i = 0; i < maxRows; i++) {
+            const apt = apartments[i];
+            const ten = tenants[i];
+            
+            // Find parent property name for the apartment
+            const parentProp = apt ? properties.find(p => p.code === apt.propertyCode) : null;
+
+            helpData.push([
+                apt ? apt.code : '',
+                apt ? apt.name : '',
+                parentProp ? parentProp.name : (apt ? apt.propertyCode : ''),
+                '', // Spacer
+                ten ? ten.code : '',
+                ten ? ten.fullName : ''
+            ]);
+        }
+
+        const wsHelp = XLSX.utils.aoa_to_sheet(helpData);
+        
+        // Optional: Set column widths for readability
+        wsHelp['!cols'] = [
+            { wch: 15 }, { wch: 20 }, { wch: 25 }, { wch: 5 }, 
+            { wch: 15 }, { wch: 30 }
+        ];
+
+        XLSX.utils.book_append_sheet(wb, wsHelp, "Ayuda_Codigos");
     }
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headers, example]), sheetName);
+    
     XLSX.writeFile(wb, `plantilla_${sheetName.toLowerCase()}.xlsx`);
   };
 
