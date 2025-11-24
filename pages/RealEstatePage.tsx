@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Plus, Search, Edit2, Trash2, Building, Users, FileText, MapPin, Upload, FileSpreadsheet, Home, AlertTriangle, Filter, CheckCircle, Clock, DollarSign } from 'lucide-react';
-import { Property, Tenant, Contract, Apartment, PropertyFormData, TenantFormData, ContractFormData, ApartmentFormData, PaymentFormData, Currency } from '../types';
+import { Plus, Search, Edit2, Trash2, Building, Users, FileText, MapPin, Upload, FileSpreadsheet, Home, DollarSign } from 'lucide-react';
+import { Property, Tenant, Contract, Apartment, PropertyFormData, TenantFormData, ContractFormData, ApartmentFormData, PaymentFormData } from '../types';
 import { PropertyService } from '../services/propertyService';
 import { TenantService } from '../services/tenantService';
 import { ContractService } from '../services/contractService';
@@ -9,6 +9,7 @@ import PropertyModal from '../components/PropertyModal';
 import TenantModal from '../components/TenantModal';
 import ContractModal from '../components/ContractModal';
 import ApartmentModal from '../components/ApartmentModal';
+// Ensure relative import is used
 import PaymentModal from '../components/PaymentModal';
 import * as XLSX from 'xlsx';
 
@@ -307,7 +308,6 @@ const RealEstatePage: React.FC = () => {
         <div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600"></div></div>
       ) : (
         <>
-            {/* ... (Previous Tabs: Properties, Units, Tenants, Contracts - keeping same code structure) */}
             {activeTab === 'PROPERTIES' && (
                 <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
                     <table className="w-full text-sm text-left">
@@ -328,7 +328,6 @@ const RealEstatePage: React.FC = () => {
                 </div>
             )}
 
-            {/* ... (Units, Tenants, Contracts tables omitted for brevity, assuming user keeps them) ... */}
             {activeTab === 'UNITS' && (
                <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
                <table className="w-full text-sm text-left">
