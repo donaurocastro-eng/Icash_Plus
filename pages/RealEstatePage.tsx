@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Plus, Search, Edit2, Trash2, Building, Users, FileText, MapPin, Upload, FileSpreadsheet, Home, DollarSign } from 'lucide-react';
-import { Property, Tenant, Contract, Apartment, PropertyFormData, TenantFormData, ContractFormData, ApartmentFormData, PaymentFormData } from '../types';
+import { Property, Tenant, Contract, Apartment, PropertyFormData, TenantFormData, ContractFormData, ApartmentFormData, PaymentFormData, Currency } from '../types';
 import { PropertyService } from '../services/propertyService';
 import { TenantService } from '../services/tenantService';
 import { ContractService } from '../services/contractService';
@@ -9,7 +9,6 @@ import PropertyModal from '../components/PropertyModal';
 import TenantModal from '../components/TenantModal';
 import ContractModal from '../components/ContractModal';
 import ApartmentModal from '../components/ApartmentModal';
-// Ensure relative import is used
 import PaymentModal from '../components/PaymentModal';
 import * as XLSX from 'xlsx';
 

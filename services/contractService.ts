@@ -1,6 +1,9 @@
-import { Contract, ContractFormData } from '../types';
+import { Contract, ContractFormData, PaymentFormData } from '../types';
 import { db } from './db';
 import { ApartmentService } from './apartmentService';
+import { TransactionService } from './transactionService';
+import { CategoryService } from './categoryService';
+import { PropertyService } from './propertyService';
 
 const STORAGE_KEY = 'icash_plus_contracts';
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -36,6 +39,7 @@ export const ContractService = {
                tenant_code as "tenantCode", 
                start_date as "startDate", 
                end_date as "endDate", 
+               next_payment_date as "nextPaymentDate",
                amount, 
                payment_day as "paymentDay",
                status, 
@@ -47,7 +51,8 @@ export const ContractService = {
         amount: Number(r.amount), 
         paymentDay: Number(r.paymentDay),
         startDate: toDateString(r.startDate),
-        endDate: toDateString(r.endDate)
+        endDate: toDateString(r.endDate),
+        nextPaymentDate: r.nextPaymentDate ? toDateString(r.nextPaymentDate) : toDateString(r.startDate)
       }));
     } else {
       await delay(300);
@@ -63,15 +68,21 @@ export const ContractService = {
       const newCode = generateNextCode(existing);
       
       await db.query(`
-        INSERT INTO contracts (code, apartment_code, tenant_code, start_date, end_date, amount, payment_day, status)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'ACTIVE')
-      `, [newCode, data.apartmentCode, data.tenantCode, data.startDate, data.endDate, data.amount, data.paymentDay]);
+        INSERT INTO contracts (code, apartment_code, tenant_code, start_date, end_date, next_payment_date, amount, payment_day, status)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ACTIVE')
+      `, [newCode, data.apartmentCode, data.tenantCode, data.startDate, data.endDate, data.startDate, data.amount, data.paymentDay]);
 
       try {
          await db.query(`UPDATE apartments SET status='RENTED' WHERE code=$1`, [data.apartmentCode]);
       } catch (e) { console.warn("Could not auto-update apartment status"); }
 
-      return { code: newCode, ...data, status: 'ACTIVE', createdAt: new Date().toISOString() };
+      return { 
+        code: newCode, 
+        ...data, 
+        nextPaymentDate: data.startDate,
+        status: 'ACTIVE', 
+        createdAt: new Date().toISOString() 
+      };
     } else {
       await delay(300);
       const existing = await ContractService.getAll();
@@ -82,6 +93,7 @@ export const ContractService = {
         tenantCode: data.tenantCode,
         startDate: data.startDate,
         endDate: data.endDate,
+        nextPaymentDate: data.startDate,
         amount: data.amount,
         paymentDay: data.paymentDay,
         status: 'ACTIVE',
@@ -94,6 +106,11 @@ export const ContractService = {
   },
 
   update: async (code: string, data: ContractFormData): Promise<Contract> => {
+    // Preserve existing nextPaymentDate
+    const existingList = await ContractService.getAll();
+    const current = existingList.find(c => c.code === code);
+    const nextPaymentDate = current ? current.nextPaymentDate : data.startDate;
+
     if (db.isConfigured()) {
       await db.query(`
         UPDATE contracts 
@@ -101,15 +118,21 @@ export const ContractService = {
         WHERE code=$7
       `, [data.apartmentCode, data.tenantCode, data.startDate, data.endDate, data.amount, data.paymentDay, code]);
       
-      return { code, ...data, status: 'ACTIVE', createdAt: new Date().toISOString() } as Contract;
+      return { 
+        code, 
+        ...data, 
+        nextPaymentDate,
+        status: 'ACTIVE', 
+        createdAt: new Date().toISOString() 
+      } as Contract;
     } else {
       await delay(200);
-      const existing = await ContractService.getAll();
-      const index = existing.findIndex(c => c.code === code);
+      const index = existingList.findIndex(c => c.code === code);
       if (index === -1) throw new Error("Contract not found");
-      existing[index] = { ...existing[index], ...data };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
-      return existing[index];
+      const updated = { ...existingList[index], ...data };
+      existingList[index] = updated;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(existingList));
+      return existingList[index];
     }
   },
 
@@ -121,6 +144,69 @@ export const ContractService = {
       let existing = await ContractService.getAll();
       existing = existing.filter(c => c.code !== code);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+    }
+  },
+
+  registerPayment: async (data: PaymentFormData): Promise<void> => {
+    // 1. Get Contract & Property Info
+    const contracts = await ContractService.getAll();
+    const contract = contracts.find(c => c.code === data.contractCode);
+    if (!contract) throw new Error("Contrato no encontrado");
+
+    let propertyName = '';
+    let propertyCode = contract.propertyCode;
+
+    // If propertyCode missing (legacy or apartment-based), try resolve via Apartment
+    if (!propertyCode && contract.apartmentCode) {
+        try {
+            const apartments = await ApartmentService.getAll();
+            const apt = apartments.find(a => a.code === contract.apartmentCode);
+            if (apt) propertyCode = apt.propertyCode;
+        } catch(e) { console.error("Error fetching apartment details", e); }
+    }
+
+    if (propertyCode) {
+       try {
+           const properties = await PropertyService.getAll();
+           const p = properties.find(prop => prop.code === propertyCode);
+           if (p) propertyName = p.name;
+       } catch(e) { console.error("Error fetching property for payment", e); }
+    }
+
+    // 2. Find Category for Rent (Income)
+    const categories = await CategoryService.getAll();
+    let cat = categories.find(c => (c.name.toLowerCase().includes('alquiler') || c.name.toLowerCase().includes('renta')) && c.type === 'INGRESO');
+    if (!cat) cat = categories.find(c => c.type === 'INGRESO');
+    if (!cat) throw new Error("No hay categoría de Ingresos disponible.");
+
+    // 3. Create Transaction
+    await TransactionService.create({
+       date: data.date,
+       amount: data.amount,
+       description: data.description,
+       type: 'INGRESO',
+       categoryCode: cat.code,
+       accountCode: data.accountCode,
+       propertyCode: propertyCode,
+       propertyName: propertyName
+    });
+
+    // 4. Update Contract next_payment_date
+    let nextDate = new Date(contract.nextPaymentDate || contract.startDate);
+    if (isNaN(nextDate.getTime())) nextDate = new Date();
+    // Advance 1 month
+    nextDate.setMonth(nextDate.getMonth() + 1);
+    const nextDateStr = nextDate.toISOString().split('T')[0];
+
+    if (db.isConfigured()) {
+       await db.query('UPDATE contracts SET next_payment_date=$1 WHERE code=$2', [nextDateStr, contract.code]);
+    } else {
+       contract.nextPaymentDate = nextDateStr;
+       const idx = contracts.findIndex(c => c.code === contract.code);
+       if (idx !== -1) {
+           contracts[idx] = contract;
+           localStorage.setItem(STORAGE_KEY, JSON.stringify(contracts));
+       }
     }
   }
 };

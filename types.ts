@@ -127,6 +127,7 @@ export interface Contract {
   paymentDay: number;    
   status: 'ACTIVE' | 'EXPIRED' | 'CANCELLED';
   createdAt: string;
+  propertyCode?: string;
 }
 
 export interface ContractFormData {
