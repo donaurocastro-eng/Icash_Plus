@@ -29,7 +29,6 @@ const toDateString = (val: any): string => {
 export const ContractService = {
   getAll: async (): Promise<Contract[]> => {
     if (db.isConfigured()) {
-      // Modified query to be tolerant of schema changes or return legacy data
       const rows = await db.query(`
         SELECT code, 
                apartment_code as "apartmentCode", 
@@ -47,7 +46,6 @@ export const ContractService = {
         ...r, 
         amount: Number(r.amount), 
         paymentDay: Number(r.paymentDay),
-        // Fix: Ensure dates are strings, not Date objects, to prevent React rendering errors
         startDate: toDateString(r.startDate),
         endDate: toDateString(r.endDate)
       }));
@@ -69,7 +67,6 @@ export const ContractService = {
         VALUES ($1, $2, $3, $4, $5, $6, $7, 'ACTIVE')
       `, [newCode, data.apartmentCode, data.tenantCode, data.startDate, data.endDate, data.amount, data.paymentDay]);
 
-      // Optional: Update Apartment Status to RENTED
       try {
          await db.query(`UPDATE apartments SET status='RENTED' WHERE code=$1`, [data.apartmentCode]);
       } catch (e) { console.warn("Could not auto-update apartment status"); }
@@ -93,6 +90,26 @@ export const ContractService = {
       const updatedList = [...existing, newContract];
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
       return newContract;
+    }
+  },
+
+  update: async (code: string, data: ContractFormData): Promise<Contract> => {
+    if (db.isConfigured()) {
+      await db.query(`
+        UPDATE contracts 
+        SET apartment_code=$1, tenant_code=$2, start_date=$3, end_date=$4, amount=$5, payment_day=$6
+        WHERE code=$7
+      `, [data.apartmentCode, data.tenantCode, data.startDate, data.endDate, data.amount, data.paymentDay, code]);
+      
+      return { code, ...data, status: 'ACTIVE', createdAt: new Date().toISOString() } as Contract;
+    } else {
+      await delay(200);
+      const existing = await ContractService.getAll();
+      const index = existing.findIndex(c => c.code === code);
+      if (index === -1) throw new Error("Contract not found");
+      existing[index] = { ...existing[index], ...data };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+      return existing[index];
     }
   },
 

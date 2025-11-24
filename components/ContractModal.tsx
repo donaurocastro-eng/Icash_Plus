@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { X, Save, AlertCircle, FileText, Calendar } from 'lucide-react';
-import { ContractFormData, Property, Tenant, Apartment } from '../types';
+import { ContractFormData, Property, Tenant, Apartment, Contract } from '../types';
 import { PropertyService } from '../services/propertyService';
 import { TenantService } from '../services/tenantService';
 import { ApartmentService } from '../services/apartmentService';
@@ -9,6 +9,7 @@ interface ContractModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (data: ContractFormData) => Promise<void>;
+  editingContract?: Contract | null;
   isSubmitting: boolean;
 }
 
@@ -16,6 +17,7 @@ const ContractModal: React.FC<ContractModalProps> = ({
   isOpen, 
   onClose, 
   onSubmit, 
+  editingContract,
   isSubmitting 
 }) => {
   const [formData, setFormData] = useState<ContractFormData>({
@@ -36,19 +38,37 @@ const ContractModal: React.FC<ContractModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      loadData();
-      setFormData({
-        apartmentCode: '',
-        tenantCode: '',
-        startDate: '',
-        endDate: '',
-        amount: 0,
-        paymentDay: 1
+      loadData().then(() => {
+          if (editingContract) {
+            setFormData({
+              apartmentCode: editingContract.apartmentCode,
+              tenantCode: editingContract.tenantCode,
+              startDate: editingContract.startDate,
+              endDate: editingContract.endDate,
+              amount: editingContract.amount,
+              paymentDay: editingContract.paymentDay
+            });
+            
+            // Try to auto-select the parent property to show the unit in the filtered list
+            // We need to wait for apartments to load or find it in the newly loaded list.
+            // Since state updates are async, we'll rely on the user seeing "All" or we can improve logic later.
+            // For now, we won't filter by property on Edit mode initially to ensure the current unit is visible.
+            setSelectedPropCode(''); 
+          } else {
+            setFormData({
+              apartmentCode: '',
+              tenantCode: '',
+              startDate: '',
+              endDate: '',
+              amount: 0,
+              paymentDay: 1
+            });
+            setSelectedPropCode('');
+          }
       });
-      setSelectedPropCode('');
       setError(null);
     }
-  }, [isOpen]);
+  }, [isOpen, editingContract]);
 
   const loadData = async () => {
     try {
@@ -76,7 +96,7 @@ const ContractModal: React.FC<ContractModalProps> = ({
       await onSubmit(formData);
       onClose();
     } catch (err: any) {
-      setError(err.message || "Error al crear el contrato.");
+      setError(err.message || "Error al guardar el contrato.");
     }
   };
 
@@ -91,8 +111,8 @@ const ContractModal: React.FC<ContractModalProps> = ({
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden transform transition-all scale-100 max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 sticky top-0 z-10">
           <div>
-            <h3 className="text-lg font-bold text-slate-800">Nuevo Contrato</h3>
-            <p className="text-xs text-slate-500 mt-1">Vincula una unidad con un inquilino</p>
+            <h3 className="text-lg font-bold text-slate-800">{editingContract ? 'Editar Contrato' : 'Nuevo Contrato'}</h3>
+            <p className="text-xs text-slate-500 mt-1">{editingContract ? `Código: ${editingContract.code}` : 'Vincula una unidad con un inquilino'}</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={20} /></button>
         </div>
@@ -129,7 +149,7 @@ const ContractModal: React.FC<ContractModalProps> = ({
                     <option value="">Seleccionar...</option>
                     {filteredApartments.map(a => (
                         <option key={a.code} value={a.code}>
-                            {a.name} {a.status !== 'AVAILABLE' ? '(Ocupado)' : ''}
+                            {a.name} {a.status !== 'AVAILABLE' && a.code !== editingContract?.apartmentCode ? '(Ocupado)' : ''}
                         </option>
                     ))}
                 </select>
@@ -177,7 +197,9 @@ const ContractModal: React.FC<ContractModalProps> = ({
 
           <div className="pt-4 flex space-x-3">
             <button type="button" onClick={onClose} className="flex-1 px-4 py-2 bg-white border border-slate-300 rounded-lg">Cancelar</button>
-            <button type="submit" disabled={isSubmitting} className="flex-1 px-4 py-2 bg-brand-600 text-white rounded-lg">Crear</button>
+            <button type="submit" disabled={isSubmitting} className="flex-1 px-4 py-2 bg-brand-600 text-white rounded-lg">
+                {editingContract ? 'Actualizar' : 'Crear'}
+            </button>
           </div>
         </form>
       </div>

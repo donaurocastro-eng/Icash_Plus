@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Plus, Search, Edit2, Trash2, Building, Users, FileText, MapPin, Upload, FileSpreadsheet, Home, AlertTriangle } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Building, Users, FileText, MapPin, Upload, FileSpreadsheet, Home, AlertTriangle, Filter } from 'lucide-react';
 import { Property, Tenant, Contract, Apartment, PropertyFormData, TenantFormData, ContractFormData, ApartmentFormData, Currency } from '../types';
 import { PropertyService } from '../services/propertyService';
 import { TenantService } from '../services/tenantService';
@@ -16,6 +16,7 @@ type Tab = 'PROPERTIES' | 'UNITS' | 'TENANTS' | 'CONTRACTS';
 const RealEstatePage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('PROPERTIES');
   const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
   
   // Data
   const [properties, setProperties] = useState<Property[]>([]);
@@ -34,6 +35,7 @@ const RealEstatePage: React.FC = () => {
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
 
   const [isContractModalOpen, setIsContractModalOpen] = useState(false);
+  const [editingContract, setEditingContract] = useState<Contract | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -44,8 +46,6 @@ const RealEstatePage: React.FC = () => {
   const loadAll = async () => {
     setLoading(true);
     try {
-      // We load each service independently so if one fails (e.g. DB schema mismatch), 
-      // the others still show up.
       const p = await PropertyService.getAll().catch(e => { console.error("Error loading properties:", e); return []; });
       const t = await TenantService.getAll().catch(e => { console.error("Error loading tenants:", e); return []; });
       const a = await ApartmentService.getAll().catch(e => { console.error("Error loading apartments:", e); return []; });
@@ -78,6 +78,7 @@ const RealEstatePage: React.FC = () => {
   const handleDeleteApt = async (c: string) => { if(confirm('¿Borrar Unidad?')) { await ApartmentService.delete(c); await loadAll(); } };
 
   const handleCreateContract = async (d: ContractFormData) => { setIsSubmitting(true); await ContractService.create(d); await loadAll(); setIsContractModalOpen(false); setIsSubmitting(false); };
+  const handleUpdateContract = async (d: ContractFormData) => { if(!editingContract) return; setIsSubmitting(true); await ContractService.update(editingContract.code, d); await loadAll(); setIsContractModalOpen(false); setIsSubmitting(false); };
   const handleDeleteContract = async (c: string) => { if(confirm('¿Borrar?')) { await ContractService.delete(c); await loadAll(); } };
 
   // --- EXCEL ---
@@ -96,15 +97,10 @@ const RealEstatePage: React.FC = () => {
         example = ['AP-001', 'Apto 101', 'AVAILABLE'];
         sheetName = "Unidades";
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headers, example]), sheetName);
-
-        // ADD HELPER SHEET FOR UNITS (Properties List)
-        const helpHeaders = ['--- EDIFICIOS / PROPIEDADES DISPONIBLES ---', ''];
-        const helpSubHeaders = ['CODIGO_PROPIEDAD', 'NOMBRE_PROPIEDAD'];
-        const helpData: any[][] = [helpHeaders, helpSubHeaders];
         
-        properties.forEach(p => {
-            helpData.push([p.code, p.name]);
-        });
+        // Help Sheet
+        const helpData = [['CODIGO_PROPIEDAD', 'NOMBRE_PROPIEDAD']];
+        properties.forEach(p => helpData.push([p.code, p.name]));
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(helpData), "Ayuda_Edificios");
 
     } else if (activeTab === 'TENANTS') {
@@ -119,16 +115,13 @@ const RealEstatePage: React.FC = () => {
         sheetName = "Contratos";
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headers, example]), sheetName);
 
-        const helpHeaders = ['--- UNIDADES DISPONIBLES ---', '', '', '', '--- INQUILINOS REGISTRADOS ---', ''];
-        const helpSubHeaders = ['CODIGO_UNIDAD', 'NOMBRE_UNIDAD', 'EDIFICIO_PERTENECE', '', 'CODIGO_INQUILINO', 'NOMBRE_INQUILINO'];
-        const helpData: any[][] = [helpHeaders, helpSubHeaders];
+        const helpData: any[][] = [['CODIGO_UNIDAD', 'NOMBRE_UNIDAD', '', 'CODIGO_INQUILINO', 'NOMBRE_INQUILINO']];
         const maxRows = Math.max(apartments.length, tenants.length);
         for (let i = 0; i < maxRows; i++) {
             const apt = apartments[i];
             const ten = tenants[i];
-            const parentProp = apt ? properties.find(p => p.code === apt.propertyCode) : null;
             helpData.push([
-                apt ? apt.code : '', apt ? apt.name : '', parentProp ? parentProp.name : (apt ? apt.propertyCode : ''), '',
+                apt ? apt.code : '', apt ? apt.name : '', '',
                 ten ? ten.code : '', ten ? ten.fullName : ''
             ]);
         }
@@ -185,12 +178,37 @@ const RealEstatePage: React.FC = () => {
         }
         await loadAll();
         alert(`Importados: ${count}`);
-      } catch (err) { alert("Error al importar. Verifica el formato."); console.error(err); } finally { setIsImporting(false); }
+      } catch (err) { alert("Error al importar."); console.error(err); } finally { setIsImporting(false); }
     };
     reader.readAsBinaryString(file);
   };
 
   const formatMoney = (n: number) => n.toLocaleString('es-HN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // --- FILTERING LOGIC ---
+  const lowerSearch = searchTerm.toLowerCase();
+
+  const filteredProperties = properties.filter(p => 
+    p.name.toLowerCase().includes(lowerSearch) || p.code.toLowerCase().includes(lowerSearch)
+  );
+
+  const filteredUnits = apartments.filter(a => 
+    a.name.toLowerCase().includes(lowerSearch) || a.code.toLowerCase().includes(lowerSearch)
+  );
+
+  const filteredTenants = tenants.filter(t => 
+    t.fullName.toLowerCase().includes(lowerSearch) || t.phone?.includes(lowerSearch) || t.email?.toLowerCase().includes(lowerSearch)
+  );
+
+  const filteredContracts = contracts.filter(c => {
+    const ten = tenants.find(t => t.code === c.tenantCode);
+    const apt = apartments.find(a => a.code === c.apartmentCode);
+    return (
+        c.code.toLowerCase().includes(lowerSearch) ||
+        ten?.fullName.toLowerCase().includes(lowerSearch) ||
+        apt?.name.toLowerCase().includes(lowerSearch)
+    );
+  });
 
   return (
     <div className="space-y-6">
@@ -198,42 +216,20 @@ const RealEstatePage: React.FC = () => {
         <h1 className="text-2xl font-bold text-slate-800 flex gap-2"><Building className="text-brand-600"/> Bienes Raíces</h1>
         
         <div className="flex flex-wrap items-center gap-3">
-            {/* Excel Actions Group */}
             <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
-            <input 
-                type="file" 
-                ref={fileInputRef} 
-                onChange={handleFileSelect} 
-                accept=".xlsx, .xls" 
-                className="hidden" 
-            />
-            <button 
-                onClick={handleDownloadTemplate}
-                className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-brand-600 rounded-md transition-colors text-sm font-medium border-r border-slate-100"
-                title="Descargar Plantilla Excel"
-            >
-                <FileSpreadsheet size={16} />
-                <span className="hidden sm:inline">Plantilla</span>
-            </button>
-            <button 
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isImporting}
-                className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-emerald-600 rounded-md transition-colors text-sm font-medium disabled:opacity-50"
-                title="Subir archivo Excel"
-            >
+            <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept=".xlsx, .xls" className="hidden" />
+            <button onClick={handleDownloadTemplate} className="px-3 py-2 text-slate-600 hover:bg-slate-50 text-sm font-medium border-r border-slate-100" title="Descargar Plantilla"><FileSpreadsheet size={16}/></button>
+            <button onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-emerald-600 text-sm font-medium disabled:opacity-50" title="Importar">
                 {isImporting ? <div className="animate-spin h-4 w-4 border-2 border-emerald-600 border-t-transparent rounded-full"/> : <Upload size={16} />}
-                <span className="hidden sm:inline">Importar</span>
             </button>
             </div>
-
             <div className="w-px h-8 bg-slate-200 mx-1 hidden sm:block"></div>
-
             <button 
                 onClick={() => {
                     if(activeTab === 'PROPERTIES') { setEditingProp(null); setIsPropModalOpen(true); }
                     if(activeTab === 'UNITS') { setEditingApt(null); setIsAptModalOpen(true); }
                     if(activeTab === 'TENANTS') { setEditingTenant(null); setIsTenantModalOpen(true); }
-                    if(activeTab === 'CONTRACTS') setIsContractModalOpen(true);
+                    if(activeTab === 'CONTRACTS') { setEditingContract(null); setIsContractModalOpen(true); }
                 }} 
                 className="px-4 py-2 bg-brand-600 text-white rounded-md text-sm font-medium hover:bg-brand-700 flex gap-2 items-center shadow-sm"
             >
@@ -242,23 +238,37 @@ const RealEstatePage: React.FC = () => {
         </div>
       </div>
 
-      <div className="border-b border-slate-200">
-        <nav className="flex space-x-6 overflow-x-auto">
-          {[
-            { id: 'PROPERTIES', label: 'Edificios / Propiedades', icon: MapPin },
-            { id: 'UNITS', label: 'Unidades', icon: Home },
-            { id: 'TENANTS', label: 'Inquilinos', icon: Users },
-            { id: 'CONTRACTS', label: 'Contratos', icon: FileText },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as Tab)}
-              className={`pb-3 flex items-center gap-2 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === tab.id ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500'}`}
-            >
-              <tab.icon size={16} /> {tab.label}
-            </button>
-          ))}
-        </nav>
+      {/* Search Bar & Tabs */}
+      <div className="flex flex-col gap-4">
+        <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input 
+                type="text" 
+                placeholder="Buscar por nombre, código, teléfono..." 
+                className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none bg-white shadow-sm"
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+            />
+        </div>
+
+        <div className="border-b border-slate-200">
+            <nav className="flex space-x-6 overflow-x-auto">
+            {[
+                { id: 'PROPERTIES', label: 'Edificios', icon: MapPin },
+                { id: 'UNITS', label: 'Unidades', icon: Home },
+                { id: 'TENANTS', label: 'Inquilinos', icon: Users },
+                { id: 'CONTRACTS', label: 'Contratos', icon: FileText },
+            ].map((tab) => (
+                <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as Tab)}
+                className={`pb-3 flex items-center gap-2 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === tab.id ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500'}`}
+                >
+                <tab.icon size={16} /> {tab.label}
+                </button>
+            ))}
+            </nav>
+        </div>
       </div>
 
       {loading ? (
@@ -270,7 +280,7 @@ const RealEstatePage: React.FC = () => {
                     <table className="w-full text-sm text-left">
                         <thead className="bg-slate-50 font-medium"><tr><th className="p-4">Nombre</th><th className="p-4">Valor</th><th className="p-4 text-right">Acciones</th></tr></thead>
                         <tbody>
-                            {properties.map(p => (
+                            {filteredProperties.map(p => (
                                 <tr key={p.code} className="border-t border-slate-100 hover:bg-slate-50">
                                     <td className="p-4">
                                         <div className="font-bold">{p.name}</div>
@@ -283,7 +293,7 @@ const RealEstatePage: React.FC = () => {
                                     </td>
                                 </tr>
                             ))}
-                            {properties.length === 0 && <tr><td colSpan={3} className="p-8 text-center text-slate-400">Sin datos</td></tr>}
+                            {filteredProperties.length === 0 && <tr><td colSpan={3} className="p-8 text-center text-slate-400">Sin datos</td></tr>}
                         </tbody>
                     </table>
                 </div>
@@ -294,7 +304,7 @@ const RealEstatePage: React.FC = () => {
                     <table className="w-full text-sm text-left">
                         <thead className="bg-slate-50 font-medium"><tr><th className="p-4">Unidad</th><th className="p-4">Edificio</th><th className="p-4">Estado</th><th className="p-4 text-right">Acciones</th></tr></thead>
                         <tbody>
-                            {apartments.map(a => {
+                            {filteredUnits.map(a => {
                                 const parent = properties.find(p => p.code === a.propertyCode);
                                 return (
                                 <tr key={a.code} className="border-t border-slate-100 hover:bg-slate-50">
@@ -314,7 +324,7 @@ const RealEstatePage: React.FC = () => {
                                     </td>
                                 </tr>
                             )})}
-                            {apartments.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400">Sin datos</td></tr>}
+                            {filteredUnits.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400">Sin datos</td></tr>}
                         </tbody>
                     </table>
                 </div>
@@ -325,7 +335,7 @@ const RealEstatePage: React.FC = () => {
                     <table className="w-full text-sm text-left">
                         <thead className="bg-slate-50 font-medium"><tr><th className="p-4">Nombre</th><th className="p-4">Contacto</th><th className="p-4">Estado</th><th className="p-4 text-right">Acciones</th></tr></thead>
                         <tbody>
-                            {tenants.map(t => (
+                            {filteredTenants.map(t => (
                                 <tr key={t.code} className="border-t border-slate-100 hover:bg-slate-50">
                                     <td className="p-4">
                                         <div className="font-bold">{t.fullName}</div>
@@ -346,7 +356,7 @@ const RealEstatePage: React.FC = () => {
                                     </td>
                                 </tr>
                             ))}
-                            {tenants.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400">Sin datos</td></tr>}
+                            {filteredTenants.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400">Sin datos</td></tr>}
                         </tbody>
                     </table>
                 </div>
@@ -357,15 +367,11 @@ const RealEstatePage: React.FC = () => {
                     <table className="w-full text-sm text-left">
                         <thead className="bg-slate-50 font-medium"><tr><th className="p-4">Contrato</th><th className="p-4">Unidad</th><th className="p-4">Inquilino</th><th className="p-4">Vigencia</th><th className="p-4 text-right">Acciones</th></tr></thead>
                         <tbody>
-                            {contracts.map(c => {
+                            {filteredContracts.map(c => {
                                 const apt = apartments.find(a => a.code === c.apartmentCode);
                                 const ten = tenants.find(t => t.code === c.tenantCode);
-                                
-                                // Legacy Support: Find property directly if no apartment linked
                                 let displayName = apt?.name;
                                 let displayCode = c.apartmentCode;
-                                
-                                // If no apartment found, try to find the property (legacy contract)
                                 if (!apt && (c as any).propertyCode) {
                                     const legacyProp = properties.find(p => p.code === (c as any).propertyCode);
                                     displayName = legacyProp?.name || 'Propiedad Antigua';
@@ -380,7 +386,6 @@ const RealEstatePage: React.FC = () => {
                                     </td>
                                     <td className="p-4">
                                         <div className="font-medium">{displayName || displayCode || 'Sin Asignar'}</div>
-                                        <div className="text-xs text-slate-400">{displayCode}</div>
                                     </td>
                                     <td className="p-4">{ten?.fullName || c.tenantCode}</td>
                                     <td className="p-4 text-xs text-slate-500">
@@ -388,11 +393,12 @@ const RealEstatePage: React.FC = () => {
                                         <div className="font-bold text-slate-700 mt-1">{formatMoney(c.amount)} (Día {c.paymentDay})</div>
                                     </td>
                                     <td className="p-4 text-right">
+                                        <button onClick={() => { setEditingContract(c); setIsContractModalOpen(true); }} className="mr-2 text-slate-400 hover:text-brand-600"><Edit2 size={16}/></button>
                                         <button onClick={() => handleDeleteContract(c.code)} className="text-slate-400 hover:text-red-600"><Trash2 size={16}/></button>
                                     </td>
                                 </tr>
                             )})}
-                            {contracts.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-400">Sin datos</td></tr>}
+                            {filteredContracts.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-400">Sin datos</td></tr>}
                         </tbody>
                     </table>
                 </div>
@@ -404,7 +410,7 @@ const RealEstatePage: React.FC = () => {
       <PropertyModal isOpen={isPropModalOpen} onClose={() => setIsPropModalOpen(false)} onSubmit={editingProp ? handleUpdateProp : handleCreateProp} editingProperty={editingProp} isSubmitting={isSubmitting} />
       <ApartmentModal isOpen={isAptModalOpen} onClose={() => setIsAptModalOpen(false)} onSubmit={editingApt ? handleUpdateApt : handleCreateApt} editingApartment={editingApt} isSubmitting={isSubmitting} />
       <TenantModal isOpen={isTenantModalOpen} onClose={() => setIsTenantModalOpen(false)} onSubmit={editingTenant ? handleUpdateTenant : handleCreateTenant} editingTenant={editingTenant} isSubmitting={isSubmitting} />
-      <ContractModal isOpen={isContractModalOpen} onClose={() => setIsContractModalOpen(false)} onSubmit={handleCreateContract} isSubmitting={isSubmitting} />
+      <ContractModal isOpen={isContractModalOpen} onClose={() => setIsContractModalOpen(false)} onSubmit={editingContract ? handleUpdateContract : handleCreateContract} editingContract={editingContract} isSubmitting={isSubmitting} />
     </div>
   );
 };
