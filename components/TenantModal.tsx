@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { X, Save, AlertCircle, User, Phone, Mail } from 'lucide-react';
+import { X, Save, AlertCircle, User, Phone, Mail, CheckCircle, XCircle } from 'lucide-react';
 import { Tenant, TenantFormData } from '../types';
 
 interface TenantModalProps {
@@ -21,7 +21,8 @@ const TenantModal: React.FC<TenantModalProps> = ({
   const [formData, setFormData] = useState<TenantFormData>({
     fullName: '',
     phone: '',
-    email: ''
+    email: '',
+    status: 'ACTIVE'
   });
   const [error, setError] = useState<string | null>(null);
 
@@ -30,10 +31,11 @@ const TenantModal: React.FC<TenantModalProps> = ({
       setFormData({
         fullName: editingTenant.fullName,
         phone: editingTenant.phone || '',
-        email: editingTenant.email || ''
+        email: editingTenant.email || '',
+        status: editingTenant.status || 'ACTIVE'
       });
     } else {
-      setFormData({ fullName: '', phone: '', email: '' });
+      setFormData({ fullName: '', phone: '', email: '', status: 'ACTIVE' });
     }
     setError(null);
   }, [editingTenant, isOpen]);
@@ -82,6 +84,34 @@ const TenantModal: React.FC<TenantModalProps> = ({
               {error}
             </div>
           )}
+
+          {/* Status Selector */}
+          <div className="grid grid-cols-2 gap-3 mb-2">
+            <button
+                type="button"
+                onClick={() => setFormData({...formData, status: 'ACTIVE'})}
+                className={`flex items-center justify-center space-x-2 p-2 rounded-lg border transition-all ${
+                    formData.status === 'ACTIVE' 
+                    ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-sm' 
+                    : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                }`}
+            >
+                <CheckCircle size={16} />
+                <span className="text-sm font-bold">Activo</span>
+            </button>
+            <button
+                type="button"
+                onClick={() => setFormData({...formData, status: 'INACTIVE'})}
+                className={`flex items-center justify-center space-x-2 p-2 rounded-lg border transition-all ${
+                    formData.status === 'INACTIVE' 
+                    ? 'bg-slate-100 border-slate-400 text-slate-600 shadow-sm' 
+                    : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                }`}
+            >
+                <XCircle size={16} />
+                <span className="text-sm font-bold">Inactivo</span>
+            </button>
+          </div>
 
           <div className="space-y-1">
             <label className="block text-sm font-medium text-slate-700">Nombre Completo</label>

@@ -1,3 +1,4 @@
+
 import { Tenant, TenantFormData } from '../types';
 import { db } from './db';
 
@@ -23,10 +24,11 @@ export const TenantService = {
   getAll: async (): Promise<Tenant[]> => {
     if (db.isConfigured()) {
       const rows = await db.query(`
-        SELECT code, full_name as "fullName", phone, email, created_at as "createdAt"
+        SELECT code, full_name as "fullName", phone, email, status, created_at as "createdAt"
         FROM tenants ORDER BY created_at DESC
       `);
-      return rows;
+      // Fallback for status if null (legacy data)
+      return rows.map(r => ({ ...r, status: r.status || 'ACTIVE' }));
     } else {
       await delay(300);
       const data = localStorage.getItem(STORAGE_KEY);
@@ -41,8 +43,8 @@ export const TenantService = {
       const newCode = generateNextCode(existing);
       
       await db.query(`
-        INSERT INTO tenants (code, full_name, phone, email) VALUES ($1, $2, $3, $4)
-      `, [newCode, data.fullName, data.phone, data.email]);
+        INSERT INTO tenants (code, full_name, phone, email, status) VALUES ($1, $2, $3, $4, $5)
+      `, [newCode, data.fullName, data.phone, data.email, data.status]);
 
       return { code: newCode, ...data, createdAt: new Date().toISOString() };
     } else {
@@ -54,6 +56,7 @@ export const TenantService = {
         fullName: data.fullName,
         phone: data.phone,
         email: data.email,
+        status: data.status,
         createdAt: new Date().toISOString()
       };
       const updatedList = [...existing, newTenant];
@@ -64,8 +67,8 @@ export const TenantService = {
 
   update: async (code: string, data: TenantFormData): Promise<Tenant> => {
      if (db.isConfigured()) {
-        await db.query(`UPDATE tenants SET full_name=$1, phone=$2, email=$3 WHERE code=$4`,
-          [data.fullName, data.phone, data.email, code]);
+        await db.query(`UPDATE tenants SET full_name=$1, phone=$2, email=$3, status=$4 WHERE code=$5`,
+          [data.fullName, data.phone, data.email, data.status, code]);
         return { code, ...data, createdAt: new Date().toISOString() };
      } else {
         await delay(200);

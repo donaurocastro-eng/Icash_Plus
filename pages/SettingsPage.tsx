@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Save, CheckCircle, XCircle, AlertTriangle, Database, RefreshCw, ShieldAlert, Activity, Terminal, Trash2 } from 'lucide-react';
 import { db } from '../services/db';
@@ -40,12 +41,16 @@ const SettingsPage: React.FC = () => {
         return;
       }
 
-      // 2. Check if 'accounts' has 'currency' column (Specific Check for current error)
+      // 2. Check for columns (initial_balance, currency, status in tenants)
       const columnCheck = await db.query(
         "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'accounts' AND column_name = 'currency';"
       );
+      
+      const tenantColumnCheck = await db.query(
+        "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'tenants' AND column_name = 'status';"
+      );
 
-      if (!columnCheck || columnCheck.length === 0) {
+      if (!columnCheck || columnCheck.length === 0 || !tenantColumnCheck || tenantColumnCheck.length === 0) {
         setSchemaStatus('incomplete');
       } else {
         setSchemaStatus('ok');
@@ -271,6 +276,10 @@ const SettingsPage: React.FC = () => {
                 created_at timestamp with time zone DEFAULT now() NOT NULL
             );
             `
+        },
+        {
+            name: "Reparar: Estado (Inquilinos)",
+            sql: `ALTER TABLE public.tenants ADD COLUMN IF NOT EXISTS status text DEFAULT 'ACTIVE';`
         },
         {
             name: "Tabla: Contratos",

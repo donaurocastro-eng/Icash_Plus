@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useRef } from 'react';
 import { Plus, Search, Edit2, Trash2, Building, Users, FileText, MapPin, Upload, FileSpreadsheet } from 'lucide-react';
 import { Property, Tenant, Contract, PropertyFormData, TenantFormData, ContractFormData, Currency } from '../types';
@@ -139,8 +140,8 @@ const RealEstatePage: React.FC = () => {
         XLSX.utils.book_append_sheet(wb, ws, "Propiedades");
         XLSX.writeFile(wb, "plantilla_propiedades.xlsx");
     } else if (activeTab === 'TENANTS') {
-        const headers = ['Nombre_Completo', 'Telefono', 'Email'];
-        const example = ['Juan Pérez', '9999-9999', 'juan@email.com'];
+        const headers = ['Nombre_Completo', 'Telefono', 'Email', 'Estado'];
+        const example = ['Juan Pérez', '9999-9999', 'juan@email.com', 'ACTIVO'];
         const ws = XLSX.utils.aoa_to_sheet([headers, example]);
         XLSX.utils.book_append_sheet(wb, ws, "Inquilinos");
         XLSX.writeFile(wb, "plantilla_inquilinos.xlsx");
@@ -208,11 +209,15 @@ const RealEstatePage: React.FC = () => {
                 
                 const phone = row['Telefono'] || row['telefono'] || '';
                 const email = row['Email'] || row['email'] || '';
+                
+                let statusRaw = (row['Estado'] || row['estado'] || 'ACTIVO').toString().toUpperCase();
+                const status = (statusRaw === 'INACTIVO' || statusRaw === 'INACTIVE') ? 'INACTIVE' : 'ACTIVE';
 
                 await TenantService.create({
                     fullName: String(fullName),
                     phone: String(phone),
-                    email: String(email)
+                    email: String(email),
+                    status: status
                 });
                 successCount++;
 
@@ -324,6 +329,7 @@ const RealEstatePage: React.FC = () => {
             <tr>
                 <th className="px-6 py-4">Código / Nombre</th>
                 <th className="px-6 py-4">Contacto</th>
+                <th className="px-6 py-4 text-right">Estado</th>
                 <th className="px-6 py-4 text-right">Acciones</th>
             </tr>
             </thead>
@@ -344,13 +350,22 @@ const RealEstatePage: React.FC = () => {
                     </div>
                 </td>
                 <td className="px-6 py-4 text-right">
+                    <span className={`inline-flex px-2 py-1 rounded-full text-[10px] font-bold ${
+                        t.status === 'INACTIVE' 
+                        ? 'bg-slate-100 text-slate-500 border border-slate-200' 
+                        : 'bg-emerald-50 text-emerald-600 border border-emerald-100'
+                    }`}>
+                        {t.status === 'INACTIVE' ? 'INACTIVO' : 'ACTIVO'}
+                    </span>
+                </td>
+                <td className="px-6 py-4 text-right">
                     <button onClick={() => { setEditingTenant(t); setIsTenantModalOpen(true); }} className="text-slate-400 hover:text-brand-600 mr-2"><Edit2 size={16}/></button>
                     <button onClick={() => handleDeleteTenant(t.code)} className="text-slate-400 hover:text-red-600"><Trash2 size={16}/></button>
                 </td>
                 </tr>
             ))}
              {tenants.length === 0 && (
-                <tr><td colSpan={3} className="text-center py-8 text-slate-400">No hay inquilinos registrados</td></tr>
+                <tr><td colSpan={4} className="text-center py-8 text-slate-400">No hay inquilinos registrados</td></tr>
             )}
             </tbody>
         </table>

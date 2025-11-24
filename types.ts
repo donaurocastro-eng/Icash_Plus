@@ -92,6 +92,7 @@ export interface Tenant {
   fullName: string;
   phone?: string;
   email?: string;
+  status: 'ACTIVE' | 'INACTIVE'; // Nuevo campo
   createdAt: string;
 }
 
@@ -99,6 +100,7 @@ export interface TenantFormData {
   fullName: string;
   phone?: string;
   email?: string;
+  status: 'ACTIVE' | 'INACTIVE';
 }
 
 export interface Contract {
