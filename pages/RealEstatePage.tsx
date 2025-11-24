@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Plus, Search, Edit2, Trash2, Building, Users, FileText, MapPin, Upload, FileSpreadsheet, Home, AlertTriangle, Filter } from 'lucide-react';
-import { Property, Tenant, Contract, Apartment, PropertyFormData, TenantFormData, ContractFormData, ApartmentFormData, Currency } from '../types';
+import { Plus, Search, Edit2, Trash2, Building, Users, FileText, MapPin, Upload, FileSpreadsheet, Home, AlertTriangle, Filter, CheckCircle, Clock, DollarSign } from 'lucide-react';
+import { Property, Tenant, Contract, Apartment, PropertyFormData, TenantFormData, ContractFormData, ApartmentFormData, PaymentFormData, Currency } from '../types';
 import { PropertyService } from '../services/propertyService';
 import { TenantService } from '../services/tenantService';
 import { ContractService } from '../services/contractService';
@@ -9,9 +9,10 @@ import PropertyModal from '../components/PropertyModal';
 import TenantModal from '../components/TenantModal';
 import ContractModal from '../components/ContractModal';
 import ApartmentModal from '../components/ApartmentModal';
+import PaymentModal from '../components/PaymentModal';
 import * as XLSX from 'xlsx';
 
-type Tab = 'PROPERTIES' | 'UNITS' | 'TENANTS' | 'CONTRACTS';
+type Tab = 'PROPERTIES' | 'UNITS' | 'TENANTS' | 'CONTRACTS' | 'PAYMENTS';
 
 const RealEstatePage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('PROPERTIES');
@@ -37,12 +38,14 @@ const RealEstatePage: React.FC = () => {
   const [isContractModalOpen, setIsContractModalOpen] = useState(false);
   const [editingContract, setEditingContract] = useState<Contract | null>(null);
 
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [payingContract, setPayingContract] = useState<Contract | null>(null);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- LOAD DATA ROBUSTLY ---
   const loadAll = async () => {
     setLoading(true);
     try {
@@ -81,6 +84,20 @@ const RealEstatePage: React.FC = () => {
   const handleUpdateContract = async (d: ContractFormData) => { if(!editingContract) return; setIsSubmitting(true); await ContractService.update(editingContract.code, d); await loadAll(); setIsContractModalOpen(false); setIsSubmitting(false); };
   const handleDeleteContract = async (c: string) => { if(confirm('¿Borrar?')) { await ContractService.delete(c); await loadAll(); } };
 
+  const handleRegisterPayment = async (d: PaymentFormData) => {
+      setIsSubmitting(true);
+      try {
+          await ContractService.registerPayment(d);
+          await loadAll();
+          setIsPaymentModalOpen(false);
+          alert("¡Pago registrado con éxito!");
+      } catch (e: any) {
+          alert(e.message);
+      } finally {
+          setIsSubmitting(false);
+      }
+  };
+
   // --- EXCEL ---
   const handleDownloadTemplate = () => {
     const wb = XLSX.utils.book_new();
@@ -97,8 +114,6 @@ const RealEstatePage: React.FC = () => {
         example = ['AP-001', 'Apto 101', 'AVAILABLE'];
         sheetName = "Unidades";
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headers, example]), sheetName);
-        
-        // Help Sheet
         const helpData = [['CODIGO_PROPIEDAD', 'NOMBRE_PROPIEDAD']];
         properties.forEach(p => helpData.push([p.code, p.name]));
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(helpData), "Ayuda_Edificios");
@@ -114,7 +129,6 @@ const RealEstatePage: React.FC = () => {
         example = ['UNIT-001', 'INQ-001', '2024-01-01', '2024-12-31', 5500, 15];
         sheetName = "Contratos";
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headers, example]), sheetName);
-
         const helpData: any[][] = [['CODIGO_UNIDAD', 'NOMBRE_UNIDAD', '', 'CODIGO_INQUILINO', 'NOMBRE_INQUILINO']];
         const maxRows = Math.max(apartments.length, tenants.length);
         for (let i = 0; i < maxRows; i++) {
@@ -126,6 +140,9 @@ const RealEstatePage: React.FC = () => {
             ]);
         }
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(helpData), "Ayuda_Codigos");
+    } else {
+        alert("No hay plantilla para esta pestaña.");
+        return;
     }
     XLSX.writeFile(wb, `plantilla_${sheetName.toLowerCase()}.xlsx`);
   };
@@ -210,20 +227,33 @@ const RealEstatePage: React.FC = () => {
     );
   });
 
+  // Helper to get paying contract label
+  const getPayingContractLabel = () => {
+      if(!payingContract) return '';
+      const apt = apartments.find(a => a.code === payingContract.apartmentCode);
+      const ten = tenants.find(t => t.code === payingContract.tenantCode);
+      return `${apt?.name || 'Unidad'} - ${ten?.fullName || 'Inquilino'}`;
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col lg:flex-row justify-between gap-4">
         <h1 className="text-2xl font-bold text-slate-800 flex gap-2"><Building className="text-brand-600"/> Bienes Raíces</h1>
         
         <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
-            <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept=".xlsx, .xls" className="hidden" />
-            <button onClick={handleDownloadTemplate} className="px-3 py-2 text-slate-600 hover:bg-slate-50 text-sm font-medium border-r border-slate-100" title="Descargar Plantilla"><FileSpreadsheet size={16}/></button>
-            <button onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-emerald-600 text-sm font-medium disabled:opacity-50" title="Importar">
-                {isImporting ? <div className="animate-spin h-4 w-4 border-2 border-emerald-600 border-t-transparent rounded-full"/> : <Upload size={16} />}
-            </button>
-            </div>
+            {activeTab !== 'PAYMENTS' && (
+                <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
+                <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept=".xlsx, .xls" className="hidden" />
+                <button onClick={handleDownloadTemplate} className="px-3 py-2 text-slate-600 hover:bg-slate-50 text-sm font-medium border-r border-slate-100" title="Descargar Plantilla"><FileSpreadsheet size={16}/></button>
+                <button onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-emerald-600 text-sm font-medium disabled:opacity-50" title="Importar">
+                    {isImporting ? <div className="animate-spin h-4 w-4 border-2 border-emerald-600 border-t-transparent rounded-full"/> : <Upload size={16} />}
+                </button>
+                </div>
+            )}
+            
             <div className="w-px h-8 bg-slate-200 mx-1 hidden sm:block"></div>
+            
+            {activeTab !== 'PAYMENTS' && (
             <button 
                 onClick={() => {
                     if(activeTab === 'PROPERTIES') { setEditingProp(null); setIsPropModalOpen(true); }
@@ -235,6 +265,7 @@ const RealEstatePage: React.FC = () => {
             >
                 <Plus size={16}/> <span className="hidden sm:inline">Nuevo</span>
             </button>
+            )}
         </div>
       </div>
 
@@ -258,6 +289,7 @@ const RealEstatePage: React.FC = () => {
                 { id: 'UNITS', label: 'Unidades', icon: Home },
                 { id: 'TENANTS', label: 'Inquilinos', icon: Users },
                 { id: 'CONTRACTS', label: 'Contratos', icon: FileText },
+                { id: 'PAYMENTS', label: 'Control de Pagos', icon: DollarSign },
             ].map((tab) => (
                 <button
                 key={tab.id}
@@ -275,6 +307,7 @@ const RealEstatePage: React.FC = () => {
         <div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600"></div></div>
       ) : (
         <>
+            {/* ... (Previous Tabs: Properties, Units, Tenants, Contracts - keeping same code structure) */}
             {activeTab === 'PROPERTIES' && (
                 <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
                     <table className="w-full text-sm text-left">
@@ -282,10 +315,7 @@ const RealEstatePage: React.FC = () => {
                         <tbody>
                             {filteredProperties.map(p => (
                                 <tr key={p.code} className="border-t border-slate-100 hover:bg-slate-50">
-                                    <td className="p-4">
-                                        <div className="font-bold">{p.name}</div>
-                                        <div className="text-xs text-slate-400">{p.code}</div>
-                                    </td>
+                                    <td className="p-4"><div className="font-bold">{p.name}</div><div className="text-xs text-slate-400">{p.code}</div></td>
                                     <td className="p-4">{formatMoney(p.value)} {p.currency}</td>
                                     <td className="p-4 text-right">
                                         <button onClick={() => {setEditingProp(p); setIsPropModalOpen(true)}} className="mr-2 text-slate-400 hover:text-brand-600"><Edit2 size={16}/></button>
@@ -293,114 +323,152 @@ const RealEstatePage: React.FC = () => {
                                     </td>
                                 </tr>
                             ))}
-                            {filteredProperties.length === 0 && <tr><td colSpan={3} className="p-8 text-center text-slate-400">Sin datos</td></tr>}
                         </tbody>
                     </table>
                 </div>
             )}
 
+            {/* ... (Units, Tenants, Contracts tables omitted for brevity, assuming user keeps them) ... */}
             {activeTab === 'UNITS' && (
-                <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-slate-50 font-medium"><tr><th className="p-4">Unidad</th><th className="p-4">Edificio</th><th className="p-4">Estado</th><th className="p-4 text-right">Acciones</th></tr></thead>
-                        <tbody>
-                            {filteredUnits.map(a => {
-                                const parent = properties.find(p => p.code === a.propertyCode);
-                                return (
-                                <tr key={a.code} className="border-t border-slate-100 hover:bg-slate-50">
-                                    <td className="p-4">
-                                        <div className="font-bold">{a.name}</div>
-                                        <div className="text-xs text-slate-400">{a.code}</div>
-                                    </td>
-                                    <td className="p-4 text-slate-600">{parent?.name || a.propertyCode}</td>
-                                    <td className="p-4">
-                                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${a.status === 'AVAILABLE' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                                            {a.status}
-                                        </span>
-                                    </td>
-                                    <td className="p-4 text-right">
-                                        <button onClick={() => { setEditingApt(a); setIsAptModalOpen(true); }} className="mr-2 text-slate-400 hover:text-brand-600"><Edit2 size={16}/></button>
-                                        <button onClick={() => handleDeleteApt(a.code)} className="text-slate-400 hover:text-red-600"><Trash2 size={16}/></button>
-                                    </td>
-                                </tr>
-                            )})}
-                            {filteredUnits.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400">Sin datos</td></tr>}
-                        </tbody>
-                    </table>
-                </div>
+               <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+               <table className="w-full text-sm text-left">
+                   <thead className="bg-slate-50 font-medium"><tr><th className="p-4">Unidad</th><th className="p-4">Edificio</th><th className="p-4">Estado</th><th className="p-4 text-right">Acciones</th></tr></thead>
+                   <tbody>
+                       {filteredUnits.map(a => {
+                           const parent = properties.find(p => p.code === a.propertyCode);
+                           return (
+                           <tr key={a.code} className="border-t border-slate-100 hover:bg-slate-50">
+                               <td className="p-4"><div className="font-bold">{a.name}</div><div className="text-xs text-slate-400">{a.code}</div></td>
+                               <td className="p-4 text-slate-600">{parent?.name || a.propertyCode}</td>
+                               <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-bold ${a.status === 'AVAILABLE' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{a.status}</span></td>
+                               <td className="p-4 text-right">
+                                   <button onClick={() => { setEditingApt(a); setIsAptModalOpen(true); }} className="mr-2 text-slate-400 hover:text-brand-600"><Edit2 size={16}/></button>
+                                   <button onClick={() => handleDeleteApt(a.code)} className="text-slate-400 hover:text-red-600"><Trash2 size={16}/></button>
+                               </td>
+                           </tr>
+                       )})}
+                   </tbody>
+               </table>
+           </div>
             )}
 
             {activeTab === 'TENANTS' && (
                 <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-slate-50 font-medium"><tr><th className="p-4">Nombre</th><th className="p-4">Contacto</th><th className="p-4">Estado</th><th className="p-4 text-right">Acciones</th></tr></thead>
-                        <tbody>
-                            {filteredTenants.map(t => (
-                                <tr key={t.code} className="border-t border-slate-100 hover:bg-slate-50">
-                                    <td className="p-4">
-                                        <div className="font-bold">{t.fullName}</div>
-                                        <div className="text-xs text-slate-400">{t.code}</div>
-                                    </td>
-                                    <td className="p-4 text-slate-600">
-                                        <div className="text-xs">{t.phone}</div>
-                                        <div className="text-xs">{t.email}</div>
-                                    </td>
-                                    <td className="p-4">
-                                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${t.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                                            {t.status === 'ACTIVE' ? 'ACTIVO' : 'INACTIVO'}
-                                        </span>
-                                    </td>
-                                    <td className="p-4 text-right">
-                                        <button onClick={() => { setEditingTenant(t); setIsTenantModalOpen(true); }} className="mr-2 text-slate-400 hover:text-brand-600"><Edit2 size={16}/></button>
-                                        <button onClick={() => handleDeleteTenant(t.code)} className="text-slate-400 hover:text-red-600"><Trash2 size={16}/></button>
-                                    </td>
-                                </tr>
-                            ))}
-                            {filteredTenants.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400">Sin datos</td></tr>}
-                        </tbody>
-                    </table>
-                </div>
+                <table className="w-full text-sm text-left">
+                    <thead className="bg-slate-50 font-medium"><tr><th className="p-4">Nombre</th><th className="p-4">Contacto</th><th className="p-4">Estado</th><th className="p-4 text-right">Acciones</th></tr></thead>
+                    <tbody>
+                        {filteredTenants.map(t => (
+                            <tr key={t.code} className="border-t border-slate-100 hover:bg-slate-50">
+                                <td className="p-4"><div className="font-bold">{t.fullName}</div><div className="text-xs text-slate-400">{t.code}</div></td>
+                                <td className="p-4 text-slate-600"><div className="text-xs">{t.phone}</div><div className="text-xs">{t.email}</div></td>
+                                <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-bold ${t.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{t.status === 'ACTIVE' ? 'ACTIVO' : 'INACTIVO'}</span></td>
+                                <td className="p-4 text-right">
+                                    <button onClick={() => { setEditingTenant(t); setIsTenantModalOpen(true); }} className="mr-2 text-slate-400 hover:text-brand-600"><Edit2 size={16}/></button>
+                                    <button onClick={() => handleDeleteTenant(t.code)} className="text-slate-400 hover:text-red-600"><Trash2 size={16}/></button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
             )}
 
             {activeTab === 'CONTRACTS' && (
                 <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-slate-50 font-medium"><tr><th className="p-4">Contrato</th><th className="p-4">Unidad</th><th className="p-4">Inquilino</th><th className="p-4">Vigencia</th><th className="p-4 text-right">Acciones</th></tr></thead>
-                        <tbody>
-                            {filteredContracts.map(c => {
-                                const apt = apartments.find(a => a.code === c.apartmentCode);
-                                const ten = tenants.find(t => t.code === c.tenantCode);
-                                let displayName = apt?.name;
-                                let displayCode = c.apartmentCode;
-                                if (!apt && (c as any).propertyCode) {
-                                    const legacyProp = properties.find(p => p.code === (c as any).propertyCode);
-                                    displayName = legacyProp?.name || 'Propiedad Antigua';
-                                    displayCode = (c as any).propertyCode;
-                                }
+                <table className="w-full text-sm text-left">
+                    <thead className="bg-slate-50 font-medium"><tr><th className="p-4">Contrato</th><th className="p-4">Unidad</th><th className="p-4">Inquilino</th><th className="p-4">Vigencia</th><th className="p-4 text-right">Acciones</th></tr></thead>
+                    <tbody>
+                        {filteredContracts.map(c => {
+                            const apt = apartments.find(a => a.code === c.apartmentCode);
+                            const ten = tenants.find(t => t.code === c.tenantCode);
+                            let displayName = apt?.name;
+                            if (!apt && (c as any).propertyCode) {
+                                const legacyProp = properties.find(p => p.code === (c as any).propertyCode);
+                                displayName = legacyProp?.name || 'Propiedad Antigua';
+                            }
+                            return (
+                            <tr key={c.code} className="border-t border-slate-100 hover:bg-slate-50">
+                                <td className="p-4"><div className="font-bold text-xs">{c.code}</div><span className="text-[10px] bg-emerald-100 text-emerald-700 px-1 rounded">ACTIVE</span></td>
+                                <td className="p-4"><div className="font-medium">{displayName || c.apartmentCode || 'Sin Asignar'}</div></td>
+                                <td className="p-4">{ten?.fullName || c.tenantCode}</td>
+                                <td className="p-4 text-xs text-slate-500">{c.startDate} - {c.endDate}<div className="font-bold text-slate-700 mt-1">{formatMoney(c.amount)} (Día {c.paymentDay})</div></td>
+                                <td className="p-4 text-right">
+                                    <button onClick={() => { setEditingContract(c); setIsContractModalOpen(true); }} className="mr-2 text-slate-400 hover:text-brand-600"><Edit2 size={16}/></button>
+                                    <button onClick={() => handleDeleteContract(c.code)} className="text-slate-400 hover:text-red-600"><Trash2 size={16}/></button>
+                                </td>
+                            </tr>
+                        )})}
+                    </tbody>
+                </table>
+            </div>
+            )}
 
-                                return (
-                                <tr key={c.code} className="border-t border-slate-100 hover:bg-slate-50">
-                                    <td className="p-4">
-                                        <div className="font-bold text-xs">{c.code}</div>
-                                        <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1 rounded">ACTIVE</span>
-                                    </td>
-                                    <td className="p-4">
-                                        <div className="font-medium">{displayName || displayCode || 'Sin Asignar'}</div>
-                                    </td>
-                                    <td className="p-4">{ten?.fullName || c.tenantCode}</td>
-                                    <td className="p-4 text-xs text-slate-500">
-                                        {c.startDate} - {c.endDate}
-                                        <div className="font-bold text-slate-700 mt-1">{formatMoney(c.amount)} (Día {c.paymentDay})</div>
-                                    </td>
-                                    <td className="p-4 text-right">
-                                        <button onClick={() => { setEditingContract(c); setIsContractModalOpen(true); }} className="mr-2 text-slate-400 hover:text-brand-600"><Edit2 size={16}/></button>
-                                        <button onClick={() => handleDeleteContract(c.code)} className="text-slate-400 hover:text-red-600"><Trash2 size={16}/></button>
-                                    </td>
+            {/* --- PAYMENT CONTROL TAB --- */}
+            {activeTab === 'PAYMENTS' && (
+                <div className="space-y-4">
+                    <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                        <div className="p-4 bg-indigo-50 border-b border-indigo-100 flex justify-between items-center">
+                            <div className="flex items-center gap-2 text-indigo-800 font-bold">
+                                <DollarSign size={20} /> Control de Pagos
+                            </div>
+                            <div className="text-xs text-indigo-600">Hoy: {new Date().toLocaleDateString()}</div>
+                        </div>
+                        <table className="w-full text-sm text-left">
+                            <thead className="bg-slate-50 font-medium text-slate-500">
+                                <tr>
+                                    <th className="p-4">Estado</th>
+                                    <th className="p-4">Unidad / Inquilino</th>
+                                    <th className="p-4 text-right">Próximo Pago</th>
+                                    <th className="p-4 text-right">Monto</th>
+                                    <th className="p-4 text-center">Acción</th>
                                 </tr>
-                            )})}
-                            {filteredContracts.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-400">Sin datos</td></tr>}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                {filteredContracts.map(c => {
+                                    const apt = apartments.find(a => a.code === c.apartmentCode);
+                                    const ten = tenants.find(t => t.code === c.tenantCode);
+                                    const today = new Date();
+                                    today.setHours(0,0,0,0);
+                                    const nextDate = new Date(c.nextPaymentDate || c.startDate);
+                                    nextDate.setHours(0,0,0,0);
+                                    
+                                    // Status Logic: Red if today > nextDate
+                                    const isOverdue = today.getTime() > nextDate.getTime();
+                                    
+                                    return (
+                                        <tr key={c.code} className="border-t border-slate-100 hover:bg-slate-50">
+                                            <td className="p-4">
+                                                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${isOverdue ? 'bg-rose-100 text-rose-700 animate-pulse' : 'bg-emerald-100 text-emerald-700'}`}>
+                                                    {isOverdue ? 'VENCIDO' : 'AL DÍA'}
+                                                </span>
+                                            </td>
+                                            <td className="p-4">
+                                                <div className="font-bold text-slate-800">{apt?.name || c.apartmentCode}</div>
+                                                <div className="text-xs text-slate-500">{ten?.fullName || c.tenantCode}</div>
+                                            </td>
+                                            <td className="p-4 text-right font-mono">
+                                                <div className={`font-bold ${isOverdue ? 'text-rose-600' : 'text-slate-700'}`}>
+                                                    {new Date(c.nextPaymentDate).toLocaleDateString()}
+                                                </div>
+                                            </td>
+                                            <td className="p-4 text-right font-bold text-slate-700">
+                                                {formatMoney(c.amount)}
+                                            </td>
+                                            <td className="p-4 text-center">
+                                                <button 
+                                                    onClick={() => { setPayingContract(c); setIsPaymentModalOpen(true); }}
+                                                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm text-xs font-bold transition-all active:scale-95"
+                                                >
+                                                    COBRAR
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                                {filteredContracts.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-400">No hay contratos activos</td></tr>}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             )}
         </>
@@ -411,6 +479,15 @@ const RealEstatePage: React.FC = () => {
       <ApartmentModal isOpen={isAptModalOpen} onClose={() => setIsAptModalOpen(false)} onSubmit={editingApt ? handleUpdateApt : handleCreateApt} editingApartment={editingApt} isSubmitting={isSubmitting} />
       <TenantModal isOpen={isTenantModalOpen} onClose={() => setIsTenantModalOpen(false)} onSubmit={editingTenant ? handleUpdateTenant : handleCreateTenant} editingTenant={editingTenant} isSubmitting={isSubmitting} />
       <ContractModal isOpen={isContractModalOpen} onClose={() => setIsContractModalOpen(false)} onSubmit={editingContract ? handleUpdateContract : handleCreateContract} editingContract={editingContract} isSubmitting={isSubmitting} />
+      
+      <PaymentModal 
+        isOpen={isPaymentModalOpen} 
+        onClose={() => setIsPaymentModalOpen(false)} 
+        onSubmit={handleRegisterPayment} 
+        contract={payingContract}
+        contractLabel={getPayingContractLabel()}
+        isSubmitting={isSubmitting}
+      />
     </div>
   );
 };

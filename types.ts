@@ -118,10 +118,11 @@ export interface TenantFormData {
 
 export interface Contract {
   code: string;          
-  apartmentCode: string; // Changed from propertyCode to apartmentCode
+  apartmentCode: string; 
   tenantCode: string;
   startDate: string;     
-  endDate: string;       
+  endDate: string;
+  nextPaymentDate: string; // NEW: Tracks the next due date
   amount: number;
   paymentDay: number;    
   status: 'ACTIVE' | 'EXPIRED' | 'CANCELLED';
@@ -135,6 +136,14 @@ export interface ContractFormData {
   endDate: string;
   amount: number;
   paymentDay: number;
+}
+
+export interface PaymentFormData {
+  contractCode: string;
+  date: string;
+  amount: number;
+  accountCode: string; // Destination account (Bank/Cash)
+  description: string;
 }
 
 export enum AppRoute {
