@@ -97,6 +97,16 @@ const RealEstatePage: React.FC = () => {
         sheetName = "Unidades";
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headers, example]), sheetName);
 
+        // ADD HELPER SHEET FOR UNITS (Properties List)
+        const helpHeaders = ['--- EDIFICIOS / PROPIEDADES DISPONIBLES ---', ''];
+        const helpSubHeaders = ['CODIGO_PROPIEDAD', 'NOMBRE_PROPIEDAD'];
+        const helpData: any[][] = [helpHeaders, helpSubHeaders];
+        
+        properties.forEach(p => {
+            helpData.push([p.code, p.name]);
+        });
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(helpData), "Ayuda_Edificios");
+
     } else if (activeTab === 'TENANTS') {
         headers = ['Nombre_Completo', 'Telefono', 'Email', 'Estado'];
         example = ['Juan Pérez', '9999', 'x@x.com', 'ACTIVO'];
