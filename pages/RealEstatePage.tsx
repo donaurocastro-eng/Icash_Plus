@@ -127,6 +127,13 @@ const RealEstatePage: React.FC = () => {
     XLSX.writeFile(wb, `plantilla_${sheetName.toLowerCase()}.xlsx`);
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      processExcelFile(e.target.files[0]);
+    }
+    e.target.value = '';
+  };
+
   const processExcelFile = async (file: File) => {
     setIsImporting(true);
     const reader = new FileReader();
@@ -179,9 +186,38 @@ const RealEstatePage: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col lg:flex-row justify-between gap-4">
         <h1 className="text-2xl font-bold text-slate-800 flex gap-2"><Building className="text-brand-600"/> Bienes Raíces</h1>
-        <div className="flex gap-2 bg-white p-1 rounded-lg border border-slate-200">
-            <button onClick={handleDownloadTemplate} className="px-3 py-2 text-slate-600 hover:bg-slate-50 text-sm"><FileSpreadsheet size={16}/></button>
-            <div className="w-px bg-slate-200"></div>
+        
+        <div className="flex flex-wrap items-center gap-3">
+            {/* Excel Actions Group */}
+            <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
+            <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleFileSelect} 
+                accept=".xlsx, .xls" 
+                className="hidden" 
+            />
+            <button 
+                onClick={handleDownloadTemplate}
+                className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-brand-600 rounded-md transition-colors text-sm font-medium border-r border-slate-100"
+                title="Descargar Plantilla Excel"
+            >
+                <FileSpreadsheet size={16} />
+                <span className="hidden sm:inline">Plantilla</span>
+            </button>
+            <button 
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isImporting}
+                className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-emerald-600 rounded-md transition-colors text-sm font-medium disabled:opacity-50"
+                title="Subir archivo Excel"
+            >
+                {isImporting ? <div className="animate-spin h-4 w-4 border-2 border-emerald-600 border-t-transparent rounded-full"/> : <Upload size={16} />}
+                <span className="hidden sm:inline">Importar</span>
+            </button>
+            </div>
+
+            <div className="w-px h-8 bg-slate-200 mx-1 hidden sm:block"></div>
+
             <button 
                 onClick={() => {
                     if(activeTab === 'PROPERTIES') { setEditingProp(null); setIsPropModalOpen(true); }
@@ -189,8 +225,9 @@ const RealEstatePage: React.FC = () => {
                     if(activeTab === 'TENANTS') { setEditingTenant(null); setIsTenantModalOpen(true); }
                     if(activeTab === 'CONTRACTS') setIsContractModalOpen(true);
                 }} 
-                className="px-4 py-2 bg-brand-600 text-white rounded-md text-sm font-medium hover:bg-brand-700 flex gap-2 items-center">
-                <Plus size={16}/> Nuevo
+                className="px-4 py-2 bg-brand-600 text-white rounded-md text-sm font-medium hover:bg-brand-700 flex gap-2 items-center shadow-sm"
+            >
+                <Plus size={16}/> <span className="hidden sm:inline">Nuevo</span>
             </button>
         </div>
       </div>
