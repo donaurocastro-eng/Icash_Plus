@@ -10,7 +10,6 @@ import TenantModal from '../components/TenantModal';
 import ContractModal from '../components/ContractModal';
 import ApartmentModal from '../components/ApartmentModal';
 import PaymentModal from '../components/PaymentModal';
-// Correct relative import
 import PaymentHistoryModal from '../components/PaymentHistoryModal'; 
 import * as XLSX from 'xlsx';
 
@@ -44,6 +43,7 @@ const RealEstatePage: React.FC = () => {
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [viewingContract, setViewingContract] = useState<Contract | null>(null);
+  const [payingContract, setPayingContract] = useState<Contract | null>(null);
   const [paymentDescription, setPaymentDescription] = useState('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -92,6 +92,7 @@ const RealEstatePage: React.FC = () => {
   const handleInitiatePayment = (dateToPay: Date) => {
       const monthName = dateToPay.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
       setPaymentDescription(`Alquiler ${monthName.charAt(0).toUpperCase() + monthName.slice(1)}`);
+      setPayingContract(viewingContract); // Set the contract being paid
       setIsHistoryModalOpen(false);
       setIsPaymentModalOpen(true); 
   };
@@ -221,9 +222,11 @@ const RealEstatePage: React.FC = () => {
   });
 
   const getPayingContractLabel = () => {
-      if(!viewingContract) return '';
-      const apt = apartments.find(a => a.code === viewingContract.apartmentCode);
-      const ten = tenants.find(t => t.code === viewingContract.tenantCode);
+      if(!viewingContract && !payingContract) return '';
+      const c = viewingContract || payingContract;
+      if(!c) return '';
+      const apt = apartments.find(a => a.code === c.apartmentCode);
+      const ten = tenants.find(t => t.code === c.tenantCode);
       return `${apt?.name || 'Unidad'} - ${ten?.fullName || 'Inquilino'}`;
   };
 
@@ -231,6 +234,7 @@ const RealEstatePage: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col lg:flex-row justify-between gap-4">
         <h1 className="text-2xl font-bold text-slate-800 flex gap-2"><Building className="text-brand-600"/> Bienes Raíces</h1>
+        
         <div className="flex flex-wrap items-center gap-3">
             {activeTab !== 'PAYMENTS' && (
                 <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
@@ -435,6 +439,7 @@ const RealEstatePage: React.FC = () => {
         </>
       )}
 
+      {/* Modals */}
       <PropertyModal isOpen={isPropModalOpen} onClose={() => setIsPropModalOpen(false)} onSubmit={editingProp ? handleUpdateProp : handleCreateProp} editingProperty={editingProp} isSubmitting={isSubmitting} />
       <ApartmentModal isOpen={isAptModalOpen} onClose={() => setIsAptModalOpen(false)} onSubmit={editingApt ? handleUpdateApt : handleCreateApt} editingApartment={editingApt} isSubmitting={isSubmitting} />
       <TenantModal isOpen={isTenantModalOpen} onClose={() => setIsTenantModalOpen(false)} onSubmit={editingTenant ? handleUpdateTenant : handleCreateTenant} editingTenant={editingTenant} isSubmitting={isSubmitting} />
@@ -452,7 +457,7 @@ const RealEstatePage: React.FC = () => {
         isOpen={isPaymentModalOpen} 
         onClose={() => setIsPaymentModalOpen(false)} 
         onSubmit={handleRegisterPayment} 
-        contract={viewingContract}
+        contract={payingContract}
         contractLabel={getPayingContractLabel()}
         initialDescription={paymentDescription}
         isSubmitting={isSubmitting}
