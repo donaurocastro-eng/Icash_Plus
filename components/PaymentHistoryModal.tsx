@@ -90,8 +90,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                 {months.map(monthIndex => {
                     const status = getMonthStatus(monthIndex);
                     const monthName = new Date(year, monthIndex, 1).toLocaleDateString('es-ES', { month: 'long' });
-                    const paymentDay = contract.paymentDay || 1;
-                    const dueDate = new Date(year, monthIndex, paymentDay);
+                    const dueDate = new Date(year, monthIndex, contract.paymentDay);
                     const formattedDate = dueDate.toLocaleDateString();
 
                     let cardClass = "border-slate-200 bg-white opacity-60";
@@ -134,6 +133,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                                 <span className="capitalize font-bold text-lg text-slate-700">{monthName}</span>
                                 {icon}
                             </div>
+                            
                             <div className="mt-2">
                                 {status !== 'NA' && <div className="text-xs text-slate-500 font-medium">Vence: {formattedDate}</div>}
                                 <div className={`font-extrabold text-sm mt-1 ${labelColor}`}>{label}</div>
@@ -147,12 +147,5 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
     </div>
   );
 };
-
-const DollarSignIcon = ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-6 h-6 ${className}`}>
-        <line x1="12" x2="12" y1="1" y2="23"></line>
-        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-    </svg>
-);
 
 export default PaymentHistoryModal;
