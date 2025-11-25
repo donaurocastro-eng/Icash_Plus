@@ -1,159 +1,136 @@
-import React, { useState } from 'react';
-import { X, ChevronLeft, ChevronRight, CheckCircle, AlertCircle, Clock, Calendar } from 'lucide-react';
-import { Contract } from '../types';
+import React, { useState, useEffect } from 'react';
+import { X, Save, AlertCircle, DollarSign, Calendar, CreditCard } from 'lucide-react';
+import { Contract, PaymentFormData, Account } from '../types';
+import { AccountService } from '../services/accountService';
 
-interface PaymentHistoryModalProps {
+interface PaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSubmit: (data: PaymentFormData) => Promise<void>;
   contract: Contract | null;
   contractLabel: string;
-  onRegisterPayment: (monthDate: Date) => void;
+  initialDescription: string;
+  isSubmitting: boolean;
 }
 
-const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
+const PaymentModal: React.FC<PaymentModalProps> = ({
   isOpen,
   onClose,
+  onSubmit,
   contract,
   contractLabel,
-  onRegisterPayment
+  initialDescription,
+  isSubmitting
 }) => {
-  const [year, setYear] = useState(new Date().getFullYear());
+  const [formData, setFormData] = useState<PaymentFormData>({
+    contractCode: '',
+    date: new Date().toISOString().split('T')[0],
+    amount: 0,
+    accountCode: '',
+    description: ''
+  });
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen && contract) {
+      loadAccounts();
+      setFormData({
+        contractCode: contract.code,
+        date: new Date().toISOString().split('T')[0],
+        amount: contract.amount,
+        accountCode: '',
+        description: initialDescription
+      });
+      setError(null);
+    }
+  }, [isOpen, contract, initialDescription]);
+
+  const loadAccounts = async () => {
+    try {
+      const data = await AccountService.getAll();
+      setAccounts(data);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.amount || !formData.accountCode || !formData.description) {
+      setError("Monto, Cuenta y Descripción son obligatorios.");
+      return;
+    }
+    await onSubmit(formData);
+  };
 
   if (!isOpen || !contract) return null;
 
-  const parseDate = (d: string | Date) => {
-      if (!d) return new Date();
-      const dateObj = new Date(d);
-      return new Date(dateObj.valueOf() + dateObj.getTimezoneOffset() * 60000);
-  };
-
-  const startDate = parseDate(contract.startDate);
-  const nextPaymentDate = parseDate(contract.nextPaymentDate || contract.startDate);
-  
-  const today = new Date(); 
-  const months = Array.from({ length: 12 }, (_, i) => i);
-
-  const getMonthStatus = (monthIndex: number) => {
-    const dueDate = new Date(year, monthIndex, contract.paymentDay);
-    
-    const currentMonthVal = year * 100 + monthIndex;
-    const startMonthVal = startDate.getFullYear() * 100 + startDate.getMonth();
-    const nextPayMonthVal = nextPaymentDate.getFullYear() * 100 + nextPaymentDate.getMonth();
-    const todayMonthVal = today.getFullYear() * 100 + today.getMonth();
-
-    if (currentMonthVal < startMonthVal) return 'NA'; 
-    if (currentMonthVal < nextPayMonthVal) return 'PAID';
-    
-    if (currentMonthVal === nextPayMonthVal) {
-        const isLate = today.getTime() > dueDate.getTime() && (today.getDate() > contract.paymentDay || todayMonthVal > currentMonthVal);
-        return isLate ? 'OVERDUE_NOW' : 'DUE_NOW';
-    }
-
-    if (currentMonthVal < todayMonthVal) return 'OVERDUE_FUTURE'; 
-    return 'FUTURE';
-  };
-
   return (
-    <div className="fixed inset-0 z-[65] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm transition-opacity" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh] transform transition-all scale-100">
-        
-        {/* Header */}
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all">
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-            <div>
-                <h3 className="text-xl font-bold text-slate-800">Historial de Pagos</h3>
-                <p className="text-sm text-slate-500">{contractLabel}</p>
+          <div>
+            <h3 className="text-lg font-bold text-slate-800">Registrar Pago</h3>
+            <p className="text-xs text-slate-500">{contractLabel}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+           {error && (
+            <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg flex items-center"><AlertCircle size={16} className="mr-2 shrink-0" />{error}</div>
+          )}
+
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-slate-700">Fecha de Pago</label>
+            <div className="relative">
+              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input type="date" className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500"
+                value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} />
             </div>
-            <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X size={20}/></button>
-        </div>
+          </div>
 
-        {/* Toolbar Year */}
-        <div className="flex items-center justify-center py-4 gap-6 border-b border-slate-100 bg-white">
-            <button onClick={() => setYear(year - 1)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><ChevronLeft/></button>
-            <span className="text-2xl font-bold text-slate-800 w-24 text-center">{year}</span>
-            <button onClick={() => setYear(year + 1)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><ChevronRight/></button>
-        </div>
-
-        {/* Grid */}
-        <div className="p-6 overflow-y-auto bg-slate-50/50 flex-1">
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {months.map(monthIndex => {
-                    const status = getMonthStatus(monthIndex);
-                    const monthName = new Date(year, monthIndex, 1).toLocaleDateString('es-ES', { month: 'long' });
-                    const dueDate = new Date(year, monthIndex, contract.paymentDay);
-                    const formattedDate = dueDate.toLocaleDateString();
-
-                    let cardClass = "border-slate-200 bg-white opacity-60";
-                    let icon = <Clock size={20} />;
-                    let label = "Futuro";
-                    let labelColor = "text-slate-400";
-                    let action = null;
-
-                    if (status === 'PAID') {
-                        cardClass = "border-emerald-200 bg-emerald-50";
-                        icon = <CheckCircle size={24} className="text-emerald-500"/>;
-                        label = "PAGADO";
-                        labelColor = "text-emerald-600";
-                    } else if (status === 'DUE_NOW') {
-                        cardClass = "border-blue-300 bg-white ring-2 ring-blue-400 shadow-lg transform scale-105 z-10";
-                        icon = <DollarSignIcon className="text-blue-600"/>;
-                        label = "PAGAR AHORA";
-                        labelColor = "text-blue-600";
-                        action = () => onRegisterPayment(dueDate);
-                    } else if (status === 'OVERDUE_NOW' || status === 'OVERDUE_FUTURE') {
-                        cardClass = "border-rose-200 bg-rose-50 shadow-sm";
-                        icon = <AlertCircle size={24} className="text-rose-500"/>;
-                        label = "VENCIDO";
-                        labelColor = "text-rose-600";
-                        if (status === 'OVERDUE_NOW') action = () => onRegisterPayment(dueDate);
-                    } else if (status === 'NA') {
-                        cardClass = "border-slate-100 bg-slate-50 opacity-40";
-                        label = "-";
-                        labelColor = "text-slate-300";
-                    }
-
-                    return (
-                        <div key={monthIndex} className={`relative rounded-xl border p-4 flex flex-col justify-between h-32 transition-all duration-200 ${cardClass}`}>
-                            <div className="flex justify-between items-start">
-                                <span className="capitalize font-bold text-lg text-slate-700">{monthName}</span>
-                                {icon}
-                            </div>
-                            
-                            <div className="mt-2">
-                                {status !== 'NA' && <div className="text-xs text-slate-500">Vence: {formattedDate}</div>}
-                                <div className={`font-extrabold text-sm mt-1 ${labelColor}`}>{label}</div>
-                            </div>
-
-                            {action && (
-                                <button 
-                                    onClick={action}
-                                    className="absolute inset-0 w-full h-full cursor-pointer focus:outline-none"
-                                    title="Click para pagar"
-                                />
-                            )}
-                        </div>
-                    );
-                })}
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-slate-700">Monto a Pagar</label>
+            <div className="relative">
+               <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+               <input type="number" step="0.01" className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 font-mono text-lg"
+                 value={formData.amount} onChange={e => setFormData({...formData, amount: parseFloat(e.target.value)})} />
             </div>
-        </div>
+          </div>
 
-        {/* Legend */}
-        <div className="p-4 bg-white border-t border-slate-200 flex flex-wrap gap-4 text-xs text-slate-500 justify-center font-medium">
-            <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-emerald-500 rounded-full"></div> Pagado</div>
-            <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-blue-500 rounded-full ring-1 ring-blue-300"></div> A Pagar (Click)</div>
-            <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-rose-500 rounded-full"></div> Vencido</div>
-            <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-slate-300 rounded-full"></div> Futuro</div>
-        </div>
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-slate-700">Cuenta de Destino</label>
+             <div className="relative">
+               <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+               <select className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+                 value={formData.accountCode} onChange={e => setFormData({...formData, accountCode: e.target.value})}>
+                 <option value="">Seleccionar Cuenta...</option>
+                 {accounts.map(acc => (
+                   <option key={acc.code} value={acc.code}>{acc.name} ({acc.currency})</option>
+                 ))}
+               </select>
+             </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-slate-700">Descripción</label>
+            <textarea className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 h-20 resize-none"
+              value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} />
+          </div>
+
+          <div className="pt-4 flex space-x-3">
+            <button type="button" onClick={onClose} className="flex-1 px-4 py-2 bg-white border border-slate-300 rounded-lg text-slate-700">Cancelar</button>
+            <button type="submit" disabled={isSubmitting} className="flex-1 px-4 py-2 bg-brand-600 text-white rounded-lg shadow-md flex justify-center items-center">
+               {isSubmitting ? <span className="animate-spin h-5 w-5 border-2 border-white/30 border-t-white rounded-full" /> : <><Save size={18} className="mr-2"/> Registrar</>}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
 };
 
-const DollarSignIcon = ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-6 h-6 ${className}`}>
-        <line x1="12" x2="12" y1="1" y2="23"></line>
-        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-    </svg>
-);
-
-export default PaymentHistoryModal;
+export default PaymentModal;
