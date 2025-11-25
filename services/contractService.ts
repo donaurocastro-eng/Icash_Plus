@@ -25,6 +25,7 @@ const generateNextCode = (existing: Contract[]): string => {
 
 // Helper to safe convert DB dates to string YYYY-MM-DD
 const toDateString = (val: any): string => {
+  if (!val) return new Date().toISOString().split('T')[0];
   if (val instanceof Date) return val.toISOString().split('T')[0];
   return String(val);
 };
@@ -106,7 +107,6 @@ export const ContractService = {
   },
 
   update: async (code: string, data: ContractFormData): Promise<Contract> => {
-    // Preserve existing nextPaymentDate
     const existingList = await ContractService.getAll();
     const current = existingList.find(c => c.code === code);
     const nextPaymentDate = current ? current.nextPaymentDate : data.startDate;

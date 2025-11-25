@@ -10,7 +10,7 @@ import TenantModal from '../components/TenantModal';
 import ContractModal from '../components/ContractModal';
 import ApartmentModal from '../components/ApartmentModal';
 import PaymentModal from '../components/PaymentModal';
-import PaymentHistoryModal from '../components/PaymentHistoryModal'; // Correct Import
+import PaymentHistoryModal from '../components/PaymentHistoryModal'; // Correct relative import
 import * as XLSX from 'xlsx';
 
 type Tab = 'PROPERTIES' | 'UNITS' | 'TENANTS' | 'CONTRACTS' | 'PAYMENTS';
@@ -54,17 +54,17 @@ const RealEstatePage: React.FC = () => {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const p = await PropertyService.getAll().catch(e => { console.error("Error properties", e); return []; });
-      const t = await TenantService.getAll().catch(e => { console.error("Error tenants", e); return []; });
-      const a = await ApartmentService.getAll().catch(e => { console.error("Error apartments", e); return []; });
-      const c = await ContractService.getAll().catch(e => { console.error("Error contracts", e); return []; });
+      const p = await PropertyService.getAll().catch(e => { console.error("Error loading properties:", e); return []; });
+      const t = await TenantService.getAll().catch(e => { console.error("Error loading tenants:", e); return []; });
+      const a = await ApartmentService.getAll().catch(e => { console.error("Error loading apartments:", e); return []; });
+      const c = await ContractService.getAll().catch(e => { console.error("Error loading contracts:", e); return []; });
 
       setProperties(p);
       setTenants(t);
       setApartments(a);
       setContracts(c);
     } catch (e) { 
-        console.error("Critical error", e); 
+        console.error("Critical error loading data", e); 
     } finally { 
         setLoading(false); 
     }
@@ -72,7 +72,7 @@ const RealEstatePage: React.FC = () => {
 
   useEffect(() => { loadAll(); }, []);
 
-  // Handlers...
+  // --- Handlers ---
   const handleCreateProp = async (d: PropertyFormData) => { setIsSubmitting(true); await PropertyService.create(d); await loadAll(); setIsPropModalOpen(false); setIsSubmitting(false); };
   const handleUpdateProp = async (d: PropertyFormData) => { if(!editingProp) return; setIsSubmitting(true); await PropertyService.update(editingProp.code, d); await loadAll(); setIsPropModalOpen(false); setIsSubmitting(false); };
   const handleDeleteProp = async (c: string) => { if(confirm('¿Borrar?')) { await PropertyService.delete(c); await loadAll(); } };
@@ -89,7 +89,6 @@ const RealEstatePage: React.FC = () => {
   const handleUpdateContract = async (d: ContractFormData) => { if(!editingContract) return; setIsSubmitting(true); await ContractService.update(editingContract.code, d); await loadAll(); setIsContractModalOpen(false); setIsSubmitting(false); };
   const handleDeleteContract = async (c: string) => { if(confirm('¿Borrar?')) { await ContractService.delete(c); await loadAll(); } };
 
-  // --- PAYMENT LOGIC ---
   const handleInitiatePayment = (dateToPay: Date) => {
       const monthName = dateToPay.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
       setPaymentDescription(`Alquiler ${monthName.charAt(0).toUpperCase() + monthName.slice(1)}`);
@@ -112,14 +111,14 @@ const RealEstatePage: React.FC = () => {
       }
   };
 
-  // Excel (Simplified for brevity but functional)
+  // Excel Logic (Simplified)
   const handleDownloadTemplate = () => {
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.aoa_to_sheet([['Campo1', 'Campo2']]);
-      XLSX.utils.book_append_sheet(wb, ws, "Plantilla");
-      XLSX.writeFile(wb, "plantilla.xlsx");
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([['Campo1', 'Campo2']]);
+    XLSX.utils.book_append_sheet(wb, ws, "Plantilla");
+    XLSX.writeFile(wb, "plantilla.xlsx");
   };
-  const handleFileSelect = () => {}; 
+  const handleFileSelect = (e: any) => {}; 
 
   const formatMoney = (n: number) => n.toLocaleString('es-HN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -131,6 +130,7 @@ const RealEstatePage: React.FC = () => {
   const filteredContracts = contracts.filter(c => c.code.toLowerCase().includes(lowerSearch));
 
   const getPayingContractLabel = () => {
+      if(!viewingContract && !payingContract) return '';
       const c = viewingContract || payingContract;
       if(!c) return '';
       const apt = apartments.find(a => a.code === c.apartmentCode);
@@ -191,7 +191,7 @@ const RealEstatePage: React.FC = () => {
                 </div>
             )}
             
-            {/* Omitted UNITS, TENANTS for brevity, assumed present */}
+            {/* Omitted UNITS, TENANTS for brevity */}
 
             {activeTab === 'CONTRACTS' && (
                 <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
@@ -209,6 +209,7 @@ const RealEstatePage: React.FC = () => {
                                 <td className="p-4 text-xs text-slate-500">{c.startDate} - {c.endDate}</td>
                                 <td className="p-4 text-right">
                                     <button onClick={() => { setEditingContract(c); setIsContractModalOpen(true); }} className="mr-2 text-brand-600"><Edit2 size={16}/></button>
+                                    <button onClick={() => handleDeleteContract(c.code)} className="text-slate-400 hover:text-red-600"><Trash2 size={16}/></button>
                                 </td>
                             </tr>
                         )})}

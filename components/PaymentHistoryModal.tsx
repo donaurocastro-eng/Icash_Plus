@@ -21,69 +21,75 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
 
   if (!isOpen || !contract) return null;
 
-  const parseDate = (d: string | Date) => {
+  // Robust date parser
+  const parseDate = (d: string | Date | undefined): Date => {
       if (!d) return new Date();
       const dateObj = new Date(d);
+      if (isNaN(dateObj.getTime())) return new Date();
+      // Fix timezone offset for day comparison
       return new Date(dateObj.valueOf() + dateObj.getTimezoneOffset() * 60000);
   };
 
   const startDate = parseDate(contract.startDate);
-  // Fallback to start date if next_payment_date is missing
   const nextPaymentDate = parseDate(contract.nextPaymentDate || contract.startDate);
   
   const today = new Date(); 
   const months = Array.from({ length: 12 }, (_, i) => i);
 
   const getMonthStatus = (monthIndex: number) => {
-    // Fecha de vencimiento teórica para este mes del año seleccionado
-    const dueDate = new Date(year, monthIndex, contract.paymentDay);
+    const paymentDay = contract.paymentDay || 1;
+    // The theoretical due date for this specific grid cell (Month/Year)
     
-    // Usamos valores YYYYMM para comparar fácilmente
-    const currentMonthVal = year * 100 + monthIndex;
-    const startMonthVal = startDate.getFullYear() * 100 + startDate.getMonth();
-    const nextPayMonthVal = nextPaymentDate.getFullYear() * 100 + nextPaymentDate.getMonth();
-    const todayMonthVal = today.getFullYear() * 100 + today.getMonth();
+    // Compare using integer values YYYYMM for simplicity
+    const cellVal = year * 100 + monthIndex;
+    const startVal = startDate.getFullYear() * 100 + startDate.getMonth();
+    const nextPayVal = nextPaymentDate.getFullYear() * 100 + nextPaymentDate.getMonth();
+    const todayVal = today.getFullYear() * 100 + today.getMonth();
 
-    // 1. Antes del inicio del contrato
-    if (currentMonthVal < startMonthVal) return 'NA'; 
+    // 1. Before contract start
+    if (cellVal < startVal) return 'NA'; 
     
-    // 2. Meses anteriores al "Próximo Pago" -> Ya están pagados
-    if (currentMonthVal < nextPayMonthVal) return 'PAID';
+    // 2. Before the "Next Payment" pointer -> Paid
+    if (cellVal < nextPayVal) return 'PAID';
     
-    // 3. Mes actual que toca pagar (coincide con el puntero nextPaymentDate)
-    if (currentMonthVal === nextPayMonthVal) {
-        // Verificar si ya pasó el día de pago hoy
-        // Si hoy es 10 y el pago era el 5 -> Vencido
-        const isLate = today.getTime() > dueDate.getTime() && (today.getDate() > contract.paymentDay || todayMonthVal > currentMonthVal);
-        return isLate ? 'OVERDUE_NOW' : 'DUE_NOW';
+    // 3. Matches the "Next Payment" pointer -> Due Now
+    if (cellVal === nextPayVal) {
+        // Check if we are past the specific day
+        const isPastDueDay = today.getDate() > paymentDay;
+        const isPastDueMonth = todayVal > cellVal;
+        
+        if (isPastDueMonth || (todayVal === cellVal && isPastDueDay)) {
+            return 'OVERDUE_NOW';
+        }
+        return 'DUE_NOW';
     }
 
-    // 4. Meses futuros respecto al pago
-    // Si el mes es mayor al nextPaymentDate pero MENOR al mes actual real, es mora acumulada
-    if (currentMonthVal < todayMonthVal) return 'OVERDUE_FUTURE'; 
+    // 4. After the "Next Payment" pointer
+    // If it's in the past relative to today, it's overdue backlog
+    if (cellVal < todayVal) return 'OVERDUE_FUTURE'; 
     
     return 'FUTURE';
   };
 
   return (
-    <div className="fixed inset-0 z-[65] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm transition-opacity" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh] transform transition-all scale-100">
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh] transform transition-all scale-100 border border-slate-200">
         
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
             <div>
                 <h3 className="text-xl font-bold text-slate-800">Historial de Pagos</h3>
-                <p className="text-sm text-slate-500">{contractLabel}</p>
+                <p className="text-sm text-slate-500 font-medium">{contractLabel}</p>
             </div>
-            <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X size={20}/></button>
+            <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-500"><X size={24}/></button>
         </div>
 
         {/* Toolbar Year */}
-        <div className="flex items-center justify-center py-4 gap-6 border-b border-slate-100 bg-white">
-            <button onClick={() => setYear(year - 1)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><ChevronLeft/></button>
-            <span className="text-2xl font-bold text-slate-800 w-24 text-center">{year}</span>
-            <button onClick={() => setYear(year + 1)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><ChevronRight/></button>
+        <div className="flex items-center justify-center py-4 gap-6 border-b border-slate-100 bg-white shadow-sm z-10">
+            <button onClick={() => setYear(year - 1)} className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-600"><ChevronLeft/></button>
+            <span className="text-2xl font-bold text-slate-800 w-32 text-center">{year}</span>
+            <button onClick={() => setYear(year + 1)} className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-600"><ChevronRight/></button>
         </div>
 
         {/* Grid */}
@@ -92,11 +98,12 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                 {months.map(monthIndex => {
                     const status = getMonthStatus(monthIndex);
                     const monthName = new Date(year, monthIndex, 1).toLocaleDateString('es-ES', { month: 'long' });
-                    const dueDate = new Date(year, monthIndex, contract.paymentDay);
+                    const paymentDay = contract.paymentDay || 1;
+                    const dueDate = new Date(year, monthIndex, paymentDay);
                     const formattedDate = dueDate.toLocaleDateString();
 
                     let cardClass = "border-slate-200 bg-white opacity-60";
-                    let icon = <Clock size={20} />;
+                    let icon = <Clock size={20} className="text-slate-300" />;
                     let label = "Futuro";
                     let labelColor = "text-slate-400";
                     let action = null;
@@ -107,8 +114,8 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                         label = "PAGADO";
                         labelColor = "text-emerald-600";
                     } else if (status === 'DUE_NOW') {
-                        cardClass = "border-blue-300 bg-white ring-2 ring-blue-400 shadow-lg transform scale-105 z-10";
-                        icon = <DollarSignIcon className="text-blue-600"/>;
+                        cardClass = "border-blue-400 bg-white ring-4 ring-blue-100 shadow-xl transform scale-105 z-10";
+                        icon = <DollarSign size={24} className="text-blue-600"/>;
                         label = "PAGAR AHORA";
                         labelColor = "text-blue-600";
                         action = () => onRegisterPayment(dueDate);
@@ -117,12 +124,12 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                         icon = <AlertCircle size={24} className="text-rose-500"/>;
                         label = "VENCIDO";
                         labelColor = "text-rose-600";
-                        // Permitimos pagar lo vencido
                         if (status === 'OVERDUE_NOW') action = () => onRegisterPayment(dueDate);
                     } else if (status === 'NA') {
-                        cardClass = "border-slate-100 bg-slate-50 opacity-40";
+                        cardClass = "border-slate-100 bg-slate-100 opacity-40";
                         label = "-";
                         labelColor = "text-slate-300";
+                        icon = <span/>;
                     }
 
                     return (
@@ -133,14 +140,14 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                             </div>
                             
                             <div className="mt-2">
-                                {status !== 'NA' && <div className="text-xs text-slate-500">Vence: {formattedDate}</div>}
+                                {status !== 'NA' && <div className="text-xs text-slate-500 font-medium">Vence: {formattedDate}</div>}
                                 <div className={`font-extrabold text-sm mt-1 ${labelColor}`}>{label}</div>
                             </div>
 
                             {action && (
                                 <button 
                                     onClick={action}
-                                    className="absolute inset-0 w-full h-full cursor-pointer focus:outline-none"
+                                    className="absolute inset-0 w-full h-full cursor-pointer focus:outline-none rounded-xl"
                                     title="Click para pagar"
                                 />
                             )}
@@ -151,22 +158,15 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
         </div>
 
         {/* Legend */}
-        <div className="p-4 bg-white border-t border-slate-200 flex flex-wrap gap-4 text-xs text-slate-500 justify-center font-medium">
-            <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-emerald-500 rounded-full"></div> Pagado</div>
-            <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-blue-500 rounded-full ring-1 ring-blue-300"></div> A Pagar (Click)</div>
-            <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-rose-500 rounded-full"></div> Vencido</div>
-            <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-slate-300 rounded-full"></div> Futuro</div>
+        <div className="p-4 bg-white border-t border-slate-200 flex flex-wrap gap-6 text-xs text-slate-500 justify-center font-medium">
+            <div className="flex items-center gap-2"><div className="w-3 h-3 bg-emerald-500 rounded-full"></div> Pagado</div>
+            <div className="flex items-center gap-2"><div className="w-3 h-3 bg-blue-600 rounded-full ring-2 ring-blue-200"></div> A Pagar (Click)</div>
+            <div className="flex items-center gap-2"><div className="w-3 h-3 bg-rose-500 rounded-full"></div> Vencido</div>
+            <div className="flex items-center gap-2"><div className="w-3 h-3 bg-slate-300 rounded-full"></div> Futuro</div>
         </div>
       </div>
     </div>
   );
 };
-
-const DollarSignIcon = ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-6 h-6 ${className}`}>
-        <line x1="12" x2="12" y1="1" y2="23"></line>
-        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-    </svg>
-);
 
 export default PaymentHistoryModal;
