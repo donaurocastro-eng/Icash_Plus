@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, ChevronLeft, ChevronRight, CheckCircle, AlertCircle, Clock } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, CheckCircle, AlertCircle, Clock, DollarSign } from 'lucide-react';
 import { Contract } from '../types';
 
 interface PaymentHistoryModalProps {
@@ -28,28 +28,40 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
   };
 
   const startDate = parseDate(contract.startDate);
+  // Fallback to start date if next_payment_date is missing
   const nextPaymentDate = parseDate(contract.nextPaymentDate || contract.startDate);
   
   const today = new Date(); 
   const months = Array.from({ length: 12 }, (_, i) => i);
 
   const getMonthStatus = (monthIndex: number) => {
+    // Fecha de vencimiento teórica para este mes del año seleccionado
     const dueDate = new Date(year, monthIndex, contract.paymentDay);
     
+    // Usamos valores YYYYMM para comparar fácilmente
     const currentMonthVal = year * 100 + monthIndex;
     const startMonthVal = startDate.getFullYear() * 100 + startDate.getMonth();
     const nextPayMonthVal = nextPaymentDate.getFullYear() * 100 + nextPaymentDate.getMonth();
     const todayMonthVal = today.getFullYear() * 100 + today.getMonth();
 
+    // 1. Antes del inicio del contrato
     if (currentMonthVal < startMonthVal) return 'NA'; 
+    
+    // 2. Meses anteriores al "Próximo Pago" -> Ya están pagados
     if (currentMonthVal < nextPayMonthVal) return 'PAID';
     
+    // 3. Mes actual que toca pagar (coincide con el puntero nextPaymentDate)
     if (currentMonthVal === nextPayMonthVal) {
+        // Verificar si ya pasó el día de pago hoy
+        // Si hoy es 10 y el pago era el 5 -> Vencido
         const isLate = today.getTime() > dueDate.getTime() && (today.getDate() > contract.paymentDay || todayMonthVal > currentMonthVal);
         return isLate ? 'OVERDUE_NOW' : 'DUE_NOW';
     }
 
+    // 4. Meses futuros respecto al pago
+    // Si el mes es mayor al nextPaymentDate pero MENOR al mes actual real, es mora acumulada
     if (currentMonthVal < todayMonthVal) return 'OVERDUE_FUTURE'; 
+    
     return 'FUTURE';
   };
 
@@ -58,6 +70,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
       <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm transition-opacity" onClick={onClose} />
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh] transform transition-all scale-100">
         
+        {/* Header */}
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
             <div>
                 <h3 className="text-xl font-bold text-slate-800">Historial de Pagos</h3>
@@ -66,12 +79,14 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
             <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X size={20}/></button>
         </div>
 
+        {/* Toolbar Year */}
         <div className="flex items-center justify-center py-4 gap-6 border-b border-slate-100 bg-white">
             <button onClick={() => setYear(year - 1)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><ChevronLeft/></button>
             <span className="text-2xl font-bold text-slate-800 w-24 text-center">{year}</span>
             <button onClick={() => setYear(year + 1)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><ChevronRight/></button>
         </div>
 
+        {/* Grid */}
         <div className="p-6 overflow-y-auto bg-slate-50/50 flex-1">
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {months.map(monthIndex => {
@@ -102,6 +117,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                         icon = <AlertCircle size={24} className="text-rose-500"/>;
                         label = "VENCIDO";
                         labelColor = "text-rose-600";
+                        // Permitimos pagar lo vencido
                         if (status === 'OVERDUE_NOW') action = () => onRegisterPayment(dueDate);
                     } else if (status === 'NA') {
                         cardClass = "border-slate-100 bg-slate-50 opacity-40";
@@ -134,6 +150,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
             </div>
         </div>
 
+        {/* Legend */}
         <div className="p-4 bg-white border-t border-slate-200 flex flex-wrap gap-4 text-xs text-slate-500 justify-center font-medium">
             <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-emerald-500 rounded-full"></div> Pagado</div>
             <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-blue-500 rounded-full ring-1 ring-blue-300"></div> A Pagar (Click)</div>
