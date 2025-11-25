@@ -189,7 +189,6 @@ export const ContractService = {
       }
   },
 
-  // New methods for managing price history directly
   getPriceHistory: async (contractCode: string): Promise<ContractPrice[]> => {
     if (db.isConfigured()) {
       try {
@@ -215,15 +214,11 @@ export const ContractService = {
 
   addPriceHistory: async (contractCode: string, amount: number, startDate: string): Promise<void> => {
       if (db.isConfigured()) {
-          // Simple insert, user manages validity via dates for now or we can smart-close previous
-          // For robustness, lets close any open price that started before this one
-          // Actually, simplest is just insert and let logic handle overlapping by sorting DESC
           await db.query(`
             INSERT INTO contract_prices (contract_code, amount, start_date)
             VALUES ($1, $2, $3)
           `, [contractCode, amount, startDate]);
           
-          // Update main contract amount if this new price is current (start date <= today)
           const today = new Date().toISOString().split('T')[0];
           if (startDate <= today) {
              await db.query(`UPDATE contracts SET amount=$1 WHERE code=$2`, [amount, contractCode]);

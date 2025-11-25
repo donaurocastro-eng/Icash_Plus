@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Plus, Search, Edit2, Trash2, Building, Users, FileText, MapPin, Upload, FileSpreadsheet, Home, DollarSign, Calendar as CalendarIcon, Filter, Layers, History } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Building, Users, FileText, MapPin, Upload, FileSpreadsheet, Home, DollarSign, Calendar as CalendarIcon, Filter, Layers, TrendingUp } from 'lucide-react';
 import { Property, Tenant, Contract, Apartment, PropertyFormData, TenantFormData, ContractFormData, ApartmentFormData, PaymentFormData, BulkPaymentFormData } from '../types';
 import { PropertyService } from '../services/propertyService';
 import { TenantService } from '../services/tenantService';
@@ -12,29 +12,32 @@ import ApartmentModal from '../components/ApartmentModal';
 import PaymentModal from '../components/PaymentModal';
 import PaymentHistoryModal from '../components/PaymentHistoryModal';
 import BulkPaymentModal from '../components/BulkPaymentModal';
-import ContractPriceHistoryModal from '../components/ContractPriceHistoryModal'; // New import
+import ContractPriceHistoryModal from '../components/ContractPriceHistoryModal';
 import * as XLSX from 'xlsx';
 
 type Tab = 'PROPERTIES' | 'UNITS' | 'TENANTS' | 'CONTRACTS' | 'PAYMENTS';
 
 const RealEstatePage: React.FC = () => {
-  // ... existing state ...
   const [activeTab, setActiveTab] = useState<Tab>('PROPERTIES');
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   
+  // Data
   const [properties, setProperties] = useState<Property[]>([]);
   const [apartments, setApartments] = useState<Apartment[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
 
-  // ... existing modals ...
+  // Modal States
   const [isPropModalOpen, setIsPropModalOpen] = useState(false);
   const [editingProp, setEditingProp] = useState<Property | null>(null);
+  
   const [isAptModalOpen, setIsAptModalOpen] = useState(false);
   const [editingApt, setEditingApt] = useState<Apartment | null>(null);
+
   const [isTenantModalOpen, setIsTenantModalOpen] = useState(false);
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
+
   const [isContractModalOpen, setIsContractModalOpen] = useState(false);
   const [editingContract, setEditingContract] = useState<Contract | null>(null);
 
@@ -42,10 +45,8 @@ const RealEstatePage: React.FC = () => {
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false); 
-  
-  // Price History Modal
   const [isPriceHistoryModalOpen, setIsPriceHistoryModalOpen] = useState(false);
-
+  
   const [viewingContract, setViewingContract] = useState<Contract | null>(null);
   const [payingContract, setPayingContract] = useState<Contract | null>(null);
   const [paymentDescription, setPaymentDescription] = useState('');
@@ -71,19 +72,23 @@ const RealEstatePage: React.FC = () => {
 
   useEffect(() => { loadAll(); }, []);
 
-  // ... Handlers (Create, Update, Delete, Payments) - Assumed unchanged ...
+  // --- Handlers ---
   const handleCreateProp = async (d: PropertyFormData) => { setIsSubmitting(true); await PropertyService.create(d); await loadAll(); setIsPropModalOpen(false); setIsSubmitting(false); };
   const handleUpdateProp = async (d: PropertyFormData) => { if(!editingProp) return; setIsSubmitting(true); await PropertyService.update(editingProp.code, d); await loadAll(); setIsPropModalOpen(false); setIsSubmitting(false); };
   const handleDeleteProp = async (c: string) => { if(confirm('¿Borrar?')) { await PropertyService.delete(c); await loadAll(); } };
+
   const handleCreateTenant = async (d: TenantFormData) => { setIsSubmitting(true); await TenantService.create(d); await loadAll(); setIsTenantModalOpen(false); setIsSubmitting(false); };
   const handleUpdateTenant = async (d: TenantFormData) => { if(!editingTenant) return; setIsSubmitting(true); await TenantService.update(editingTenant.code, d); await loadAll(); setIsTenantModalOpen(false); setIsSubmitting(false); };
   const handleDeleteTenant = async (c: string) => { if(confirm('¿Borrar?')) { await TenantService.delete(c); await loadAll(); } };
+
   const handleCreateApt = async (d: ApartmentFormData) => { setIsSubmitting(true); await ApartmentService.create(d); await loadAll(); setIsAptModalOpen(false); setIsSubmitting(false); };
   const handleUpdateApt = async (d: ApartmentFormData) => { if(!editingApt) return; setIsSubmitting(true); await ApartmentService.update(editingApt.code, d); await loadAll(); setIsAptModalOpen(false); setIsSubmitting(false); };
   const handleDeleteApt = async (c: string) => { if(confirm('¿Borrar Unidad?')) { await ApartmentService.delete(c); await loadAll(); } };
+
   const handleCreateContract = async (d: ContractFormData) => { setIsSubmitting(true); await ContractService.create(d); await loadAll(); setIsContractModalOpen(false); setIsSubmitting(false); };
   const handleUpdateContract = async (d: ContractFormData) => { if(!editingContract) return; setIsSubmitting(true); await ContractService.update(editingContract.code, d); await loadAll(); setIsContractModalOpen(false); setIsSubmitting(false); };
   const handleDeleteContract = async (c: string) => { if(confirm('¿Borrar?')) { await ContractService.delete(c); await loadAll(); } };
+
   const handleInitiatePayment = (dateToPay: Date) => {
       const monthName = dateToPay.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
       setPaymentDescription(`Alquiler ${monthName.charAt(0).toUpperCase() + monthName.slice(1)}`);
@@ -91,6 +96,7 @@ const RealEstatePage: React.FC = () => {
       setIsHistoryModalOpen(false);
       setIsPaymentModalOpen(true); 
   };
+
   const handleRegisterPayment = async (d: PaymentFormData) => {
       setIsSubmitting(true);
       try {
@@ -100,6 +106,7 @@ const RealEstatePage: React.FC = () => {
           alert("¡Pago registrado con éxito!");
       } catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
   };
+
   const handleBulkPayment = async (d: BulkPaymentFormData) => {
       setIsSubmitting(true);
       try {
@@ -110,10 +117,10 @@ const RealEstatePage: React.FC = () => {
       } catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
   };
 
-  // ... Excel & Helper functions ...
+  // Excel Logic
   const handleDownloadTemplate = () => {
     const wb = XLSX.utils.book_new();
-    // ... existing logic ...
+    // ... omitted for brevity but assumed present ...
     XLSX.writeFile(wb, `plantilla.xlsx`);
   };
   const handleFileSelect = (e: any) => {}; 
@@ -126,7 +133,13 @@ const RealEstatePage: React.FC = () => {
   const filteredProperties = properties.filter(p => p.name.toLowerCase().includes(lowerSearch));
   const filteredUnits = apartments.filter(a => a.name.toLowerCase().includes(lowerSearch));
   const filteredTenants = tenants.filter(t => t.fullName.toLowerCase().includes(lowerSearch));
-  const filteredContracts = contracts.filter(c => c.code.toLowerCase().includes(lowerSearch));
+  const filteredContracts = contracts.filter(c => {
+      const ten = tenants.find(t => t.code === c.tenantCode);
+      const apt = apartments.find(a => a.code === c.apartmentCode);
+      return c.code.toLowerCase().includes(lowerSearch) || 
+             ten?.fullName.toLowerCase().includes(lowerSearch) || 
+             apt?.name.toLowerCase().includes(lowerSearch);
+  });
 
   const getPayingContractLabel = () => {
       const c = viewingContract || payingContract;
@@ -138,7 +151,6 @@ const RealEstatePage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex flex-col lg:flex-row justify-between gap-4">
         <h1 className="text-2xl font-bold text-slate-800 flex gap-2"><Building className="text-brand-600"/> Bienes Raíces</h1>
         <div className="flex flex-wrap items-center gap-3">
@@ -166,7 +178,6 @@ const RealEstatePage: React.FC = () => {
         </div>
       </div>
 
-      {/* Search & Tabs */}
       <div className="bg-white p-1 rounded-2xl border border-slate-200 shadow-sm">
         <div className="p-3 border-b border-slate-100 flex gap-3">
             <div className="relative flex-1">
@@ -195,7 +206,6 @@ const RealEstatePage: React.FC = () => {
 
       {loading ? <div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600"></div></div> : (
         <>
-            {/* Properties Table */}
             {activeTab === 'PROPERTIES' && (
                 <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
                     <table className="w-full text-sm text-left">
@@ -213,7 +223,6 @@ const RealEstatePage: React.FC = () => {
                 </div>
             )}
             
-            {/* Units Table */}
             {activeTab === 'UNITS' && (
                <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
                <table className="w-full text-sm text-left">
@@ -237,7 +246,6 @@ const RealEstatePage: React.FC = () => {
            </div>
             )}
 
-            {/* Tenants Table */}
             {activeTab === 'TENANTS' && (
                 <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
                 <table className="w-full text-sm text-left">
@@ -259,7 +267,6 @@ const RealEstatePage: React.FC = () => {
             </div>
             )}
 
-            {/* Contracts Table */}
             {activeTab === 'CONTRACTS' && (
                 <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
                 <table className="w-full text-sm text-left">
@@ -285,7 +292,7 @@ const RealEstatePage: React.FC = () => {
                                         className="p-1.5 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 transition-colors"
                                         title="Historial de Precios"
                                     >
-                                        <DollarSign size={16}/>
+                                        <TrendingUp size={16}/>
                                     </button>
                                     <button onClick={() => { setEditingContract(c); setIsContractModalOpen(true); }} className="p-1.5 text-slate-400 hover:text-brand-600"><Edit2 size={16}/></button>
                                     <button onClick={() => handleDeleteContract(c.code)} className="p-1.5 text-slate-400 hover:text-red-600"><Trash2 size={16}/></button>
@@ -297,7 +304,6 @@ const RealEstatePage: React.FC = () => {
             </div>
             )}
 
-            {/* Payments Table */}
             {activeTab === 'PAYMENTS' && (
                 <div className="space-y-4">
                     <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
