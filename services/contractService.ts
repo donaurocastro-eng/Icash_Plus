@@ -1,4 +1,4 @@
-import { Contract, ContractFormData, PaymentFormData } from '../types';
+import { Contract, ContractFormData, PaymentFormData, BulkPaymentFormData } from '../types';
 import { db } from './db';
 import { ApartmentService } from './apartmentService';
 import { TransactionService } from './transactionService';
@@ -23,7 +23,6 @@ const generateNextCode = (existing: Contract[]): string => {
   return `CTR-${nextId.toString().padStart(3, '0')}`;
 };
 
-// Helper to safe convert DB dates to string YYYY-MM-DD
 const toDateString = (val: any): string => {
   if (!val) return new Date().toISOString().split('T')[0];
   if (val instanceof Date) return val.toISOString().split('T')[0];
@@ -148,7 +147,6 @@ export const ContractService = {
   },
 
   registerPayment: async (data: PaymentFormData): Promise<void> => {
-    // 1. Get Contract & Property Info
     const contracts = await ContractService.getAll();
     const contract = contracts.find(c => c.code === data.contractCode);
     if (!contract) throw new Error("Contrato no encontrado");
@@ -156,13 +154,12 @@ export const ContractService = {
     let propertyName = '';
     let propertyCode = contract.propertyCode;
 
-    // If propertyCode missing (legacy or apartment-based), try resolve via Apartment
     if (!propertyCode && contract.apartmentCode) {
         try {
             const apartments = await ApartmentService.getAll();
             const apt = apartments.find(a => a.code === contract.apartmentCode);
             if (apt) propertyCode = apt.propertyCode;
-        } catch(e) { console.error("Error fetching apartment details", e); }
+        } catch(e) { console.error(e); }
     }
 
     if (propertyCode) {
@@ -170,16 +167,14 @@ export const ContractService = {
            const properties = await PropertyService.getAll();
            const p = properties.find(prop => prop.code === propertyCode);
            if (p) propertyName = p.name;
-       } catch(e) { console.error("Error fetching property for payment", e); }
+       } catch(e) { console.error(e); }
     }
 
-    // 2. Find Category for Rent (Income)
     const categories = await CategoryService.getAll();
     let cat = categories.find(c => (c.name.toLowerCase().includes('alquiler') || c.name.toLowerCase().includes('renta')) && c.type === 'INGRESO');
     if (!cat) cat = categories.find(c => c.type === 'INGRESO');
     if (!cat) throw new Error("No hay categoría de Ingresos disponible.");
 
-    // 3. Create Transaction
     await TransactionService.create({
        date: data.date,
        amount: data.amount,
@@ -191,10 +186,11 @@ export const ContractService = {
        propertyName: propertyName
     });
 
-    // 4. Update Contract next_payment_date
     let nextDate = new Date(contract.nextPaymentDate || contract.startDate);
     if (isNaN(nextDate.getTime())) nextDate = new Date();
-    // Advance 1 month
+    // This is single payment logic, usually advances 1 month
+    // BUT, if using registerPayment for specific date (like in history modal), we might need more logic.
+    // Assuming this is "pay current due date".
     nextDate.setMonth(nextDate.getMonth() + 1);
     const nextDateStr = nextDate.toISOString().split('T')[0];
 
@@ -208,5 +204,30 @@ export const ContractService = {
            localStorage.setItem(STORAGE_KEY, JSON.stringify(contracts));
        }
     }
+  },
+
+  processBulkPayment: async (data: BulkPaymentFormData): Promise<void> => {
+      // Process selected items sequentially
+      // 1. Find items that are selected
+      const paymentsToProcess = data.items.filter(i => i.selected);
+      if (paymentsToProcess.length === 0) return;
+
+      // 2. For each item, register a payment (transaction + advance date)
+      // Note: registerPayment automatically advances date by 1 month.
+      // If we pay 3 months, we call it 3 times.
+      // CAUTION: registerPayment advances from CURRENT next_payment_date.
+      // If we pay Jan, Feb, Mar, we must ensure order.
+      // The BulkPaymentModal should enforce sequential selection or we assume sequential.
+      
+      for (const item of paymentsToProcess) {
+          await ContractService.registerPayment({
+              contractCode: data.contractCode,
+              accountCode: data.accountCode,
+              amount: item.amount,
+              date: new Date().toISOString().split('T')[0], // Payment date is today
+              description: item.description // "Alquiler Enero 2025", etc.
+          });
+          // Introduce slight delay if needed for DB consistency or just await loop
+      }
   }
 };

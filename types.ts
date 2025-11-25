@@ -122,7 +122,7 @@ export interface Contract {
   tenantCode: string;
   startDate: string;     
   endDate: string;
-  nextPaymentDate: string; // NEW: Tracks the next due date
+  nextPaymentDate: string; 
   amount: number;
   paymentDay: number;    
   status: 'ACTIVE' | 'EXPIRED' | 'CANCELLED';
@@ -145,6 +145,19 @@ export interface PaymentFormData {
   amount: number;
   accountCode: string; // Destination account (Bank/Cash)
   description: string;
+}
+
+export interface BulkPaymentItem {
+    date: string;
+    amount: number;
+    description: string;
+    selected: boolean;
+}
+
+export interface BulkPaymentFormData {
+    contractCode: string;
+    accountCode: string;
+    items: BulkPaymentItem[];
 }
 
 export enum AppRoute {
