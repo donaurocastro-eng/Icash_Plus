@@ -226,6 +226,7 @@ export const ContractService = {
       }
   },
 
+  // Fixed: Now correctly accepts and uses the ID for deletion
   deletePriceHistory: async (id: string): Promise<void> => {
       if(db.isConfigured()) {
           await db.query('DELETE FROM contract_prices WHERE id=$1', [id]);
@@ -233,6 +234,7 @@ export const ContractService = {
   },
 
   registerPayment: async (data: PaymentFormData): Promise<void> => {
+    // ... (Same as before, kept for completeness)
     const contracts = await ContractService.getAll();
     const contract = contracts.find(c => c.code === data.contractCode);
     if (!contract) throw new Error("Contrato no encontrado");
