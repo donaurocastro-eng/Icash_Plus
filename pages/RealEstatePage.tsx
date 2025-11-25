@@ -43,7 +43,7 @@ const RealEstatePage: React.FC = () => {
   // Payment Modals
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
-  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false); // New state
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false); 
   
   const [viewingContract, setViewingContract] = useState<Contract | null>(null);
   const [payingContract, setPayingContract] = useState<Contract | null>(null);
@@ -219,14 +219,22 @@ const RealEstatePage: React.FC = () => {
   const filteredProperties = properties.filter(p => p.name.toLowerCase().includes(lowerSearch));
   const filteredUnits = apartments.filter(a => a.name.toLowerCase().includes(lowerSearch));
   const filteredTenants = tenants.filter(t => t.fullName.toLowerCase().includes(lowerSearch));
-  const filteredContracts = contracts.filter(c => c.code.toLowerCase().includes(lowerSearch));
+  const filteredContracts = contracts.filter(c => {
+    const ten = tenants.find(t => t.code === c.tenantCode);
+    const apt = apartments.find(a => a.code === c.apartmentCode);
+    return (
+        c.code.toLowerCase().includes(lowerSearch) ||
+        ten?.fullName.toLowerCase().includes(lowerSearch) ||
+        apt?.name.toLowerCase().includes(lowerSearch)
+    );
+  });
 
   const getPayingContractLabel = () => {
       const c = viewingContract || payingContract;
       if(!c) return '';
       const apt = apartments.find(a => a.code === c.apartmentCode);
       const ten = tenants.find(t => t.code === c.tenantCode);
-      return `${apt?.name || 'Unidad'} - ${ten?.fullName || 'Inquilino'}`;
+      return `${ten?.fullName || 'Inquilino'} - ${apt?.name || 'Unidad'}`; // SWAPPED ORDER
   };
 
   return (
@@ -356,7 +364,7 @@ const RealEstatePage: React.FC = () => {
             {activeTab === 'CONTRACTS' && (
                 <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
                 <table className="w-full text-sm text-left">
-                    <thead className="bg-slate-50 font-medium"><tr><th className="p-4">Contrato</th><th className="p-4">Unidad</th><th className="p-4">Inquilino</th><th className="p-4">Vigencia</th><th className="p-4 text-right">Acciones</th></tr></thead>
+                    <thead className="bg-slate-50 font-medium"><tr><th className="p-4">Inquilino / Unidad</th><th className="p-4">Vigencia</th><th className="p-4">Monto</th><th className="p-4 text-right">Acciones</th></tr></thead>
                     <tbody>
                         {filteredContracts.map(c => {
                             const apt = apartments.find(a => a.code === c.apartmentCode);
@@ -368,17 +376,23 @@ const RealEstatePage: React.FC = () => {
                             }
                             return (
                             <tr key={c.code} className="border-t border-slate-100 hover:bg-slate-50">
-                                <td className="p-4"><div className="font-bold text-xs">{c.code}</div><span className="text-[10px] bg-emerald-100 text-emerald-700 px-1 rounded">ACTIVE</span></td>
-                                <td className="p-4"><div className="font-medium">{displayName || c.apartmentCode || 'Sin Asignar'}</div></td>
-                                <td className="p-4">{ten?.fullName || c.tenantCode}</td>
-                                <td className="p-4 text-xs text-slate-500">{c.startDate} - {c.endDate}<div className="font-bold text-slate-700 mt-1">{formatMoney(c.amount)} (Día {c.paymentDay})</div></td>
+                                <td className="p-4">
+                                    <div className="font-bold text-slate-800">{ten?.fullName || 'Desconocido'}</div>
+                                    <div className="text-xs text-slate-500">{displayName || c.apartmentCode || 'Sin Asignar'}</div>
+                                    <div className="text-[10px] text-slate-400 mt-1">{c.code}</div>
+                                </td>
+                                <td className="p-4 text-xs text-slate-500">{c.startDate} - {c.endDate}</td>
+                                <td className="p-4">
+                                    <div className="font-bold text-slate-700">{formatMoney(c.amount)}</div>
+                                    <div className="text-xs text-slate-400">Día {c.paymentDay}</div>
+                                </td>
                                 <td className="p-4 text-right">
                                     <button onClick={() => { setEditingContract(c); setIsContractModalOpen(true); }} className="mr-2 text-slate-400 hover:text-brand-600"><Edit2 size={16}/></button>
                                     <button onClick={() => handleDeleteContract(c.code)} className="text-slate-400 hover:text-red-600"><Trash2 size={16}/></button>
                                 </td>
                             </tr>
                         )})}
-                        {filteredContracts.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-400">No se encontraron contratos</td></tr>}
+                        {filteredContracts.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400">No se encontraron contratos</td></tr>}
                     </tbody>
                 </table>
             </div>
@@ -395,7 +409,7 @@ const RealEstatePage: React.FC = () => {
                             <thead className="bg-slate-50 font-medium text-slate-500">
                                 <tr>
                                     <th className="p-4">Estado</th>
-                                    <th className="p-4">Unidad / Inquilino</th>
+                                    <th className="p-4">Inquilino / Unidad</th>
                                     <th className="p-4 text-right">Próximo Pago</th>
                                     <th className="p-4 text-right">Monto</th>
                                     <th className="p-4 text-center">Acción</th>
@@ -417,8 +431,8 @@ const RealEstatePage: React.FC = () => {
                                                 </span>
                                             </td>
                                             <td className="p-4">
-                                                <div className="font-bold text-slate-800">{apt?.name || c.apartmentCode}</div>
-                                                <div className="text-xs text-slate-500">{ten?.fullName || c.tenantCode}</div>
+                                                <div className="font-bold text-slate-800">{ten?.fullName || c.tenantCode}</div>
+                                                <div className="text-xs text-slate-500">{apt?.name || c.apartmentCode}</div>
                                             </td>
                                             <td className="p-4 text-right font-mono">
                                                 {new Date(c.nextPaymentDate).toLocaleDateString()}
@@ -444,7 +458,7 @@ const RealEstatePage: React.FC = () => {
                                         </tr>
                                     );
                                 })}
-                                {filteredContracts.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400">No se encontraron resultados</td></tr>}
+                                {filteredContracts.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-400">No se encontraron resultados</td></tr>}
                             </tbody>
                         </table>
                     </div>

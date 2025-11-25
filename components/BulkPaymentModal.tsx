@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { X, Save, AlertCircle, Calendar, CheckSquare, Square, DollarSign } from 'lucide-react';
 import { Contract, BulkPaymentFormData, BulkPaymentItem, Account } from '../types';
@@ -42,14 +43,10 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
   };
 
   const generatePendingMonths = (c: Contract) => {
-      // Generate list of pending months starting from next_payment_date
-      // Let's generate say, next 6 months or until current date + 1 month
       const list: BulkPaymentItem[] = [];
       let pointerDate = new Date(c.nextPaymentDate || c.startDate);
-      // Adjust for timezone
       pointerDate = new Date(pointerDate.valueOf() + pointerDate.getTimezoneOffset() * 60000);
 
-      // Generate 6 potential months to pay
       for (let i = 0; i < 6; i++) {
           const monthName = pointerDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
           const label = monthName.charAt(0).toUpperCase() + monthName.slice(1);
@@ -58,10 +55,9 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
               date: pointerDate.toISOString().split('T')[0],
               amount: c.amount,
               description: `Alquiler ${label}`,
-              selected: i === 0 // Select first by default
+              selected: i === 0 
           });
           
-          // Advance 1 month
           pointerDate.setMonth(pointerDate.getMonth() + 1);
       }
       setItems(list);
@@ -77,13 +73,6 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
       if (!accountCode) { setError("Selecciona una cuenta de destino."); return; }
       const selected = items.filter(i => i.selected);
       if (selected.length === 0) { setError("Selecciona al menos un mes para pagar."); return; }
-      
-      // Verify sequential selection? Ideally yes, but for now just process what's checked.
-      // Warning: If user skips a month, logic in service might need care.
-      // Current service logic simply advances date per payment call.
-      // So if user selects Month 1 and Month 3 (skipping 2), contract will advance 2 months total.
-      // It essentially pays "Next 2 months".
-      // For robustness, we should force sequential or just warn.
       
       try {
           await onSubmit({
@@ -117,7 +106,6 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
         <div className="p-6 space-y-6 overflow-y-auto">
             {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm flex gap-2"><AlertCircle size={16}/>{error}</div>}
 
-            {/* Account Selection */}
             <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Cuenta de Destino</label>
                 <select 
@@ -130,7 +118,6 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
                 </select>
             </div>
 
-            {/* Month Selection List */}
             <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Selecciona Meses a Pagar</label>
                 <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-60 overflow-y-auto">
@@ -156,7 +143,6 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
             </div>
         </div>
 
-        {/* Footer */}
         <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center">
             <div>
                 <p className="text-xs text-slate-500 uppercase font-bold">Total a Cobrar</p>
