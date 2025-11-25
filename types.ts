@@ -139,6 +139,15 @@ export interface ContractFormData {
   paymentDay: number;
 }
 
+// New Interface for Price History
+export interface ContractPrice {
+  id: string;
+  contractCode: string;
+  amount: number;
+  startDate: string;
+  endDate?: string;
+}
+
 export interface PaymentFormData {
   contractCode: string;
   date: string;

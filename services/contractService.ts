@@ -1,5 +1,4 @@
-
-import { Contract, ContractFormData, PaymentFormData, BulkPaymentFormData } from '../types';
+import { Contract, ContractFormData, PaymentFormData, BulkPaymentFormData, ContractPrice } from '../types';
 import { db } from './db';
 import { ApartmentService } from './apartmentService';
 import { TransactionService } from './transactionService';
@@ -187,6 +186,54 @@ export const ContractService = {
       } catch (e) {
           console.error("Error fetching historical price", e);
           return 0;
+      }
+  },
+
+  // New methods for managing price history directly
+  getPriceHistory: async (contractCode: string): Promise<ContractPrice[]> => {
+    if (db.isConfigured()) {
+      try {
+        const rows = await db.query(`
+            SELECT id, contract_code as "contractCode", amount, start_date as "startDate", end_date as "endDate"
+            FROM contract_prices
+            WHERE contract_code = $1
+            ORDER BY start_date DESC
+        `, [contractCode]);
+        return rows.map(r => ({
+            ...r,
+            amount: Number(r.amount),
+            startDate: toDateString(r.startDate),
+            endDate: r.endDate ? toDateString(r.endDate) : undefined
+        }));
+      } catch (e) {
+          console.error(e);
+          return [];
+      }
+    }
+    return [];
+  },
+
+  addPriceHistory: async (contractCode: string, amount: number, startDate: string): Promise<void> => {
+      if (db.isConfigured()) {
+          // Simple insert, user manages validity via dates for now or we can smart-close previous
+          // For robustness, lets close any open price that started before this one
+          // Actually, simplest is just insert and let logic handle overlapping by sorting DESC
+          await db.query(`
+            INSERT INTO contract_prices (contract_code, amount, start_date)
+            VALUES ($1, $2, $3)
+          `, [contractCode, amount, startDate]);
+          
+          // Update main contract amount if this new price is current (start date <= today)
+          const today = new Date().toISOString().split('T')[0];
+          if (startDate <= today) {
+             await db.query(`UPDATE contracts SET amount=$1 WHERE code=$2`, [amount, contractCode]);
+          }
+      }
+  },
+
+  deletePriceHistory: async (id: string): Promise<void> => {
+      if(db.isConfigured()) {
+          await db.query('DELETE FROM contract_prices WHERE id=$1', [id]);
       }
   },
 
