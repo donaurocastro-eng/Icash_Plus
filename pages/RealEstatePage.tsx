@@ -10,7 +10,7 @@ import TenantModal from '../components/TenantModal';
 import ContractModal from '../components/ContractModal';
 import ApartmentModal from '../components/ApartmentModal';
 import PaymentModal from '../components/PaymentModal';
-import PaymentHistoryModal from '../components/PaymentHistoryModal'; // Correct relative import
+import PaymentHistoryModal from '../components/PaymentHistoryModal';
 import * as XLSX from 'xlsx';
 
 type Tab = 'PROPERTIES' | 'UNITS' | 'TENANTS' | 'CONTRACTS' | 'PAYMENTS';
@@ -142,6 +142,7 @@ const RealEstatePage: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col lg:flex-row justify-between gap-4">
         <h1 className="text-2xl font-bold text-slate-800 flex gap-2"><Building className="text-brand-600"/> Bienes Raíces</h1>
+        
         <div className="flex flex-wrap items-center gap-3">
             {activeTab !== 'PAYMENTS' && (
                 <button onClick={() => {
