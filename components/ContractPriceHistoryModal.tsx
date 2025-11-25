@@ -1,312 +1,128 @@
-import { Contract, ContractFormData, PaymentFormData, BulkPaymentFormData, ContractPrice } from '../types';
-import { db } from './db';
-import { ApartmentService } from './apartmentService';
-import { TransactionService } from './transactionService';
-import { CategoryService } from './categoryService';
-import { PropertyService } from './propertyService';
+import React, { useState, useEffect } from 'react';
+import { X, Plus, Trash2, TrendingUp } from 'lucide-react';
+import { Contract, ContractPrice } from '../types';
+import { ContractService } from '../services/contractService';
 
-const STORAGE_KEY = 'icash_plus_contracts';
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+interface ContractPriceHistoryModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  contract: Contract | null;
+  contractLabel: string;
+}
 
-const generateNextCode = (existing: Contract[]): string => {
-  let maxId = 0;
-  existing.forEach(c => {
-    if (c.code.startsWith('CTR-')) {
-      const parts = c.code.split('-');
-      if (parts.length === 2) {
-        const num = parseInt(parts[1], 10);
-        if (!isNaN(num) && num > maxId) maxId = num;
-      }
+const ContractPriceHistoryModal: React.FC<ContractPriceHistoryModalProps> = ({
+  isOpen,
+  onClose,
+  contract,
+  contractLabel
+}) => {
+  const [history, setHistory] = useState<ContractPrice[]>([]);
+  const [loading, setLoading] = useState(false);
+  
+  const [newAmount, setNewAmount] = useState<number>(0);
+  const [newStartDate, setNewStartDate] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && contract) {
+      loadHistory();
+      setNewAmount(contract.amount);
+      setNewStartDate(new Date().toISOString().split('T')[0]);
     }
-  });
-  const nextId = maxId + 1;
-  return `CTR-${nextId.toString().padStart(3, '0')}`;
+  }, [isOpen, contract]);
+
+  const loadHistory = async () => {
+    if (!contract) return;
+    setLoading(true);
+    try {
+      const data = await ContractService.getPriceHistory(contract.code);
+      setHistory(data);
+    } catch (e) { console.error(e); } finally { setLoading(false); }
+  };
+
+  const handleAddPrice = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!contract || !newAmount || !newStartDate) return;
+      setIsSubmitting(true);
+      try {
+          await ContractService.addPriceHistory(contract.code, newAmount, newStartDate);
+          await loadHistory();
+          setNewStartDate('');
+      } catch (e) { alert("Error al guardar"); } finally { setIsSubmitting(false); }
+  };
+
+  const handleDelete = async (id: string) => {
+      if (!confirm("¿Eliminar este registro de precio?")) return;
+      try {
+          await ContractService.deletePriceHistory(id);
+          await loadHistory();
+      } catch (e) { alert("Error al eliminar"); }
+  };
+
+  if (!isOpen || !contract) return null;
+
+  const formatMoney = (n: number) => n.toLocaleString('es-HN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+            <div>
+                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><TrendingUp size={20} className="text-blue-600"/> Historial de Precios</h3>
+                <p className="text-xs text-slate-500">{contractLabel}</p>
+            </div>
+            <button onClick={onClose}><X size={20} className="text-slate-400 hover:text-slate-600"/></button>
+        </div>
+        <div className="p-6 overflow-y-auto space-y-6">
+            <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                <h4 className="text-sm font-bold text-blue-800 mb-3">Nuevo Precio</h4>
+                <form onSubmit={handleAddPrice} className="flex flex-col sm:flex-row gap-3 items-end">
+                    <div className="flex-1 w-full">
+                        <label className="block text-xs font-medium text-blue-700 mb-1">Monto</label>
+                        <input type="number" step="0.01" required className="w-full px-3 py-2 border border-blue-200 rounded-lg outline-none" value={newAmount} onChange={e => setNewAmount(parseFloat(e.target.value))} />
+                    </div>
+                    <div className="flex-1 w-full">
+                        <label className="block text-xs font-medium text-blue-700 mb-1">Inicio</label>
+                        <input type="date" required className="w-full px-3 py-2 border border-blue-200 rounded-lg outline-none" value={newStartDate} onChange={e => setNewStartDate(e.target.value)} />
+                    </div>
+                    <button type="submit" disabled={isSubmitting} className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"><Plus size={16}/> Guardar</button>
+                </form>
+            </div>
+            <div>
+                <h4 className="text-sm font-bold text-slate-700 mb-3">Línea de Tiempo</h4>
+                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-slate-50 text-slate-500 font-medium"><tr><th className="p-3 pl-4">Inicio</th><th className="p-3">Fin</th><th className="p-3 text-right">Monto</th><th className="p-3 text-center">Estado</th><th className="p-3 text-right"></th></tr></thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {history.map((item) => {
+                                const today = new Date().toISOString().split('T')[0];
+                                const isFuture = item.startDate > today;
+                                const isPast = item.endDate && item.endDate < today;
+                                const isCurrent = !isFuture && !isPast;
+                                return (
+                                    <tr key={item.id} className="hover:bg-slate-50">
+                                        <td className="p-3 pl-4 font-mono text-slate-600">{item.startDate}</td>
+                                        <td className="p-3 font-mono text-slate-400">{item.endDate || '-'}</td>
+                                        <td className="p-3 text-right font-bold text-slate-700">{formatMoney(item.amount)}</td>
+                                        <td className="p-3 text-center">
+                                            {isCurrent && <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-xs font-bold">VIGENTE</span>}
+                                            {isFuture && <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-bold">FUTURO</span>}
+                                            {isPast && <span className="px-2 py-1 bg-slate-100 text-slate-500 rounded text-xs font-bold">HISTÓRICO</span>}
+                                        </td>
+                                        <td className="p-3 text-right"><button onClick={() => handleDelete(item.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={16}/></button></td>
+                                    </tr>
+                                );
+                            })}
+                            {history.length === 0 && <tr><td colSpan={5} className="p-6 text-center text-slate-400">No hay historial</td></tr>}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+      </div>
+    </div>
+  );
 };
 
-const toDateString = (val: any): string => {
-  if (!val) return new Date().toISOString().split('T')[0];
-  if (val instanceof Date) return val.toISOString().split('T')[0];
-  return String(val);
-};
-
-export const ContractService = {
-  getAll: async (): Promise<Contract[]> => {
-    if (db.isConfigured()) {
-      const rows = await db.query(`
-        SELECT code, 
-               apartment_code as "apartmentCode", 
-               property_code as "propertyCode", 
-               tenant_code as "tenantCode", 
-               start_date as "startDate", 
-               end_date as "endDate", 
-               next_payment_date as "nextPaymentDate",
-               amount, 
-               payment_day as "paymentDay",
-               status, 
-               created_at as "createdAt"
-        FROM contracts ORDER BY created_at DESC
-      `);
-      return rows.map(r => ({
-        ...r, 
-        amount: Number(r.amount), 
-        paymentDay: Number(r.paymentDay),
-        startDate: toDateString(r.startDate),
-        endDate: toDateString(r.endDate),
-        nextPaymentDate: r.nextPaymentDate ? toDateString(r.nextPaymentDate) : toDateString(r.startDate)
-      }));
-    } else {
-      await delay(300);
-      const data = localStorage.getItem(STORAGE_KEY);
-      return data ? JSON.parse(data) : [];
-    }
-  },
-
-  create: async (data: ContractFormData): Promise<Contract> => {
-    if (db.isConfigured()) {
-      const rows = await db.query('SELECT code FROM contracts');
-      const existing = rows.map(r => ({ code: r.code } as Contract));
-      const newCode = generateNextCode(existing);
-      
-      await db.query(`
-        INSERT INTO contracts (code, apartment_code, tenant_code, start_date, end_date, next_payment_date, amount, payment_day, status)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ACTIVE')
-      `, [newCode, data.apartmentCode, data.tenantCode, data.startDate, data.endDate, data.startDate, data.amount, data.paymentDay]);
-
-      try {
-        await db.query(`
-            INSERT INTO contract_prices (contract_code, amount, start_date)
-            VALUES ($1, $2, $3)
-        `, [newCode, data.amount, data.startDate]);
-      } catch (e) { console.warn("Could not init price history", e); }
-
-      try {
-         await db.query(`UPDATE apartments SET status='RENTED' WHERE code=$1`, [data.apartmentCode]);
-      } catch (e) { console.warn("Could not auto-update apartment status"); }
-
-      return { 
-        code: newCode, 
-        ...data, 
-        nextPaymentDate: data.startDate,
-        status: 'ACTIVE', 
-        createdAt: new Date().toISOString() 
-      };
-    } else {
-      await delay(300);
-      const existing = await ContractService.getAll();
-      const newCode = generateNextCode(existing);
-      const newContract: Contract = {
-        code: newCode,
-        apartmentCode: data.apartmentCode,
-        tenantCode: data.tenantCode,
-        startDate: data.startDate,
-        endDate: data.endDate,
-        nextPaymentDate: data.startDate,
-        amount: data.amount,
-        paymentDay: data.paymentDay,
-        status: 'ACTIVE',
-        createdAt: new Date().toISOString()
-      };
-      const updatedList = [...existing, newContract];
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
-      return newContract;
-    }
-  },
-
-  update: async (code: string, data: ContractFormData): Promise<Contract> => {
-    if (db.isConfigured()) {
-      const currentContract = (await db.query(`SELECT amount FROM contracts WHERE code=$1`, [code]))[0];
-      const oldAmount = Number(currentContract.amount);
-      const newAmount = Number(data.amount);
-
-      await db.query(`
-        UPDATE contracts 
-        SET apartment_code=$1, tenant_code=$2, start_date=$3, end_date=$4, amount=$5, payment_day=$6
-        WHERE code=$7
-      `, [data.apartmentCode, data.tenantCode, data.startDate, data.endDate, data.amount, data.paymentDay, code]);
-      
-      if (oldAmount !== newAmount) {
-          const today = new Date().toISOString().split('T')[0];
-          await db.query(`
-            UPDATE contract_prices 
-            SET end_date = $1 
-            WHERE contract_code = $2 AND end_date IS NULL
-          `, [today, code]);
-          
-          await db.query(`
-            INSERT INTO contract_prices (contract_code, amount, start_date)
-            VALUES ($1, $2, $3)
-          `, [code, newAmount, today]);
-      }
-
-      return { code, ...data, nextPaymentDate: data.startDate, status: 'ACTIVE', createdAt: new Date().toISOString() } as Contract;
-    } else {
-      await delay(200);
-      const existingList = await ContractService.getAll();
-      const index = existingList.findIndex(c => c.code === code);
-      if (index === -1) throw new Error("Contract not found");
-      const updated = { ...existingList[index], ...data };
-      existingList[index] = updated;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(existingList));
-      return existingList[index];
-    }
-  },
-
-  delete: async (code: string): Promise<void> => {
-    if (db.isConfigured()) {
-      await db.query('DELETE FROM contracts WHERE code=$1', [code]);
-    } else {
-      await delay(200);
-      let existing = await ContractService.getAll();
-      existing = existing.filter(c => c.code !== code);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
-    }
-  },
-
-  getPriceAtDate: async (contractCode: string, dateStr: string): Promise<number> => {
-      if (!db.isConfigured()) {
-          const contracts = await ContractService.getAll();
-          const c = contracts.find(x => x.code === contractCode);
-          return c ? c.amount : 0;
-      }
-
-      try {
-          const rows = await db.query(`
-            SELECT amount FROM contract_prices
-            WHERE contract_code = $1
-            AND start_date <= $2
-            AND (end_date >= $2 OR end_date IS NULL)
-            ORDER BY start_date DESC
-            LIMIT 1
-          `, [contractCode, dateStr]);
-
-          if (rows.length > 0) return Number(rows[0].amount);
-          
-          const cRows = await db.query(`SELECT amount FROM contracts WHERE code=$1`, [contractCode]);
-          return cRows.length > 0 ? Number(cRows[0].amount) : 0;
-      } catch (e) {
-          console.error("Error fetching historical price", e);
-          return 0;
-      }
-  },
-
-  getPriceHistory: async (contractCode: string): Promise<ContractPrice[]> => {
-    if (db.isConfigured()) {
-      try {
-        const rows = await db.query(`
-            SELECT id, contract_code as "contractCode", amount, start_date as "startDate", end_date as "endDate"
-            FROM contract_prices
-            WHERE contract_code = $1
-            ORDER BY start_date DESC
-        `, [contractCode]);
-        return rows.map(r => ({
-            ...r,
-            amount: Number(r.amount),
-            startDate: toDateString(r.startDate),
-            endDate: r.endDate ? toDateString(r.endDate) : undefined
-        }));
-      } catch (e) {
-          console.error(e);
-          return [];
-      }
-    }
-    return [];
-  },
-
-  addPriceHistory: async (contractCode: string, amount: number, startDate: string): Promise<void> => {
-      if (db.isConfigured()) {
-          await db.query(`
-            INSERT INTO contract_prices (contract_code, amount, start_date)
-            VALUES ($1, $2, $3)
-          `, [contractCode, amount, startDate]);
-          
-          const today = new Date().toISOString().split('T')[0];
-          if (startDate <= today) {
-             await db.query(`UPDATE contracts SET amount=$1 WHERE code=$2`, [amount, contractCode]);
-          }
-      }
-  },
-
-  // Fixed: Now correctly accepts and uses the ID for deletion
-  deletePriceHistory: async (id: string): Promise<void> => {
-      if(db.isConfigured()) {
-          await db.query('DELETE FROM contract_prices WHERE id=$1', [id]);
-      }
-  },
-
-  registerPayment: async (data: PaymentFormData): Promise<void> => {
-    // ... (Same as before, kept for completeness)
-    const contracts = await ContractService.getAll();
-    const contract = contracts.find(c => c.code === data.contractCode);
-    if (!contract) throw new Error("Contrato no encontrado");
-
-    let propertyName = '';
-    let propertyCode = contract.propertyCode;
-
-    if (!propertyCode && contract.apartmentCode) {
-        try {
-            const apartments = await ApartmentService.getAll();
-            const apt = apartments.find(a => a.code === contract.apartmentCode);
-            if (apt) propertyCode = apt.propertyCode;
-        } catch(e) { console.error(e); }
-    }
-
-    if (propertyCode) {
-       try {
-           const properties = await PropertyService.getAll();
-           const p = properties.find(prop => prop.code === propertyCode);
-           if (p) propertyName = p.name;
-       } catch(e) { console.error(e); }
-    }
-
-    const categories = await CategoryService.getAll();
-    let cat = categories.find(c => (c.name.toLowerCase().includes('alquiler') || c.name.toLowerCase().includes('renta')) && c.type === 'INGRESO');
-    if (!cat) cat = categories.find(c => c.type === 'INGRESO');
-    if (!cat) throw new Error("No hay categoría de Ingresos disponible.");
-
-    await TransactionService.create({
-       date: data.date,
-       amount: data.amount,
-       description: data.description,
-       type: 'INGRESO',
-       categoryCode: cat.code,
-       accountCode: data.accountCode,
-       propertyCode: propertyCode,
-       propertyName: propertyName
-    });
-
-    let nextDate = new Date(contract.nextPaymentDate || contract.startDate);
-    if (isNaN(nextDate.getTime())) nextDate = new Date();
-    
-    nextDate.setMonth(nextDate.getMonth() + 1);
-    const nextDateStr = nextDate.toISOString().split('T')[0];
-
-    if (db.isConfigured()) {
-       await db.query('UPDATE contracts SET next_payment_date=$1 WHERE code=$2', [nextDateStr, contract.code]);
-    } else {
-       contract.nextPaymentDate = nextDateStr;
-       const idx = contracts.findIndex(c => c.code === contract.code);
-       if (idx !== -1) {
-           contracts[idx] = contract;
-           localStorage.setItem(STORAGE_KEY, JSON.stringify(contracts));
-       }
-    }
-  },
-
-  processBulkPayment: async (data: BulkPaymentFormData): Promise<void> => {
-      const paymentsToProcess = data.items.filter(i => i.selected);
-      if (paymentsToProcess.length === 0) return;
-      
-      for (const item of paymentsToProcess) {
-          const historicalAmount = await ContractService.getPriceAtDate(data.contractCode, item.date);
-          const finalAmount = historicalAmount > 0 ? historicalAmount : item.amount;
-
-          await ContractService.registerPayment({
-              contractCode: data.contractCode,
-              accountCode: data.accountCode,
-              amount: finalAmount, 
-              date: new Date().toISOString().split('T')[0], 
-              description: item.description
-          });
-      }
-  }
-};
+export default ContractPriceHistoryModal;

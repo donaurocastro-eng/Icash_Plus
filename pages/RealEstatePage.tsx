@@ -15,6 +15,8 @@ import BulkPaymentModal from '../components/BulkPaymentModal';
 import ContractPriceHistoryModal from '../components/ContractPriceHistoryModal';
 import * as XLSX from 'xlsx';
 
+// ... (rest of the file is correct, ensuring no aliases used in imports)
+// Re-generating content to be safe
 type Tab = 'PROPERTIES' | 'UNITS' | 'TENANTS' | 'CONTRACTS' | 'PAYMENTS';
 
 const RealEstatePage: React.FC = () => {
@@ -120,11 +122,99 @@ const RealEstatePage: React.FC = () => {
   // Excel Logic
   const handleDownloadTemplate = () => {
     const wb = XLSX.utils.book_new();
-    // ... omitted for brevity but assumed present ...
-    XLSX.writeFile(wb, `plantilla.xlsx`);
+    let headers: string[] = [], example: any[] = [], sheetName = "";
+
+    if (activeTab === 'PROPERTIES') {
+        headers = ['Nombre', 'Clave_Catastral', 'Impuesto', 'Valor', 'Moneda'];
+        example = ['Edificio Centro', '0801-2000', 5000, 5000000, 'HNL'];
+        sheetName = "Propiedades";
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headers, example]), sheetName);
+    } else if (activeTab === 'UNITS') {
+        headers = ['Codigo_Propiedad', 'Nombre_Unidad', 'Estado'];
+        example = ['AP-001', 'Apto 101', 'AVAILABLE'];
+        sheetName = "Unidades";
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headers, example]), sheetName);
+        const helpData = [['CODIGO_PROPIEDAD', 'NOMBRE_PROPIEDAD']];
+        properties.forEach(p => helpData.push([p.code, p.name]));
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(helpData), "Ayuda_Edificios");
+    } else if (activeTab === 'TENANTS') {
+        headers = ['Nombre_Completo', 'Telefono', 'Email', 'Estado'];
+        example = ['Juan Pérez', '9999', 'x@x.com', 'ACTIVO'];
+        sheetName = "Inquilinos";
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headers, example]), sheetName);
+    } else if (activeTab === 'CONTRACTS') {
+        headers = ['Codigo_Unidad', 'Codigo_Inquilino', 'Inicio', 'Fin', 'Monto', 'Dia_Pago'];
+        example = ['UNIT-001', 'INQ-001', '2024-01-01', '2024-12-31', 5500, 15];
+        sheetName = "Contratos";
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headers, example]), sheetName);
+        const helpData: any[][] = [['CODIGO_UNIDAD', 'NOMBRE_UNIDAD', '', 'CODIGO_INQUILINO', 'NOMBRE_INQUILINO']];
+        const maxRows = Math.max(apartments.length, tenants.length);
+        for (let i = 0; i < maxRows; i++) {
+            const apt = apartments[i];
+            const ten = tenants[i];
+            helpData.push([
+                apt ? apt.code : '', apt ? apt.name : '', '',
+                ten ? ten.code : '', ten ? ten.fullName : ''
+            ]);
+        }
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(helpData), "Ayuda_Codigos");
+    } else {
+        alert("No hay plantilla para esta pestaña.");
+        return;
+    }
+    XLSX.writeFile(wb, `plantilla_${sheetName.toLowerCase()}.xlsx`);
   };
-  const handleFileSelect = (e: any) => {}; 
-  const processExcelFile = async (file: File) => {};
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) processExcelFile(e.target.files[0]);
+    e.target.value = '';
+  };
+
+  const processExcelFile = async (file: File) => {
+    setIsImporting(true);
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const data = e.target?.result;
+        const wb = XLSX.read(data, { type: 'binary' });
+        const json = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) as any[];
+        let count = 0;
+        for (const row of json) {
+            if (activeTab === 'UNITS') {
+                await ApartmentService.create({
+                    propertyCode: row['Codigo_Propiedad'] || row['Propiedad'],
+                    name: row['Nombre_Unidad'] || row['Nombre'],
+                    status: row['Estado'] || 'AVAILABLE'
+                });
+                count++;
+            } else if (activeTab === 'TENANTS') {
+                let statusRaw = (row['Estado'] || 'ACTIVO').toString().toUpperCase();
+                const status = (statusRaw === 'INACTIVO') ? 'INACTIVE' : 'ACTIVE';
+                await TenantService.create({
+                    fullName: row['Nombre_Completo'] || row['Nombre'],
+                    phone: row['Telefono'],
+                    email: row['Email'],
+                    status: status
+                });
+                count++;
+            } else if (activeTab === 'CONTRACTS') {
+                await ContractService.create({
+                    apartmentCode: row['Codigo_Unidad'],
+                    tenantCode: row['Codigo_Inquilino'],
+                    startDate: row['Inicio'],
+                    endDate: row['Fin'],
+                    amount: row['Monto'],
+                    paymentDay: row['Dia_Pago']
+                });
+                count++;
+            }
+        }
+        await loadAll();
+        alert(`Importados: ${count}`);
+      } catch (err) { alert("Error al importar."); console.error(err); } finally { setIsImporting(false); }
+    };
+    reader.readAsBinaryString(file);
+  };
 
   const formatMoney = (n: number) => n.toLocaleString('es-HN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
