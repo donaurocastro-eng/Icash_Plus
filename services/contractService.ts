@@ -32,6 +32,9 @@ const toDateString = (val: any): string => {
 export const ContractService = {
   getAll: async (): Promise<Contract[]> => {
     if (db.isConfigured()) {
+      // Fetch base contract info
+      // Price (amount) in 'contracts' table acts as the 'current' price cache
+      // Historical prices are in 'contract_prices'
       const rows = await db.query(`
         SELECT code, 
                apartment_code as "apartmentCode", 
@@ -67,10 +70,19 @@ export const ContractService = {
       const existing = rows.map(r => ({ code: r.code } as Contract));
       const newCode = generateNextCode(existing);
       
+      // 1. Insert Contract
       await db.query(`
         INSERT INTO contracts (code, apartment_code, tenant_code, start_date, end_date, next_payment_date, amount, payment_day, status)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ACTIVE')
       `, [newCode, data.apartmentCode, data.tenantCode, data.startDate, data.endDate, data.startDate, data.amount, data.paymentDay]);
+
+      // 2. Insert Initial Price History
+      try {
+        await db.query(`
+            INSERT INTO contract_prices (contract_code, amount, start_date)
+            VALUES ($1, $2, $3)
+        `, [newCode, data.amount, data.startDate]);
+      } catch (e) { console.warn("Could not init price history", e); }
 
       try {
          await db.query(`UPDATE apartments SET status='RENTED' WHERE code=$1`, [data.apartmentCode]);
@@ -106,26 +118,41 @@ export const ContractService = {
   },
 
   update: async (code: string, data: ContractFormData): Promise<Contract> => {
-    const existingList = await ContractService.getAll();
-    const current = existingList.find(c => c.code === code);
-    const nextPaymentDate = current ? current.nextPaymentDate : data.startDate;
-
     if (db.isConfigured()) {
+      // Check if price changed
+      const currentContract = (await db.query(`SELECT amount FROM contracts WHERE code=$1`, [code]))[0];
+      const oldAmount = Number(currentContract.amount);
+      const newAmount = Number(data.amount);
+
+      // 1. Update Main Contract
       await db.query(`
         UPDATE contracts 
         SET apartment_code=$1, tenant_code=$2, start_date=$3, end_date=$4, amount=$5, payment_day=$6
         WHERE code=$7
       `, [data.apartmentCode, data.tenantCode, data.startDate, data.endDate, data.amount, data.paymentDay, code]);
       
-      return { 
-        code, 
-        ...data, 
-        nextPaymentDate,
-        status: 'ACTIVE', 
-        createdAt: new Date().toISOString() 
-      } as Contract;
+      // 2. Handle Price History if changed
+      if (oldAmount !== newAmount) {
+          const today = new Date().toISOString().split('T')[0];
+          // Close previous price validity (update end_date of current active price)
+          await db.query(`
+            UPDATE contract_prices 
+            SET end_date = $1 
+            WHERE contract_code = $2 AND end_date IS NULL
+          `, [today, code]);
+          
+          // Insert new active price
+          await db.query(`
+            INSERT INTO contract_prices (contract_code, amount, start_date)
+            VALUES ($1, $2, $3)
+          `, [code, newAmount, today]);
+      }
+
+      return { code, ...data, nextPaymentDate: data.startDate, status: 'ACTIVE', createdAt: new Date().toISOString() } as Contract;
     } else {
+      // Local fallback
       await delay(200);
+      const existingList = await ContractService.getAll();
       const index = existingList.findIndex(c => c.code === code);
       if (index === -1) throw new Error("Contract not found");
       const updated = { ...existingList[index], ...data };
@@ -146,10 +173,47 @@ export const ContractService = {
     }
   },
 
+  // Helper to get price at specific date
+  getPriceAtDate: async (contractCode: string, dateStr: string): Promise<number> => {
+      if (!db.isConfigured()) {
+          const contracts = await ContractService.getAll();
+          const c = contracts.find(x => x.code === contractCode);
+          return c ? c.amount : 0;
+      }
+
+      try {
+          // Find price where start_date <= date AND (end_date >= date OR end_date IS NULL)
+          // Order by start_date DESC to get the most relevant one if overlaps exist (shouldn't happen)
+          const rows = await db.query(`
+            SELECT amount FROM contract_prices
+            WHERE contract_code = $1
+            AND start_date <= $2
+            AND (end_date >= $2 OR end_date IS NULL)
+            ORDER BY start_date DESC
+            LIMIT 1
+          `, [contractCode, dateStr]);
+
+          if (rows.length > 0) return Number(rows[0].amount);
+          
+          // Fallback to current contract amount if history missing
+          const cRows = await db.query(`SELECT amount FROM contracts WHERE code=$1`, [contractCode]);
+          return cRows.length > 0 ? Number(cRows[0].amount) : 0;
+      } catch (e) {
+          console.error("Error fetching historical price", e);
+          return 0;
+      }
+  },
+
   registerPayment: async (data: PaymentFormData): Promise<void> => {
     const contracts = await ContractService.getAll();
     const contract = contracts.find(c => c.code === data.contractCode);
     if (!contract) throw new Error("Contrato no encontrado");
+
+    // Determine amount based on Date if not provided explicitly? 
+    // Usually data.amount comes from UI.
+    // But if we are in Bulk Processing, we might want to double check history.
+    // For single payment, UI usually sets amount. We trust UI or verify?
+    // Let's trust UI for amount but ensure logic consistency.
 
     let propertyName = '';
     let propertyCode = contract.propertyCode;
@@ -176,7 +240,7 @@ export const ContractService = {
     if (!cat) throw new Error("No hay categoría de Ingresos disponible.");
 
     await TransactionService.create({
-       date: data.date,
+       date: data.date, // Transaction date (payment date)
        amount: data.amount,
        description: data.description,
        type: 'INGRESO',
@@ -186,11 +250,12 @@ export const ContractService = {
        propertyName: propertyName
     });
 
+    // Advance Date logic
+    // Note: data.date is when payment happened.
+    // We need to advance the *Contract's Pointer*.
     let nextDate = new Date(contract.nextPaymentDate || contract.startDate);
     if (isNaN(nextDate.getTime())) nextDate = new Date();
-    // This is single payment logic, usually advances 1 month
-    // BUT, if using registerPayment for specific date (like in history modal), we might need more logic.
-    // Assuming this is "pay current due date".
+    
     nextDate.setMonth(nextDate.getMonth() + 1);
     const nextDateStr = nextDate.toISOString().split('T')[0];
 
@@ -207,27 +272,24 @@ export const ContractService = {
   },
 
   processBulkPayment: async (data: BulkPaymentFormData): Promise<void> => {
-      // Process selected items sequentially
-      // 1. Find items that are selected
       const paymentsToProcess = data.items.filter(i => i.selected);
       if (paymentsToProcess.length === 0) return;
-
-      // 2. For each item, register a payment (transaction + advance date)
-      // Note: registerPayment automatically advances date by 1 month.
-      // If we pay 3 months, we call it 3 times.
-      // CAUTION: registerPayment advances from CURRENT next_payment_date.
-      // If we pay Jan, Feb, Mar, we must ensure order.
-      // The BulkPaymentModal should enforce sequential selection or we assume sequential.
       
       for (const item of paymentsToProcess) {
+          // Fetch correct historical price for the specific month being paid
+          // item.date represents the due date of that month (e.g. 2024-01-01)
+          const historicalAmount = await ContractService.getPriceAtDate(data.contractCode, item.date);
+          
+          // Use historical amount if found, otherwise fallback to item.amount (current)
+          const finalAmount = historicalAmount > 0 ? historicalAmount : item.amount;
+
           await ContractService.registerPayment({
               contractCode: data.contractCode,
               accountCode: data.accountCode,
-              amount: item.amount,
-              date: new Date().toISOString().split('T')[0], // Payment date is today
-              description: item.description // "Alquiler Enero 2025", etc.
+              amount: finalAmount, 
+              date: new Date().toISOString().split('T')[0], // Paid today
+              description: item.description
           });
-          // Introduce slight delay if needed for DB consistency or just await loop
       }
   }
 };

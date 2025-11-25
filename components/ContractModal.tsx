@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, Save, AlertCircle, FileText, Calendar } from 'lucide-react';
+import { X, Save, AlertCircle, FileText } from 'lucide-react';
 import { ContractFormData, Property, Tenant, Apartment, Contract } from '../types';
 import { PropertyService } from '../services/propertyService';
 import { TenantService } from '../services/tenantService';
@@ -48,11 +48,6 @@ const ContractModal: React.FC<ContractModalProps> = ({
               amount: editingContract.amount,
               paymentDay: editingContract.paymentDay
             });
-            
-            // Try to auto-select the parent property to show the unit in the filtered list
-            // We need to wait for apartments to load or find it in the newly loaded list.
-            // Since state updates are async, we'll rely on the user seeing "All" or we can improve logic later.
-            // For now, we won't filter by property on Edit mode initially to ensure the current unit is visible.
             setSelectedPropCode(''); 
           } else {
             setFormData({
@@ -100,7 +95,6 @@ const ContractModal: React.FC<ContractModalProps> = ({
     }
   };
 
-  // Filter apartments by selected property
   const filteredApartments = apartments.filter(a => 
     selectedPropCode ? a.propertyCode === selectedPropCode : true
   );
@@ -121,8 +115,13 @@ const ContractModal: React.FC<ContractModalProps> = ({
           {error && (
             <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg flex items-center"><AlertCircle size={16} className="mr-2 shrink-0" />{error}</div>
           )}
+          
+          {editingContract && (
+             <div className="bg-blue-50 p-3 rounded-lg text-xs text-blue-700 border border-blue-100 mb-2">
+                ℹ️ Si cambias el monto, se registrará un cambio de precio histórico a partir de hoy. Los pagos de meses anteriores mantendrán el precio viejo.
+             </div>
+          )}
 
-          {/* Property Filter */}
           <div className="space-y-1">
              <label className="block text-xs font-bold text-slate-400 uppercase">1. Filtrar por Edificio</label>
              <select
