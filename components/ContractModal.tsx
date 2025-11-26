@@ -1,166 +1,242 @@
-import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, TrendingUp, Calendar } from 'lucide-react';
-import { Contract, ContractPrice } from '../types';
-import { ContractService } from '../services/contractService';
+import React, { useEffect, useState } from 'react';
+import { X, Save, AlertCircle, FileText, Calendar, DollarSign, User, Home } from 'lucide-react';
+import { Contract, ContractFormData, Apartment, Tenant } from '../types';
+import { ApartmentService } from '../services/apartmentService';
+import { TenantService } from '../services/tenantService';
 
-interface ContractPriceHistoryModalProps {
+interface ContractModalProps {
   isOpen: boolean;
   onClose: () => void;
-  contract: Contract | null;
-  contractLabel: string;
+  onSubmit: (data: ContractFormData) => Promise<void>;
+  editingContract?: Contract | null;
+  isSubmitting: boolean;
 }
 
-const ContractPriceHistoryModal: React.FC<ContractPriceHistoryModalProps> = ({
-  isOpen,
-  onClose,
-  contract,
-  contractLabel
+const ContractModal: React.FC<ContractModalProps> = ({ 
+  isOpen, 
+  onClose, 
+  onSubmit, 
+  editingContract, 
+  isSubmitting 
 }) => {
-  const [history, setHistory] = useState<ContractPrice[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState<ContractFormData>({
+    apartmentCode: '',
+    tenantCode: '',
+    startDate: new Date().toISOString().split('T')[0],
+    endDate: '',
+    amount: 0,
+    paymentDay: 1
+  });
   
-  // New price form
-  const [newAmount, setNewAmount] = useState<number>(0);
-  const [newStartDate, setNewStartDate] = useState<string>('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [apartments, setApartments] = useState<Apartment[]>([]);
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isOpen && contract) {
-      loadHistory();
-      setNewAmount(contract.amount);
-      setNewStartDate(new Date().toISOString().split('T')[0]);
+    if (isOpen) {
+      loadDependencies();
+      if (editingContract) {
+        setFormData({
+          apartmentCode: editingContract.apartmentCode,
+          tenantCode: editingContract.tenantCode,
+          startDate: editingContract.startDate,
+          endDate: editingContract.endDate,
+          amount: editingContract.amount,
+          paymentDay: editingContract.paymentDay
+        });
+      } else {
+        setFormData({
+          apartmentCode: '',
+          tenantCode: '',
+          startDate: new Date().toISOString().split('T')[0],
+          endDate: '',
+          amount: 0,
+          paymentDay: 1
+        });
+      }
+      setError(null);
     }
-  }, [isOpen, contract]);
+  }, [editingContract, isOpen]);
 
-  const loadHistory = async () => {
-    if (!contract) return;
-    setLoading(true);
+  const loadDependencies = async () => {
     try {
-      const data = await ContractService.getPriceHistory(contract.code);
-      setHistory(data);
-    } catch (e) { console.error(e); } finally { setLoading(false); }
+      const [apts, tens] = await Promise.all([
+        ApartmentService.getAll(),
+        TenantService.getAll()
+      ]);
+      setApartments(apts);
+      setTenants(tens.filter(t => t.status === 'ACTIVE'));
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  const handleAddPrice = async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!contract || !newAmount || !newStartDate) return;
-      setIsSubmitting(true);
-      try {
-          await ContractService.addPriceHistory(contract.code, newAmount, newStartDate);
-          await loadHistory();
-          setNewStartDate('');
-      } catch (e) { alert("Error al guardar"); } finally { setIsSubmitting(false); }
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.apartmentCode || !formData.tenantCode || !formData.amount) {
+      setError("Unidad, Inquilino y Monto son obligatorios.");
+      return;
+    }
+    
+    try {
+      await onSubmit(formData);
+      onClose();
+    } catch (err: any) {
+      setError(err.message || "Error al guardar contrato.");
+    }
   };
 
-  const handleDelete = async (id: string) => {
-      if (!confirm("¿Eliminar este registro de precio?")) return;
-      try {
-          await ContractService.deletePriceHistory(id);
-          await loadHistory();
-      } catch (e) { alert("Error al eliminar"); }
-  };
-
-  if (!isOpen || !contract) return null;
-
-  const formatMoney = (n: number) => n.toLocaleString('es-HN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        
-        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-            <div>
-                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                    <TrendingUp size={20} className="text-blue-600"/> 
-                    Historial de Precios
-                </h3>
-                <p className="text-xs text-slate-500">{contractLabel}</p>
-            </div>
-            <button onClick={onClose}><X size={20} className="text-slate-400 hover:text-slate-600"/></button>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <div 
+        className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" 
+        onClick={onClose}
+      />
+
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden transform transition-all scale-100 max-h-[90vh] overflow-y-auto">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 sticky top-0 z-10">
+          <div>
+            <h3 className="text-lg font-bold text-slate-800">
+              {editingContract ? 'Editar Contrato' : 'Nuevo Contrato'}
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">Asigna un inquilino a una unidad</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
+            <X size={20} />
+          </button>
         </div>
 
-        <div className="p-6 overflow-y-auto space-y-6">
-            
-            {/* Add Form */}
-            <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
-                <h4 className="text-sm font-bold text-blue-800 mb-3">Programar Nuevo Precio</h4>
-                <form onSubmit={handleAddPrice} className="flex flex-col sm:flex-row gap-3 items-end">
-                    <div className="flex-1 w-full">
-                        <label className="block text-xs font-medium text-blue-700 mb-1">Monto</label>
-                        <input 
-                            type="number" step="0.01" required
-                            className="w-full px-3 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                            value={newAmount} onChange={e => setNewAmount(parseFloat(e.target.value))}
-                        />
-                    </div>
-                    <div className="flex-1 w-full">
-                        <label className="block text-xs font-medium text-blue-700 mb-1">A partir de</label>
-                        <input 
-                            type="date" required
-                            className="w-full px-3 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                            value={newStartDate} onChange={e => setNewStartDate(e.target.value)}
-                        />
-                    </div>
-                    <button 
-                        type="submit" disabled={isSubmitting}
-                        className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                        <Plus size={16}/> Guardar
-                    </button>
-                </form>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {error && (
+            <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg flex items-center">
+              <AlertCircle size={16} className="mr-2 shrink-0" />
+              {error}
             </div>
+          )}
 
-            {/* History List */}
-            <div>
-                <h4 className="text-sm font-bold text-slate-700 mb-3">Línea de Tiempo</h4>
-                <div className="border border-slate-200 rounded-xl overflow-hidden">
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-slate-50 text-slate-500 font-medium">
-                            <tr>
-                                <th className="p-3 pl-4">Fecha Inicio</th>
-                                <th className="p-3">Fecha Fin</th>
-                                <th className="p-3 text-right">Monto</th>
-                                <th className="p-3 text-center">Estado</th>
-                                <th className="p-3 text-right"></th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {history.map((item) => {
-                                const today = new Date().toISOString().split('T')[0];
-                                const isFuture = item.startDate > today;
-                                const isPast = item.endDate && item.endDate < today;
-                                const isCurrent = !isFuture && !isPast;
-                                
-                                return (
-                                    <tr key={item.id} className="hover:bg-slate-50">
-                                        <td className="p-3 pl-4 font-mono text-slate-600">{item.startDate}</td>
-                                        <td className="p-3 font-mono text-slate-400">{item.endDate || '-'}</td>
-                                        <td className="p-3 text-right font-bold text-slate-700">{formatMoney(item.amount)}</td>
-                                        <td className="p-3 text-center">
-                                            {isCurrent && <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-xs font-bold">VIGENTE</span>}
-                                            {isFuture && <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-bold">FUTURO</span>}
-                                            {isPast && <span className="px-2 py-1 bg-slate-100 text-slate-500 rounded text-xs font-bold">HISTÓRICO</span>}
-                                        </td>
-                                        <td className="p-3 text-right">
-                                            <button onClick={() => handleDelete(item.id)} className="text-slate-300 hover:text-red-500 transition-colors">
-                                                <Trash2 size={16}/>
-                                            </button>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                            {history.length === 0 && (
-                                <tr><td colSpan={5} className="p-6 text-center text-slate-400">No hay historial registrado</td></tr>
-                            )}
-                        </tbody>
-                    </table>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+                <label className="block text-sm font-medium text-slate-700">Unidad / Apartamento</label>
+                <div className="relative">
+                    <Home className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <select
+                        className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none bg-white appearance-none"
+                        value={formData.apartmentCode}
+                        onChange={e => setFormData({...formData, apartmentCode: e.target.value})}
+                    >
+                        <option value="">Seleccionar...</option>
+                        {apartments.map(a => (
+                            <option key={a.code} value={a.code}>
+                                {a.name} ({a.status === 'RENTED' && a.code !== editingContract?.apartmentCode ? 'Ocupado' : 'Disp.'})
+                            </option>
+                        ))}
+                    </select>
                 </div>
             </div>
-        </div>
+
+            <div className="space-y-1">
+                <label className="block text-sm font-medium text-slate-700">Inquilino</label>
+                <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <select
+                        className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none bg-white appearance-none"
+                        value={formData.tenantCode}
+                        onChange={e => setFormData({...formData, tenantCode: e.target.value})}
+                    >
+                        <option value="">Seleccionar...</option>
+                        {tenants.map(t => (
+                            <option key={t.code} value={t.code}>{t.fullName}</option>
+                        ))}
+                    </select>
+                </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+             <div className="space-y-1">
+                <label className="block text-sm font-medium text-slate-700">Fecha Inicio</label>
+                <div className="relative">
+                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input
+                        type="date"
+                        className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
+                        value={formData.startDate}
+                        onChange={e => setFormData({...formData, startDate: e.target.value})}
+                    />
+                </div>
+            </div>
+
+            <div className="space-y-1">
+                <label className="block text-sm font-medium text-slate-700">Fecha Fin (Opcional)</label>
+                <div className="relative">
+                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input
+                        type="date"
+                        className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
+                        value={formData.endDate}
+                        onChange={e => setFormData({...formData, endDate: e.target.value})}
+                    />
+                </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+             <div className="space-y-1">
+                <label className="block text-sm font-medium text-slate-700">Monto Mensual</label>
+                <div className="relative">
+                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input
+                        type="number"
+                        step="0.01"
+                        className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none font-mono"
+                        placeholder="0.00"
+                        value={formData.amount}
+                        onChange={e => setFormData({...formData, amount: parseFloat(e.target.value) || 0})}
+                    />
+                </div>
+            </div>
+
+            <div className="space-y-1">
+                <label className="block text-sm font-medium text-slate-700">Día de Pago (1-31)</label>
+                <input
+                    type="number"
+                    min="1" max="31"
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none text-center"
+                    value={formData.paymentDay}
+                    onChange={e => setFormData({...formData, paymentDay: parseInt(e.target.value) || 1})}
+                />
+            </div>
+          </div>
+
+          <div className="pt-4 flex space-x-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2 text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 font-medium transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="flex-1 flex items-center justify-center px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 font-medium shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSubmitting ? (
+                <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>
+                  <Save size={18} className="mr-2" />
+                  Guardar
+                </>
+              )}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
 };
 
-export default ContractPriceHistoryModal;
+export default ContractModal;

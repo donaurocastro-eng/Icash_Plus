@@ -148,6 +148,23 @@ export interface ContractPrice {
   endDate?: string;
 }
 
+// NEW: Recurring Services/Expenses for Properties
+export interface PropertyServiceItem {
+  code: string;          // SERV-001
+  propertyCode: string;  // Linked to Building/Property
+  name: string;          // e.g. "Agua Potable"
+  defaultAmount: number; // Estimated cost
+  active: boolean;
+  createdAt: string;
+}
+
+export interface PropertyServiceItemFormData {
+  propertyCode: string;
+  name: string;
+  defaultAmount: number;
+  active: boolean;
+}
+
 export interface PaymentFormData {
   contractCode: string;
   date: string;
