@@ -25,7 +25,6 @@ const SettingsPage: React.FC = () => {
     if(urlToCheck) setSchemaStatus('ok');
   };
 
-  // ... handlers ...
   const handleTest = async () => { /* ... */ };
   const handleSave = () => { /* ... */ };
   const handleDisconnect = () => { /* ... */ };
@@ -59,6 +58,9 @@ const SettingsPage: React.FC = () => {
         
         addLog("🔧 Agregando columna 'default_category_code'...");
         await db.query(`ALTER TABLE public.property_services ADD COLUMN IF NOT EXISTS default_category_code text;`);
+
+        addLog("🔧 Agregando columna 'default_account_code'...");
+        await db.query(`ALTER TABLE public.property_services ADD COLUMN IF NOT EXISTS default_account_code text;`);
 
         addLog("✨ ¡Proceso completado! Recargando...");
         window.location.reload();

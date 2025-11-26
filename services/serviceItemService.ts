@@ -1,124 +1,208 @@
-import { PropertyServiceItem, PropertyServiceItemFormData, ServicePaymentFormData } from '../types';
-import { db } from './db';
-import { TransactionService } from './transactionService';
-import { PropertyService } from './propertyService';
+export type AccountType = 'ACTIVO' | 'PASIVO';
+export type CategoryType = 'GASTO' | 'INGRESO';
+export type Currency = 'HNL' | 'USD';
 
-const STORAGE_KEY = 'icash_plus_services';
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+export interface Account {
+  code: string;           
+  name: string;           
+  bankName: string;       
+  accountNumber: string;  
+  type: AccountType;      
+  initialBalance: number; 
+  currency: Currency;     
+  isSystem: boolean;      
+  createdAt: string;
+}
 
-const generateNextCode = (existing: PropertyServiceItem[]): string => {
-  let maxId = 0;
-  existing.forEach(s => {
-    if (s.code.startsWith('SERV-')) {
-      const parts = s.code.split('-');
-      if (parts.length === 2) {
-        const num = parseInt(parts[1], 10);
-        if (!isNaN(num) && num > maxId) maxId = num;
-      }
-    }
-  });
-  const nextId = maxId + 1;
-  return `SERV-${nextId.toString().padStart(3, '0')}`;
-};
+export interface AccountFormData {
+  name: string;
+  bankName: string;
+  accountNumber: string;
+  type: AccountType;
+  initialBalance: number;
+  currency: Currency;
+}
 
-export const ServiceItemService = {
-  getAll: async (): Promise<PropertyServiceItem[]> => {
-    if (db.isConfigured()) {
-      const rows = await db.query(`
-        SELECT code, property_code as "propertyCode", name, default_amount as "defaultAmount", default_category_code as "defaultCategoryCode", active, created_at as "createdAt"
-        FROM property_services ORDER BY created_at DESC
-      `);
-      return rows.map(r => ({...r, defaultAmount: Number(r.defaultAmount)}));
-    } else {
-      await delay(300);
-      const data = localStorage.getItem(STORAGE_KEY);
-      return data ? JSON.parse(data) : [];
-    }
-  },
+export interface Category {
+  code: string;           
+  name: string;
+  type: CategoryType;     
+  createdAt: string;
+}
 
-  create: async (data: PropertyServiceItemFormData): Promise<PropertyServiceItem> => {
-    if (db.isConfigured()) {
-      const rows = await db.query('SELECT code FROM property_services');
-      const existing = rows.map(r => ({ code: r.code } as PropertyServiceItem));
-      const newCode = generateNextCode(existing);
-      
-      await db.query(`
-        INSERT INTO property_services (code, property_code, name, default_amount, default_category_code, active)
-        VALUES ($1, $2, $3, $4, $5, $6)
-      `, [newCode, data.propertyCode, data.name, data.defaultAmount, data.defaultCategoryCode || null, data.active]);
+export interface CategoryFormData {
+  name: string;
+  type: CategoryType;
+}
 
-      return { code: newCode, ...data, createdAt: new Date().toISOString() };
-    } else {
-      await delay(300);
-      const existing = await ServiceItemService.getAll();
-      const newCode = generateNextCode(existing);
-      const newItem: PropertyServiceItem = {
-        code: newCode,
-        ...data,
-        createdAt: new Date().toISOString()
-      };
-      const updatedList = [...existing, newItem];
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
-      return newItem;
-    }
-  },
+export interface Transaction {
+  code: string;           
+  date: string;           
+  description: string;
+  amount: number;
+  type: CategoryType;     
+  
+  categoryCode: string;
+  categoryName: string;
+  
+  accountCode: string;
+  accountName: string;
+  
+  propertyCode?: string;  
+  propertyName?: string;  
+  
+  createdAt: string;
+}
 
-  update: async (code: string, data: PropertyServiceItemFormData): Promise<PropertyServiceItem> => {
-    if (db.isConfigured()) {
-      await db.query(`
-        UPDATE property_services SET property_code=$1, name=$2, default_amount=$3, default_category_code=$4, active=$5
-        WHERE code=$6
-      `, [data.propertyCode, data.name, data.defaultAmount, data.defaultCategoryCode || null, data.active, code]);
-      return { code, ...data, createdAt: new Date().toISOString() };
-    } else {
-      await delay(200);
-      const existing = await ServiceItemService.getAll();
-      const index = existing.findIndex(s => s.code === code);
-      if (index === -1) throw new Error("Not found");
-      existing[index] = { ...existing[index], ...data };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
-      return existing[index];
-    }
-  },
+export interface TransactionFormData {
+  date: string;
+  description: string;
+  amount: number;
+  type: CategoryType;
+  categoryCode: string;
+  accountCode: string;
+  propertyCode?: string;
+  propertyName?: string;
+}
 
-  delete: async (code: string): Promise<void> => {
-    if (db.isConfigured()) {
-      await db.query('DELETE FROM property_services WHERE code=$1', [code]);
-    } else {
-      await delay(200);
-      let existing = await ServiceItemService.getAll();
-      existing = existing.filter(s => s.code !== code);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
-    }
-  },
+// --- REAL ESTATE TYPES ---
 
-  registerPayment: async (data: ServicePaymentFormData): Promise<void> => {
-      // Get Service Details for Property Name
-      const services = await ServiceItemService.getAll();
-      const service = services.find(s => s.code === data.serviceCode);
-      
-      let propertyName = '';
-      let propertyCode = '';
-      
-      if (service) {
-          propertyCode = service.propertyCode;
-          try {
-              const properties = await PropertyService.getAll();
-              const p = properties.find(x => x.code === propertyCode);
-              if (p) propertyName = p.name;
-          } catch (e) { console.error(e); }
-      }
+export interface Property {
+  code: string;         // AP-001 (Now represents Building/Complex)
+  name: string;
+  cadastralKey?: string;
+  annualTax: number;
+  value: number;
+  currency: Currency;
+  createdAt: string;
+}
 
-      // Create Expense Transaction
-      await TransactionService.create({
-          date: data.date,
-          amount: data.amount,
-          description: data.description,
-          type: 'GASTO',
-          categoryCode: data.categoryCode,
-          accountCode: data.accountCode,
-          propertyCode: propertyCode,
-          propertyName: propertyName
-      });
-  }
-};
+export interface PropertyFormData {
+  code?: string; 
+  name: string;
+  cadastralKey?: string;
+  annualTax: number;
+  value: number;
+  currency: Currency;
+}
+
+export interface Apartment {
+  code: string;         // UNIT-001
+  propertyCode: string; // Link to Parent Property
+  name: string;         // e.g. "Apt 101"
+  status: 'AVAILABLE' | 'RENTED' | 'MAINTENANCE';
+  createdAt: string;
+}
+
+export interface ApartmentFormData {
+  propertyCode: string;
+  name: string;
+  status: 'AVAILABLE' | 'RENTED' | 'MAINTENANCE';
+}
+
+export interface Tenant {
+  code: string;         
+  fullName: string;
+  phone?: string;
+  email?: string;
+  status: 'ACTIVE' | 'INACTIVE'; 
+  createdAt: string;
+}
+
+export interface TenantFormData {
+  fullName: string;
+  phone?: string;
+  email?: string;
+  status: 'ACTIVE' | 'INACTIVE';
+}
+
+export interface Contract {
+  code: string;          
+  apartmentCode: string; 
+  tenantCode: string;
+  startDate: string;     
+  endDate: string;
+  nextPaymentDate: string; 
+  amount: number;
+  paymentDay: number;    
+  status: 'ACTIVE' | 'EXPIRED' | 'CANCELLED';
+  createdAt: string;
+  propertyCode?: string;
+}
+
+export interface ContractFormData {
+  apartmentCode: string;
+  tenantCode: string;
+  startDate: string;
+  endDate: string;
+  amount: number;
+  paymentDay: number;
+}
+
+export interface ContractPrice {
+  id: string;
+  contractCode: string;
+  amount: number;
+  startDate: string;
+  endDate?: string;
+}
+
+// Recurring Services/Expenses for Properties
+export interface PropertyServiceItem {
+  code: string;          // SERV-001
+  propertyCode: string;  // Linked to Building/Property
+  name: string;          // e.g. "Agua Potable"
+  defaultAmount: number; // Estimated cost
+  defaultCategoryCode?: string; // Link to Expense Category
+  defaultAccountCode?: string; // NEW: Link to Payment Account
+  active: boolean;
+  createdAt: string;
+}
+
+export interface PropertyServiceItemFormData {
+  propertyCode: string;
+  name: string;
+  defaultAmount: number;
+  defaultCategoryCode?: string;
+  defaultAccountCode?: string;
+  active: boolean;
+}
+
+export interface ServicePaymentFormData {
+    serviceCode: string;
+    date: string;
+    amount: number;
+    accountCode: string;
+    categoryCode: string;
+    description: string;
+}
+
+export interface PaymentFormData {
+  contractCode: string;
+  date: string;
+  amount: number;
+  accountCode: string; // Destination account (Bank/Cash)
+  description: string;
+}
+
+export interface BulkPaymentItem {
+    date: string;
+    amount: number;
+    description: string;
+    selected: boolean;
+}
+
+export interface BulkPaymentFormData {
+    contractCode: string;
+    accountCode: string;
+    items: BulkPaymentItem[];
+}
+
+export enum AppRoute {
+  DASHBOARD = 'dashboard',
+  ACCOUNTS = 'accounts',
+  CATEGORIES = 'categories',
+  TRANSACTIONS = 'transactions',
+  REAL_ESTATE = 'real_estate',
+  SETTINGS = 'settings'
+}

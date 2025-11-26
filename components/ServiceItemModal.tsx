@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { X, Save, AlertCircle, Zap, Home, Tag } from 'lucide-react';
-import { PropertyServiceItem, PropertyServiceItemFormData, Property, Category } from '../types';
+import { X, Save, AlertCircle, Zap, Home, Tag, CreditCard } from 'lucide-react';
+import { PropertyServiceItem, PropertyServiceItemFormData, Property, Category, Account } from '../types';
 import { PropertyService } from '../services/propertyService';
 import { CategoryService } from '../services/categoryService';
+import { AccountService } from '../services/accountService';
 
 interface ServiceItemModalProps {
   isOpen: boolean;
@@ -24,10 +25,12 @@ const ServiceItemModal: React.FC<ServiceItemModalProps> = ({
     name: '',
     defaultAmount: 0,
     defaultCategoryCode: '',
+    defaultAccountCode: '',
     active: true
   });
   const [properties, setProperties] = useState<Property[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -39,10 +42,11 @@ const ServiceItemModal: React.FC<ServiceItemModalProps> = ({
           name: editingItem.name,
           defaultAmount: editingItem.defaultAmount,
           defaultCategoryCode: editingItem.defaultCategoryCode || '',
+          defaultAccountCode: editingItem.defaultAccountCode || '',
           active: editingItem.active
         });
       } else {
-        setFormData({ propertyCode: '', name: '', defaultAmount: 0, defaultCategoryCode: '', active: true });
+        setFormData({ propertyCode: '', name: '', defaultAmount: 0, defaultCategoryCode: '', defaultAccountCode: '', active: true });
       }
       setError(null);
     }
@@ -50,13 +54,14 @@ const ServiceItemModal: React.FC<ServiceItemModalProps> = ({
 
   const loadDependencies = async () => {
     try {
-      const [props, cats] = await Promise.all([
+      const [props, cats, accs] = await Promise.all([
           PropertyService.getAll(),
-          CategoryService.getAll()
+          CategoryService.getAll(),
+          AccountService.getAll()
       ]);
       setProperties(props);
-      // Filter only Expense categories
       setCategories(cats.filter(c => c.type === 'GASTO'));
+      setAccounts(accs);
     } catch (err) { console.error(err); }
   };
 
@@ -136,7 +141,24 @@ const ServiceItemModal: React.FC<ServiceItemModalProps> = ({
                 ))}
                 </select>
             </div>
-            <p className="text-xs text-slate-400">Se usará automáticamente al registrar el pago.</p>
+          </div>
+
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-slate-700">Cuenta de Pago Habitual</label>
+            <div className="relative">
+                <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <select
+                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none bg-white"
+                value={formData.defaultAccountCode}
+                onChange={e => setFormData({...formData, defaultAccountCode: e.target.value})}
+                >
+                <option value="">Sin cuenta asignada...</option>
+                {accounts.map(a => (
+                    <option key={a.code} value={a.code}>{a.name} ({a.currency})</option>
+                ))}
+                </select>
+            </div>
+            <p className="text-xs text-slate-400">Se pre-seleccionará al momento de pagar.</p>
           </div>
 
           <div className="space-y-1">

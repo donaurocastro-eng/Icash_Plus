@@ -39,7 +39,7 @@ const ServicePaymentModal: React.FC<ServicePaymentModalProps> = ({
         serviceCode: serviceItem.code,
         date: new Date().toISOString().split('T')[0],
         amount: serviceItem.defaultAmount,
-        accountCode: '',
+        accountCode: serviceItem.defaultAccountCode || '', // Pre-fill default account
         categoryCode: serviceItem.defaultCategoryCode || '',
         description: `Pago Servicio: ${serviceItem.name}`
       });
@@ -53,7 +53,7 @@ const ServicePaymentModal: React.FC<ServicePaymentModalProps> = ({
           AccountService.getAll(),
           CategoryService.getAll()
       ]);
-      setAccounts(accs); // All accounts (Asset + Liability) allowed for expense
+      setAccounts(accs);
       setCategories(cats.filter(c => c.type === 'GASTO'));
     } catch (err) { console.error(err); }
   };

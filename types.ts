@@ -154,6 +154,7 @@ export interface PropertyServiceItem {
   name: string;          // e.g. "Agua Potable"
   defaultAmount: number; // Estimated cost
   defaultCategoryCode?: string; // Link to Expense Category
+  defaultAccountCode?: string; // NEW: Link to Payment Account
   active: boolean;
   createdAt: string;
 }
@@ -163,6 +164,7 @@ export interface PropertyServiceItemFormData {
   name: string;
   defaultAmount: number;
   defaultCategoryCode?: string;
+  defaultAccountCode?: string;
   active: boolean;
 }
 
