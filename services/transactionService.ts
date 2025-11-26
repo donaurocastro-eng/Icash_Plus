@@ -75,7 +75,9 @@ export const TransactionService = {
     const accounts = await AccountService.getAll();
     const category = categories.find(c => c.code === data.categoryCode);
     const account = accounts.find(a => a.code === data.accountCode);
-    if (!category || !account) throw new Error("Datos inválidos");
+    
+    if (!category) throw new Error(`La categoría seleccionada (${data.categoryCode}) no es válida o no existe.`);
+    if (!account) throw new Error(`La cuenta seleccionada (${data.accountCode}) no es válida o no existe.`);
 
     if (db.isConfigured()) {
       const rows = await db.query('SELECT code FROM transactions');

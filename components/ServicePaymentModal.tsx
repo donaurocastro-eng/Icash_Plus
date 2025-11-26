@@ -34,29 +34,43 @@ const ServicePaymentModal: React.FC<ServicePaymentModalProps> = ({
 
   useEffect(() => {
     if (isOpen && serviceItem) {
-      loadDependencies();
-      setFormData({
-        serviceCode: serviceItem.code,
-        date: new Date().toISOString().split('T')[0],
-        amount: serviceItem.defaultAmount,
-        accountCode: serviceItem.defaultAccountCode || '', // Pre-fill default account
-        categoryCode: serviceItem.defaultCategoryCode || '',
-        description: `Pago Servicio: ${serviceItem.name}`
-      });
-      setError(null);
+      const init = async () => {
+        try {
+            const [accs, cats] = await Promise.all([
+                AccountService.getAll(),
+                CategoryService.getAll()
+            ]);
+            const expenseCats = cats.filter(c => c.type === 'GASTO');
+            setAccounts(accs);
+            setCategories(expenseCats);
+
+            // Validate defaults against loaded lists
+            let defAccount = serviceItem.defaultAccountCode || '';
+            if (defAccount && !accs.find(a => a.code === defAccount)) {
+                console.warn(`Default account ${defAccount} not found.`);
+                defAccount = '';
+            }
+
+            let defCat = serviceItem.defaultCategoryCode || '';
+            if (defCat && !expenseCats.find(c => c.code === defCat)) {
+                console.warn(`Default category ${defCat} not found or not GASTO.`);
+                defCat = '';
+            }
+
+            setFormData({
+                serviceCode: serviceItem.code,
+                date: new Date().toISOString().split('T')[0],
+                amount: serviceItem.defaultAmount,
+                accountCode: defAccount,
+                categoryCode: defCat,
+                description: `Pago Servicio: ${serviceItem.name}`
+            });
+            setError(null);
+        } catch (err) { console.error(err); }
+      };
+      init();
     }
   }, [isOpen, serviceItem]);
-
-  const loadDependencies = async () => {
-    try {
-      const [accs, cats] = await Promise.all([
-          AccountService.getAll(),
-          CategoryService.getAll()
-      ]);
-      setAccounts(accs);
-      setCategories(cats.filter(c => c.type === 'GASTO'));
-    } catch (err) { console.error(err); }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
