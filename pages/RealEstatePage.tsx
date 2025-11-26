@@ -185,23 +185,39 @@ const RealEstatePage: React.FC = () => {
         }
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(helpData), "Ayuda_Codigos");
     } else if (activeTab === 'SERVICES') {
+        // Sheet 1: Define Services (Setup)
         const headersServ = ['Codigo_Propiedad', 'Nombre_Servicio', 'Monto_Estimado', 'Codigo_Categoria', 'Codigo_Cuenta_Pago'];
         const exServ = ['AP-001', 'Agua Potable', 500, 'CAT-EXP-009', 'CTA-001'];
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headersServ, exServ]), "Definir_Servicios");
-        const headersPay = ['Codigo_Servicio', 'Fecha_Pago', 'Monto_Real', 'Codigo_Cuenta'];
-        const exPay = ['SERV-001', '2024-01-15', 520, 'CTA-001'];
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headersServ, exServ]), "Crear_Servicios");
+
+        // Sheet 2: Import Payments (Execution) - Requested Feature
+        const headersPay = ['Codigo_Servicio', 'Fecha_Pago', 'Monto_Real', 'Codigo_Cuenta', 'Codigo_Categoria', 'Descripcion'];
+        const exPay = ['SERV-001', '2024-01-15', 520, '', '', 'Pago Enero'];
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headersPay, exPay]), "Registrar_Pagos");
+
+        // Helper Sheets
+        const helpServs = [['CODIGO_SERVICIO', 'NOMBRE_SERVICIO', 'PROPIEDAD', 'CUENTA_DEFECTO']];
+        services.forEach(s => {
+            const prop = properties.find(p => p.code === s.propertyCode);
+            helpServs.push([s.code, s.name, prop?.name || s.propertyCode, s.defaultAccountCode || '']);
+        });
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(helpServs), "Ayuda_Servicios_Existentes");
+
         const helpProps = [['CODIGO', 'PROPIEDAD']];
         properties.forEach(p => helpProps.push([p.code, p.name]));
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(helpProps), "Ayuda_Propiedades");
+
         const helpCats = [['CODIGO', 'CATEGORIA (GASTO)']];
         allCats.filter(c => c.type === 'GASTO').forEach(c => helpCats.push([c.code, c.name]));
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(helpCats), "Ayuda_Categorias");
+
         const helpAccs = [['CODIGO', 'CUENTA', 'BANCO']];
         allAccounts.forEach(a => helpAccs.push([a.code, a.name, a.bankName]));
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(helpAccs), "Ayuda_Cuentas");
+        
         sheetName = "servicios";
     }
+
     XLSX.writeFile(wb, `plantilla_${sheetName || 'datos'}.xlsx`);
   };
 
@@ -218,10 +234,11 @@ const RealEstatePage: React.FC = () => {
         const data = e.target?.result;
         const wb = XLSX.read(data, { type: 'binary' });
         let count = 0;
+        let paymentsCount = 0;
 
         if (activeTab === 'SERVICES') {
-             const defSheet = wb.Sheets["Definir_Servicios"];
-             const paySheet = wb.Sheets["Registrar_Pagos"];
+             // 1. Process New Services Setup
+             const defSheet = wb.Sheets["Crear_Servicios"] || wb.Sheets["Definir_Servicios"];
              if (defSheet) {
                  const jsonDef = XLSX.utils.sheet_to_json(defSheet) as any[];
                  for (const row of jsonDef) {
@@ -238,24 +255,47 @@ const RealEstatePage: React.FC = () => {
                      }
                  }
              }
+             
+             // 2. Process Service Payments
+             const paySheet = wb.Sheets["Registrar_Pagos"];
              if (paySheet) {
                  const jsonPay = XLSX.utils.sheet_to_json(paySheet) as any[];
                  for (const row of jsonPay) {
                      if (row['Codigo_Servicio'] && row['Monto_Real']) {
+                         // Retrieve service info to fallback defaults if Excel is empty
                          const srv = services.find(s => s.code === row['Codigo_Servicio']);
+                         
+                         // Logic: Excel value > Service Default > Error
+                         const account = row['Codigo_Cuenta'] || srv?.defaultAccountCode;
+                         const category = row['Codigo_Categoria'] || srv?.defaultCategoryCode;
+                         
+                         if (!account || !category) {
+                             console.warn(`Skipping payment row for ${row['Codigo_Servicio']}: Missing Account or Category`);
+                             continue;
+                         }
+
                          await ServiceItemService.registerPayment({
                              serviceCode: row['Codigo_Servicio'],
+                             // Parse Excel date (can be tricky, assuming ISO string or Excel serial for now)
                              date: row['Fecha_Pago'] || new Date().toISOString().split('T')[0],
                              amount: row['Monto_Real'],
-                             accountCode: row['Codigo_Cuenta'] || srv?.defaultAccountCode || '',
-                             categoryCode: srv?.defaultCategoryCode || '', 
-                             description: `Pago Masivo Servicio ${row['Codigo_Servicio']}`
+                             accountCode: account,
+                             categoryCode: category,
+                             description: row['Descripcion'] || `Pago Masivo Servicio ${row['Codigo_Servicio']}`
                          });
-                         count++;
+                         paymentsCount++;
                      }
                  }
              }
+             
+             await loadAll();
+             let msg = "";
+             if (count > 0) msg += `Servicios creados: ${count}. `;
+             if (paymentsCount > 0) msg += `Pagos registrados: ${paymentsCount}.`;
+             alert(msg || "No se encontraron datos válidos.");
+
         } else {
+             // ... (Existing logic for other tabs) ...
              const json = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) as any[];
              for (const row of json) {
                 if (activeTab === 'UNITS') {
@@ -269,9 +309,9 @@ const RealEstatePage: React.FC = () => {
                     count++;
                 }
             }
+            await loadAll();
+            alert(`Proceso completado. Registros: ${count}`);
         }
-        await loadAll();
-        alert(`Proceso completado. Registros: ${count}`);
       } catch (err) { alert("Error al importar."); console.error(err); } finally { setIsImporting(false); }
     };
     reader.readAsBinaryString(file);
