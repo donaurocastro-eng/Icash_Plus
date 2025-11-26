@@ -1,5 +1,7 @@
-import { PropertyServiceItem, PropertyServiceItemFormData } from '../types';
+import { PropertyServiceItem, PropertyServiceItemFormData, ServicePaymentFormData } from '../types';
 import { db } from './db';
+import { TransactionService } from './transactionService';
+import { PropertyService } from './propertyService';
 
 const STORAGE_KEY = 'icash_plus_services';
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -23,7 +25,7 @@ export const ServiceItemService = {
   getAll: async (): Promise<PropertyServiceItem[]> => {
     if (db.isConfigured()) {
       const rows = await db.query(`
-        SELECT code, property_code as "propertyCode", name, default_amount as "defaultAmount", active, created_at as "createdAt"
+        SELECT code, property_code as "propertyCode", name, default_amount as "defaultAmount", default_category_code as "defaultCategoryCode", active, created_at as "createdAt"
         FROM property_services ORDER BY created_at DESC
       `);
       return rows.map(r => ({...r, defaultAmount: Number(r.defaultAmount)}));
@@ -41,9 +43,9 @@ export const ServiceItemService = {
       const newCode = generateNextCode(existing);
       
       await db.query(`
-        INSERT INTO property_services (code, property_code, name, default_amount, active)
-        VALUES ($1, $2, $3, $4, $5)
-      `, [newCode, data.propertyCode, data.name, data.defaultAmount, data.active]);
+        INSERT INTO property_services (code, property_code, name, default_amount, default_category_code, active)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `, [newCode, data.propertyCode, data.name, data.defaultAmount, data.defaultCategoryCode || null, data.active]);
 
       return { code: newCode, ...data, createdAt: new Date().toISOString() };
     } else {
@@ -64,9 +66,9 @@ export const ServiceItemService = {
   update: async (code: string, data: PropertyServiceItemFormData): Promise<PropertyServiceItem> => {
     if (db.isConfigured()) {
       await db.query(`
-        UPDATE property_services SET property_code=$1, name=$2, default_amount=$3, active=$4
-        WHERE code=$5
-      `, [data.propertyCode, data.name, data.defaultAmount, data.active, code]);
+        UPDATE property_services SET property_code=$1, name=$2, default_amount=$3, default_category_code=$4, active=$5
+        WHERE code=$6
+      `, [data.propertyCode, data.name, data.defaultAmount, data.defaultCategoryCode || null, data.active, code]);
       return { code, ...data, createdAt: new Date().toISOString() };
     } else {
       await delay(200);
@@ -88,5 +90,35 @@ export const ServiceItemService = {
       existing = existing.filter(s => s.code !== code);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
     }
+  },
+
+  registerPayment: async (data: ServicePaymentFormData): Promise<void> => {
+      // Get Service Details for Property Name
+      const services = await ServiceItemService.getAll();
+      const service = services.find(s => s.code === data.serviceCode);
+      
+      let propertyName = '';
+      let propertyCode = '';
+      
+      if (service) {
+          propertyCode = service.propertyCode;
+          try {
+              const properties = await PropertyService.getAll();
+              const p = properties.find(x => x.code === propertyCode);
+              if (p) propertyName = p.name;
+          } catch (e) { console.error(e); }
+      }
+
+      // Create Expense Transaction
+      await TransactionService.create({
+          date: data.date,
+          amount: data.amount,
+          description: data.description,
+          type: 'GASTO',
+          categoryCode: data.categoryCode,
+          accountCode: data.accountCode,
+          propertyCode: propertyCode,
+          propertyName: propertyName
+      });
   }
 };

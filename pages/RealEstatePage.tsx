@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Plus, Search, Edit2, Trash2, Building, Users, FileText, MapPin, Upload, FileSpreadsheet, Home, DollarSign, Calendar as CalendarIcon, Filter, Layers, TrendingUp, Zap } from 'lucide-react';
-import { Property, Tenant, Contract, Apartment, PropertyFormData, TenantFormData, ContractFormData, ApartmentFormData, PaymentFormData, BulkPaymentFormData, PropertyServiceItem, PropertyServiceItemFormData } from '../types';
+import { Plus, Search, Edit2, Trash2, Building, Users, FileText, MapPin, Upload, FileSpreadsheet, Home, DollarSign, Calendar as CalendarIcon, Filter, Layers, TrendingUp, Zap, ExternalLink } from 'lucide-react';
+import { Property, Tenant, Contract, Apartment, PropertyFormData, TenantFormData, ContractFormData, ApartmentFormData, PaymentFormData, BulkPaymentFormData, PropertyServiceItem, PropertyServiceItemFormData, ServicePaymentFormData } from '../types';
 import { PropertyService } from '../services/propertyService';
 import { TenantService } from '../services/tenantService';
 import { ContractService } from '../services/contractService';
 import { ApartmentService } from '../services/apartmentService';
-import { ServiceItemService } from '../services/serviceItemService'; // New Service
+import { ServiceItemService } from '../services/serviceItemService';
 import PropertyModal from '../components/PropertyModal';
 import TenantModal from '../components/TenantModal';
 import ContractModal from '../components/ContractModal';
@@ -14,7 +14,8 @@ import PaymentModal from '../components/PaymentModal';
 import PaymentHistoryModal from '../components/PaymentHistoryModal';
 import BulkPaymentModal from '../components/BulkPaymentModal';
 import ContractPriceHistoryModal from '../components/ContractPriceHistoryModal';
-import ServiceItemModal from '../components/ServiceItemModal'; // New Modal
+import ServiceItemModal from '../components/ServiceItemModal';
+import ServicePaymentModal from '../components/ServicePaymentModal'; // New Import
 import * as XLSX from 'xlsx';
 
 type Tab = 'PROPERTIES' | 'UNITS' | 'TENANTS' | 'CONTRACTS' | 'PAYMENTS' | 'SERVICES';
@@ -46,6 +47,8 @@ const RealEstatePage: React.FC = () => {
 
   const [isServiceModalOpen, setIsServiceModalOpen] = useState(false);
   const [editingService, setEditingService] = useState<PropertyServiceItem | null>(null);
+  const [isServicePaymentModalOpen, setIsServicePaymentModalOpen] = useState(false);
+  const [payingService, setPayingService] = useState<PropertyServiceItem | null>(null);
 
   // Payment Modals
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
@@ -100,6 +103,16 @@ const RealEstatePage: React.FC = () => {
   const handleCreateService = async (d: PropertyServiceItemFormData) => { setIsSubmitting(true); await ServiceItemService.create(d); await loadAll(); setIsServiceModalOpen(false); setIsSubmitting(false); };
   const handleUpdateService = async (d: PropertyServiceItemFormData) => { if(!editingService) return; setIsSubmitting(true); await ServiceItemService.update(editingService.code, d); await loadAll(); setIsServiceModalOpen(false); setIsSubmitting(false); };
   const handleDeleteService = async (c: string) => { if(confirm('¿Borrar servicio?')) { await ServiceItemService.delete(c); await loadAll(); } };
+  
+  const handleRegisterServicePayment = async (d: ServicePaymentFormData) => {
+      setIsSubmitting(true);
+      try {
+          await ServiceItemService.registerPayment(d);
+          await loadAll();
+          setIsServicePaymentModalOpen(false);
+          alert("¡Pago de servicio registrado con éxito!");
+      } catch(e: any) { alert(e.message); } finally { setIsSubmitting(false); }
+  };
 
   const handleInitiatePayment = (dateToPay: Date) => {
       const monthName = dateToPay.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
@@ -129,7 +142,7 @@ const RealEstatePage: React.FC = () => {
       } catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
   };
 
-  // Excel Logic (Omitted detailed implementation for brevity, kept placeholder structure)
+  // Excel Logic
   const handleDownloadTemplate = () => {
     const wb = XLSX.utils.book_new();
     XLSX.writeFile(wb, `plantilla.xlsx`);
@@ -205,7 +218,6 @@ const RealEstatePage: React.FC = () => {
 
       {loading ? <div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600"></div></div> : (
         <>
-            {/* Other tabs omitted for brevity (Properties, Units, Tenants, Contracts, Payments) */}
             {activeTab === 'PROPERTIES' && (
                 <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
                     <table className="w-full text-sm text-left">
@@ -218,7 +230,7 @@ const RealEstatePage: React.FC = () => {
             {activeTab === 'SERVICES' && (
                 <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
                     <table className="w-full text-sm text-left">
-                        <thead className="bg-slate-50 font-medium"><tr><th className="p-4">Código</th><th className="p-4">Servicio</th><th className="p-4">Propiedad</th><th className="p-4 text-right">Costo Est.</th><th className="p-4 text-center">Estado</th><th className="p-4 text-right">Acciones</th></tr></thead>
+                        <thead className="bg-slate-50 font-medium"><tr><th className="p-4">Código</th><th className="p-4">Servicio</th><th className="p-4">Propiedad</th><th className="p-4 text-right">Costo Est.</th><th className="p-4 text-center">Acciones</th></tr></thead>
                         <tbody>
                             {filteredServices.map(s => {
                                 const prop = properties.find(p => p.code === s.propertyCode);
@@ -228,10 +240,13 @@ const RealEstatePage: React.FC = () => {
                                     <td className="p-4 font-bold text-slate-700">{s.name}</td>
                                     <td className="p-4 text-slate-600">{prop?.name || s.propertyCode}</td>
                                     <td className="p-4 text-right font-mono">{formatMoney(s.defaultAmount)}</td>
-                                    <td className="p-4 text-center">
-                                        {s.active ? <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-xs">ACTIVO</span> : <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-xs">INACTIVO</span>}
-                                    </td>
-                                    <td className="p-4 text-right">
+                                    <td className="p-4 text-right flex justify-end gap-2">
+                                        <button 
+                                            onClick={() => { setPayingService(s); setIsServicePaymentModalOpen(true); }}
+                                            className="px-2 py-1 bg-rose-50 text-rose-600 rounded hover:bg-rose-100 text-xs font-bold flex items-center gap-1"
+                                        >
+                                            <DollarSign size={12}/> PAGAR
+                                        </button>
                                         <button onClick={() => { setEditingService(s); setIsServiceModalOpen(true); }} className="mr-2 text-slate-400 hover:text-brand-600"><Edit2 size={16}/></button>
                                         <button onClick={() => handleDeleteService(s.code)} className="text-slate-400 hover:text-red-600"><Trash2 size={16}/></button>
                                     </td>
@@ -257,6 +272,7 @@ const RealEstatePage: React.FC = () => {
       <ContractPriceHistoryModal isOpen={isPriceHistoryModalOpen} onClose={() => setIsPriceHistoryModalOpen(false)} contract={viewingContract} contractLabel={getPayingContractLabel()} />
       
       <ServiceItemModal isOpen={isServiceModalOpen} onClose={() => setIsServiceModalOpen(false)} onSubmit={editingService ? handleUpdateService : handleCreateService} editingItem={editingService} isSubmitting={isSubmitting} />
+      <ServicePaymentModal isOpen={isServicePaymentModalOpen} onClose={() => setIsServicePaymentModalOpen(false)} onSubmit={handleRegisterServicePayment} serviceItem={payingService} isSubmitting={isSubmitting} />
     </div>
   );
 };

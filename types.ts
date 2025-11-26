@@ -139,7 +139,6 @@ export interface ContractFormData {
   paymentDay: number;
 }
 
-// New Interface for Price History
 export interface ContractPrice {
   id: string;
   contractCode: string;
@@ -148,12 +147,13 @@ export interface ContractPrice {
   endDate?: string;
 }
 
-// NEW: Recurring Services/Expenses for Properties
+// Recurring Services/Expenses for Properties
 export interface PropertyServiceItem {
   code: string;          // SERV-001
   propertyCode: string;  // Linked to Building/Property
   name: string;          // e.g. "Agua Potable"
   defaultAmount: number; // Estimated cost
+  defaultCategoryCode?: string; // Link to Expense Category
   active: boolean;
   createdAt: string;
 }
@@ -162,7 +162,17 @@ export interface PropertyServiceItemFormData {
   propertyCode: string;
   name: string;
   defaultAmount: number;
+  defaultCategoryCode?: string;
   active: boolean;
+}
+
+export interface ServicePaymentFormData {
+    serviceCode: string;
+    date: string;
+    amount: number;
+    accountCode: string;
+    categoryCode: string;
+    description: string;
 }
 
 export interface PaymentFormData {

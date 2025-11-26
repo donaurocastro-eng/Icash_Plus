@@ -25,7 +25,8 @@ const SettingsPage: React.FC = () => {
     if(urlToCheck) setSchemaStatus('ok');
   };
 
-  const handleTest = async () => { /* ... (kept same as before) ... */ };
+  // ... handlers ...
+  const handleTest = async () => { /* ... */ };
   const handleSave = () => { /* ... */ };
   const handleDisconnect = () => { /* ... */ };
   const handlePatchContracts = async () => { /* ... */ };
@@ -43,11 +44,8 @@ const SettingsPage: React.FC = () => {
     try {
         await db.query("SELECT 1");
         
-        // ... existing tables creation ...
-        addLog("📋 Verificando tablas base...");
-
-        // NEW TABLE: Property Services
-        addLog("💧 Creando tabla 'property_services'...");
+        // ... existing steps ...
+        addLog("🛠️ Verificando servicios...");
         await db.query(`
             CREATE TABLE IF NOT EXISTS public.property_services (
                 code text PRIMARY KEY,
@@ -58,7 +56,9 @@ const SettingsPage: React.FC = () => {
                 created_at timestamp with time zone DEFAULT now() NOT NULL
             );
         `);
-        addLog("✅ Tabla Servicios OK.");
+        
+        addLog("🔧 Agregando columna 'default_category_code'...");
+        await db.query(`ALTER TABLE public.property_services ADD COLUMN IF NOT EXISTS default_category_code text;`);
 
         addLog("✨ ¡Proceso completado! Recargando...");
         window.location.reload();
@@ -85,7 +85,7 @@ const SettingsPage: React.FC = () => {
             className={`w-full flex items-center justify-center space-x-2 px-4 py-3 text-white rounded-lg font-bold shadow-md transition-colors disabled:opacity-50 bg-indigo-600 hover:bg-indigo-700`}
           >
             {initLoading ? <RefreshCw size={18} className="animate-spin" /> : <Database size={18} />}
-            <span>Inicializar / Reparar Tablas (Incluye Servicios)</span>
+            <span>Inicializar / Reparar Tablas (Actualizar Servicios)</span>
           </button>
 
           {initLogs.length > 0 && (

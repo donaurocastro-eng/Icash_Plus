@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { X, Save, AlertCircle, Zap, Home } from 'lucide-react';
-import { PropertyServiceItem, PropertyServiceItemFormData, Property } from '../types';
+import { X, Save, AlertCircle, Zap, Home, Tag } from 'lucide-react';
+import { PropertyServiceItem, PropertyServiceItemFormData, Property, Category } from '../types';
 import { PropertyService } from '../services/propertyService';
+import { CategoryService } from '../services/categoryService';
 
 interface ServiceItemModalProps {
   isOpen: boolean;
@@ -22,32 +23,40 @@ const ServiceItemModal: React.FC<ServiceItemModalProps> = ({
     propertyCode: '',
     name: '',
     defaultAmount: 0,
+    defaultCategoryCode: '',
     active: true
   });
   const [properties, setProperties] = useState<Property[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
-      loadProperties();
+      loadDependencies();
       if (editingItem) {
         setFormData({
           propertyCode: editingItem.propertyCode,
           name: editingItem.name,
           defaultAmount: editingItem.defaultAmount,
+          defaultCategoryCode: editingItem.defaultCategoryCode || '',
           active: editingItem.active
         });
       } else {
-        setFormData({ propertyCode: '', name: '', defaultAmount: 0, active: true });
+        setFormData({ propertyCode: '', name: '', defaultAmount: 0, defaultCategoryCode: '', active: true });
       }
       setError(null);
     }
   }, [editingItem, isOpen]);
 
-  const loadProperties = async () => {
+  const loadDependencies = async () => {
     try {
-      const data = await PropertyService.getAll();
-      setProperties(data);
+      const [props, cats] = await Promise.all([
+          PropertyService.getAll(),
+          CategoryService.getAll()
+      ]);
+      setProperties(props);
+      // Filter only Expense categories
+      setCategories(cats.filter(c => c.type === 'GASTO'));
     } catch (err) { console.error(err); }
   };
 
@@ -110,6 +119,24 @@ const ServiceItemModal: React.FC<ServiceItemModalProps> = ({
                 onChange={e => setFormData({...formData, name: e.target.value})}
                 />
             </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-slate-700">Categoría de Gasto Asociada</label>
+            <div className="relative">
+                <Tag className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <select
+                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none bg-white"
+                value={formData.defaultCategoryCode}
+                onChange={e => setFormData({...formData, defaultCategoryCode: e.target.value})}
+                >
+                <option value="">Sin categoría asignada...</option>
+                {categories.map(c => (
+                    <option key={c.code} value={c.code}>{c.name}</option>
+                ))}
+                </select>
+            </div>
+            <p className="text-xs text-slate-400">Se usará automáticamente al registrar el pago.</p>
           </div>
 
           <div className="space-y-1">
