@@ -7,14 +7,26 @@ import {
   Wallet,
   Building,
   CreditCard,
-  RefreshCw
+  RefreshCw,
+  FileText,
+  Search
 } from 'lucide-react';
 import { AccountService } from '../services/accountService';
 import { TransactionService } from '../services/transactionService';
 import { PropertyService } from '../services/propertyService';
 import { Account, Transaction, Property, CategoryType } from '../types';
+import ReportDrilldownModal from '../components/ReportDrilldownModal';
 
-type ReportTab = 'BALANCE' | 'CASHFLOW';
+type ReportTab = 'BALANCE' | 'CASHFLOW' | 'BY_PROPERTY';
+
+interface MonthlyStats {
+    monthIndex: number;
+    monthName: string;
+    income: number;
+    expense: number;
+    net: number;
+    transactions: Transaction[];
+}
 
 const ReportsPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ReportTab>('BALANCE');
@@ -25,10 +37,14 @@ const ReportsPage: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   
-  // Filters & Settings
+  // Filters
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [exchangeRate, setExchangeRate] = useState<number>(25.00); // Default rate
+  const [exchangeRate, setExchangeRate] = useState<number>(25.00); 
+
+  // Property Report State
+  const [selectedPropCode, setSelectedPropCode] = useState('');
+  const [viewingMonthDetails, setViewingMonthDetails] = useState<MonthlyStats | null>(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -51,15 +67,15 @@ const ReportsPage: React.FC = () => {
     loadData();
   }, []);
 
-  const formatMoney = (amount: number) => {
-    return new Intl.NumberFormat('es-HN', {
+  const formatMoney = (amount: number, currency: 'HNL' | 'USD' = 'HNL') => {
+    return new Intl.NumberFormat(currency === 'HNL' ? 'es-HN' : 'en-US', {
       style: 'currency',
-      currency: 'HNL',
+      currency: currency,
       minimumFractionDigits: 2
     }).format(amount);
   };
 
-  // --- BALANCE SHEET CALCULATION (CONSOLIDATED IN HNL) ---
+  // --- BALANCE SHEET ---
   const calculateConsolidatedBalance = () => {
     const balance = {
       assets: { total: 0, details: [] as any[] },
@@ -67,13 +83,9 @@ const ReportsPage: React.FC = () => {
       equity: 0
     };
 
-    // Helper to convert and sum
     const processItem = (amount: number, currency: string, name: string, type: 'ACTIVO' | 'PASIVO', category: string, code: string) => {
         let finalAmount = amount;
-        // Convert USD to HNL
-        if (currency === 'USD') {
-            finalAmount = amount * exchangeRate;
-        }
+        if (currency === 'USD') finalAmount = amount * exchangeRate;
 
         if (type === 'ACTIVO') {
             balance.assets.total += finalAmount;
@@ -84,12 +96,10 @@ const ReportsPage: React.FC = () => {
         }
     };
 
-    // 1. Accounts
     accounts.forEach(acc => {
         processItem(acc.initialBalance, acc.currency, acc.name, acc.type, acc.type === 'ACTIVO' ? 'Activos Líquidos' : 'Pasivos / Deudas', acc.code);
     });
 
-    // 2. Properties (Always Assets)
     properties.forEach(prop => {
         processItem(prop.value, prop.currency, prop.name, 'ACTIVO', 'Bienes Inmuebles', prop.code);
     });
@@ -98,17 +108,13 @@ const ReportsPage: React.FC = () => {
     return balance;
   };
 
-  // --- CASHFLOW CALCULATION ---
+  // --- CASHFLOW ---
   const calculateCashflow = () => {
     const filtered = transactions.filter(tx => {
-      const d = new Date(tx.date);
       const [y, m] = tx.date.split('-').map(Number);
       return y === selectedYear && (m - 1) === selectedMonth;
     });
 
-    // Simple sum, assuming mixed currency just adds up for now or convert if we had currency in transaction. 
-    // Assuming transactions are mainly HNL for cashflow or 1:1 for simplicity in this view. 
-    // Ideally, transactions should store currency too.
     const income = filtered.filter(t => t.type === 'INGRESO').reduce((sum, t) => sum + t.amount, 0);
     const expense = filtered.filter(t => t.type === 'GASTO').reduce((sum, t) => sum + t.amount, 0);
     
@@ -116,9 +122,7 @@ const ReportsPage: React.FC = () => {
     
     filtered.forEach(tx => {
       const catName = tx.categoryName || 'Sin Categoría';
-      if (!categories[catName]) {
-        categories[catName] = { name: catName, type: tx.type, amount: 0 };
-      }
+      if (!categories[catName]) categories[catName] = { name: catName, type: tx.type, amount: 0 };
       categories[catName].amount += tx.amount;
     });
 
@@ -130,12 +134,46 @@ const ReportsPage: React.FC = () => {
     };
   };
 
+  // --- PROPERTY REPORT ---
+  const calculatePropertyReport = () => {
+      if (!selectedPropCode) return [];
+
+      const months = Array.from({ length: 12 }, (_, i) => ({
+          monthIndex: i,
+          monthName: new Date(0, i).toLocaleDateString('es-ES', { month: 'long' }),
+          income: 0,
+          expense: 0,
+          net: 0,
+          transactions: [] as Transaction[]
+      }));
+
+      transactions.forEach(tx => {
+          if (tx.propertyCode !== selectedPropCode) return;
+          
+          const [y, m] = tx.date.split('-').map(Number);
+          if (y !== selectedYear) return;
+
+          const monthIdx = m - 1;
+          if (monthIdx >= 0 && monthIdx < 12) {
+              if (tx.type === 'INGRESO') months[monthIdx].income += tx.amount;
+              else months[monthIdx].expense += tx.amount;
+              
+              months[monthIdx].transactions.push(tx);
+          }
+      });
+
+      // Calc net
+      months.forEach(m => m.net = m.income - m.expense);
+      return months;
+  };
+
   if (loading) return <div className="flex justify-center items-center h-full"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600"></div></div>;
 
   const balance = calculateConsolidatedBalance();
   const cashflow = calculateCashflow();
+  const propertyReport = calculatePropertyReport();
+  const selectedPropName = properties.find(p => p.code === selectedPropCode)?.name || 'Seleccionar Propiedad';
 
-  // Grouping Assets for Display
   const liquidAssets = balance.assets.details.filter(d => d.category === 'Activos Líquidos');
   const realEstateAssets = balance.assets.details.filter(d => d.category === 'Bienes Inmuebles');
 
@@ -145,52 +183,42 @@ const ReportsPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <h1 className="text-2xl font-bold text-slate-800">Reportes Financieros</h1>
         
-        <div className="flex gap-4 items-center">
-            {/* Exchange Rate Input */}
+        <div className="flex gap-4 items-center flex-wrap">
             {activeTab === 'BALANCE' && (
                 <div className="flex items-center bg-slate-800 text-white px-3 py-1.5 rounded-lg shadow-md border border-slate-600">
                     <span className="text-xs text-slate-300 mr-2 font-medium">Tasa Dólar:</span>
                     <input 
-                        type="number" 
-                        step="0.01"
+                        type="number" step="0.01"
                         className="w-16 bg-transparent text-right font-mono font-bold outline-none border-b border-slate-500 focus:border-brand-400"
-                        value={exchangeRate}
-                        onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 0)}
+                        value={exchangeRate} onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 0)}
                     />
                 </div>
             )}
 
-            {/* Tabs */}
-            <div className="flex bg-white p-1 rounded-lg border border-slate-200 shadow-sm">
-            <button 
-                onClick={() => setActiveTab('BALANCE')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'BALANCE' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}
-            >
-                Balance General
-            </button>
-            <button 
-                onClick={() => setActiveTab('CASHFLOW')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'CASHFLOW' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}
-            >
-                Flujo Mensual
-            </button>
+            <div className="flex bg-white p-1 rounded-lg border border-slate-200 shadow-sm overflow-x-auto">
+                <button onClick={() => setActiveTab('BALANCE')} className={`whitespace-nowrap px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'BALANCE' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
+                    Balance General
+                </button>
+                <button onClick={() => setActiveTab('CASHFLOW')} className={`whitespace-nowrap px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'CASHFLOW' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
+                    Flujo Mensual
+                </button>
+                <button onClick={() => setActiveTab('BY_PROPERTY')} className={`whitespace-nowrap px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'BY_PROPERTY' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
+                    Por Propiedad
+                </button>
             </div>
         </div>
       </div>
 
-      {/* --- BALANCE SHEET TAB (DARK THEME INSPIRED) --- */}
+      {/* --- BALANCE SHEET TAB --- */}
       {activeTab === 'BALANCE' && (
         <div className="bg-slate-900 rounded-2xl shadow-xl border border-slate-800 overflow-hidden text-slate-100 p-6">
             <h2 className="text-xl font-bold mb-6">Balance General (Consolidado en Lempiras)</h2>
-
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* LEFT COLUMN: ASSETS */}
                 <div className="space-y-6">
                     <div className="flex justify-between items-center border-b border-indigo-500/50 pb-2">
                         <h3 className="font-bold text-indigo-400 text-lg">Activos (lo que posees)</h3>
                     </div>
-
-                    {/* Liquid Assets */}
                     <div>
                         <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Activos Líquidos / Cuentas</h4>
                         <div className="space-y-2">
@@ -202,8 +230,6 @@ const ReportsPage: React.FC = () => {
                             ))}
                         </div>
                     </div>
-
-                    {/* Real Estate */}
                     <div>
                         <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 mt-4">Bienes Inmuebles</h4>
                         <div className="space-y-2">
@@ -215,21 +241,16 @@ const ReportsPage: React.FC = () => {
                             ))}
                         </div>
                     </div>
-
-                    {/* Total Assets */}
                     <div className="pt-4 border-t border-slate-700 flex justify-between items-end mt-4">
                         <span className="text-slate-400 font-bold">TOTAL ACTIVOS</span>
                         <span className="text-2xl font-bold text-emerald-400">{formatMoney(balance.assets.total)}</span>
                     </div>
                 </div>
-
                 {/* RIGHT COLUMN: LIABILITIES */}
                 <div className="space-y-6">
                     <div className="flex justify-between items-center border-b border-rose-500/50 pb-2">
                         <h3 className="font-bold text-rose-400 text-lg">Pasivos (lo que debes)</h3>
                     </div>
-
-                     {/* Liabilities List */}
                      <div>
                         <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Cuentas de Pasivo / Deudas</h4>
                         <div className="space-y-2">
@@ -242,14 +263,10 @@ const ReportsPage: React.FC = () => {
                             {balance.liabilities.details.length === 0 && <p className="text-slate-600 italic text-sm">Sin deudas registradas</p>}
                         </div>
                     </div>
-
-                    {/* Total Liabilities */}
                     <div className="pt-4 border-t border-slate-700 flex justify-between items-end mt-4">
                         <span className="text-slate-400 font-bold">TOTAL PASIVOS</span>
                         <span className="text-2xl font-bold text-rose-400">{formatMoney(balance.liabilities.total)}</span>
                     </div>
-
-                    {/* NET WORTH SUMMARY */}
                     <div className="mt-12 bg-slate-800/50 p-6 rounded-xl border border-slate-700">
                         <div className="flex justify-between items-center">
                             <div>
@@ -274,20 +291,10 @@ const ReportsPage: React.FC = () => {
                     <Calendar size={20} />
                     <span className="font-medium text-sm">Periodo:</span>
                 </div>
-                <select 
-                    className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-sm"
-                    value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-                >
-                    {Array.from({length: 12}, (_, i) => (
-                        <option key={i} value={i}>{new Date(0, i).toLocaleDateString('es-ES', {month: 'long'}).toUpperCase()}</option>
-                    ))}
+                <select className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-sm" value={selectedMonth} onChange={(e) => setSelectedMonth(parseInt(e.target.value))}>
+                    {Array.from({length: 12}, (_, i) => <option key={i} value={i}>{new Date(0, i).toLocaleDateString('es-ES', {month: 'long'}).toUpperCase()}</option>)}
                 </select>
-                <select 
-                    className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-sm"
-                    value={selectedYear}
-                    onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-                >
+                <select className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-sm" value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))}>
                     {[2023, 2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
                 </select>
             </div>
@@ -308,18 +315,9 @@ const ReportsPage: React.FC = () => {
             </div>
 
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-100">
-                    <h3 className="font-bold text-slate-800">Detalle por Categoría</h3>
-                </div>
+                <div className="px-6 py-4 border-b border-slate-100"><h3 className="font-bold text-slate-800">Detalle por Categoría</h3></div>
                 <table className="w-full text-sm text-left">
-                    <thead className="bg-slate-50 text-slate-500 font-medium">
-                        <tr>
-                            <th className="px-6 py-3">Categoría</th>
-                            <th className="px-6 py-3">Tipo</th>
-                            <th className="px-6 py-3 text-right">Monto</th>
-                            <th className="px-6 py-3 text-right">% del Total</th>
-                        </tr>
-                    </thead>
+                    <thead className="bg-slate-50 text-slate-500 font-medium"><tr><th className="px-6 py-3">Categoría</th><th className="px-6 py-3">Tipo</th><th className="px-6 py-3 text-right">Monto</th><th className="px-6 py-3 text-right">% del Total</th></tr></thead>
                     <tbody className="divide-y divide-slate-100">
                         {cashflow.breakdown.map((cat, idx) => {
                              const totalBase = cat.type === 'INGRESO' ? cashflow.totalIncome : cashflow.totalExpense;
@@ -327,31 +325,122 @@ const ReportsPage: React.FC = () => {
                              return (
                                 <tr key={idx} className="hover:bg-slate-50">
                                     <td className="px-6 py-3 font-medium text-slate-700">{cat.name}</td>
-                                    <td className="px-6 py-3">
-                                        <span className={`px-2 py-1 rounded text-xs font-bold ${cat.type === 'INGRESO' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                                            {cat.type}
-                                        </span>
-                                    </td>
+                                    <td className="px-6 py-3"><span className={`px-2 py-1 rounded text-xs font-bold ${cat.type === 'INGRESO' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{cat.type}</span></td>
                                     <td className="px-6 py-3 text-right font-bold text-slate-700">{formatMoney(cat.amount)}</td>
                                     <td className="px-6 py-3 text-right text-slate-500">
-                                        <div className="flex items-center justify-end gap-2">
-                                            <span className="text-xs">{percentage.toFixed(1)}%</span>
-                                            <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                                <div className={`h-full ${cat.type === 'INGRESO' ? 'bg-emerald-500' : 'bg-rose-500'}`} style={{ width: `${percentage}%` }}></div>
-                                            </div>
-                                        </div>
+                                        <div className="flex items-center justify-end gap-2"><span className="text-xs">{percentage.toFixed(1)}%</span><div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden"><div className={`h-full ${cat.type === 'INGRESO' ? 'bg-emerald-500' : 'bg-rose-500'}`} style={{ width: `${percentage}%` }}></div></div></div>
                                     </td>
                                 </tr>
                              );
                         })}
-                        {cashflow.breakdown.length === 0 && (
-                            <tr><td colSpan={4} className="p-8 text-center text-slate-400">No hay movimientos en este periodo</td></tr>
-                        )}
+                        {cashflow.breakdown.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400">No hay movimientos en este periodo</td></tr>}
                     </tbody>
                 </table>
             </div>
         </div>
       )}
+
+      {/* --- PROPERTY REPORT TAB --- */}
+      {activeTab === 'BY_PROPERTY' && (
+        <div className="space-y-6">
+             {/* Filters */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap gap-4 items-center">
+                <div className="flex items-center gap-2 text-slate-600">
+                    <Building size={20} />
+                    <span className="font-medium text-sm">Propiedad:</span>
+                </div>
+                <select 
+                    className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-sm"
+                    value={selectedPropCode}
+                    onChange={(e) => setSelectedPropCode(e.target.value)}
+                >
+                    <option value="">Seleccionar...</option>
+                    {properties.map(p => (
+                        <option key={p.code} value={p.code}>{p.name}</option>
+                    ))}
+                </select>
+
+                <div className="flex items-center gap-2 text-slate-600 ml-4">
+                    <Calendar size={20} />
+                    <span className="font-medium text-sm">Año:</span>
+                </div>
+                <select 
+                    className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-sm"
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                >
+                    {[2023, 2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+            </div>
+
+            {/* Results Table */}
+            {selectedPropCode ? (
+                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="px-6 py-4 border-b border-slate-100 bg-indigo-50 flex justify-between">
+                        <h3 className="font-bold text-indigo-900">Reporte Anual: {selectedPropName}</h3>
+                        <span className="font-mono text-indigo-600 font-bold">{selectedYear}</span>
+                    </div>
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-slate-50 text-slate-500 font-medium">
+                            <tr>
+                                <th className="px-6 py-3">Mes</th>
+                                <th className="px-6 py-3 text-right text-emerald-600">Ingresos</th>
+                                <th className="px-6 py-3 text-right text-rose-600">Gastos</th>
+                                <th className="px-6 py-3 text-right text-blue-600">Neto</th>
+                                <th className="px-6 py-3 text-center">Detalle</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {propertyReport.map((m) => (
+                                <tr key={m.monthIndex} className="hover:bg-slate-50">
+                                    <td className="px-6 py-3 font-medium text-slate-700 capitalize">{m.monthName}</td>
+                                    <td className="px-6 py-3 text-right font-mono text-emerald-600">{m.income > 0 ? formatMoney(m.income) : '-'}</td>
+                                    <td className="px-6 py-3 text-right font-mono text-rose-600">{m.expense > 0 ? formatMoney(m.expense) : '-'}</td>
+                                    <td className="px-6 py-3 text-right font-bold font-mono text-slate-800">{formatMoney(m.net)}</td>
+                                    <td className="px-6 py-3 text-center">
+                                        <button 
+                                            onClick={() => setViewingMonthDetails(m)}
+                                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors disabled:opacity-20"
+                                            disabled={m.transactions.length === 0}
+                                            title="Ver Transacciones"
+                                        >
+                                            <Search size={16} />
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                            {/* Footer Totals */}
+                            <tr className="bg-slate-50 font-bold">
+                                <td className="px-6 py-3 text-slate-700">TOTAL ANUAL</td>
+                                <td className="px-6 py-3 text-right text-emerald-700">
+                                    {formatMoney(propertyReport.reduce((sum, m) => sum + m.income, 0))}
+                                </td>
+                                <td className="px-6 py-3 text-right text-rose-700">
+                                    {formatMoney(propertyReport.reduce((sum, m) => sum + m.expense, 0))}
+                                </td>
+                                <td className="px-6 py-3 text-right text-blue-800">
+                                    {formatMoney(propertyReport.reduce((sum, m) => sum + m.net, 0))}
+                                </td>
+                                <td></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                 </div>
+            ) : (
+                <div className="text-center p-12 bg-slate-50 rounded-xl border border-slate-200 border-dashed">
+                    <Building size={48} className="text-slate-300 mx-auto mb-3" />
+                    <p className="text-slate-500">Selecciona una propiedad para ver el reporte.</p>
+                </div>
+            )}
+        </div>
+      )}
+      
+      <ReportDrilldownModal 
+        isOpen={!!viewingMonthDetails}
+        onClose={() => setViewingMonthDetails(null)}
+        title={viewingMonthDetails ? `Detalle: ${viewingMonthDetails.monthName} ${selectedYear} - ${selectedPropName}` : ''}
+        transactions={viewingMonthDetails?.transactions || []}
+      />
     </div>
   );
 };
