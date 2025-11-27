@@ -9,6 +9,10 @@ const TransactionsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   
+  // Filters
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -62,12 +66,23 @@ const TransactionsPage: React.FC = () => {
     return new Intl.NumberFormat('es-HN', { minimumFractionDigits: 2 }).format(amount);
   };
 
-  const filteredTransactions = transactions.filter(t => 
-    t.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    t.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    t.categoryName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    t.accountName.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredTransactions = transactions.filter(t => {
+    const date = new Date(t.date);
+    // Check Year and Month (Javascript months are 0-11)
+    const tYear = date.getFullYear();
+    // Extract month manually from string YYYY-MM-DD to be safe from timezone
+    const tMonth = parseInt(t.date.split('-')[1]) - 1; 
+
+    const matchesDate = tYear === selectedYear && tMonth === selectedMonth;
+
+    const matchesSearch = 
+        t.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        t.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        t.categoryName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        t.accountName.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    return matchesDate && matchesSearch;
+  });
 
   if (loading) {
     return (
@@ -94,16 +109,36 @@ const TransactionsPage: React.FC = () => {
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-100 bg-slate-50/50">
-          <div className="relative max-w-md">
+        {/* Filters Toolbar */}
+        <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-wrap items-center gap-4">
+          <div className="relative max-w-md flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <input 
               type="text"
-              placeholder="Buscar transacción, cuenta o categoría..."
-              className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none text-sm"
+              placeholder="Buscar por descripción, cuenta..."
+              className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none text-sm bg-white"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
+          </div>
+
+          <div className="flex items-center gap-2">
+             <select 
+                className="px-3 py-2 bg-white border border-slate-300 rounded-lg outline-none text-sm focus:ring-2 focus:ring-brand-500"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+             >
+                {Array.from({length: 12}, (_, i) => (
+                    <option key={i} value={i}>{new Date(0, i).toLocaleDateString('es-ES', {month: 'long'}).toUpperCase()}</option>
+                ))}
+             </select>
+             <select 
+                className="px-3 py-2 bg-white border border-slate-300 rounded-lg outline-none text-sm focus:ring-2 focus:ring-brand-500"
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+             >
+                {[2023, 2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+             </select>
           </div>
         </div>
 
@@ -124,7 +159,7 @@ const TransactionsPage: React.FC = () => {
               {filteredTransactions.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-6 py-12 text-center text-slate-400">
-                    <p>No hay transacciones registradas</p>
+                    <p>No hay transacciones registradas para este periodo</p>
                   </td>
                 </tr>
               ) : (

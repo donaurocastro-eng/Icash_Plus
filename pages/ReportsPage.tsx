@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { 
-  PieChart, 
-  BarChart, 
   TrendingUp, 
   TrendingDown, 
   DollarSign, 
   Calendar, 
-  Filter 
+  Wallet,
+  Building,
+  CreditCard
 } from 'lucide-react';
 import { AccountService } from '../services/accountService';
 import { TransactionService } from '../services/transactionService';
@@ -60,21 +60,27 @@ const ReportsPage: React.FC = () => {
   // --- BALANCE SHEET CALCULATION ---
   const calculateBalanceSheet = () => {
     const sheet = {
-      hnl: { assets: 0, liabilities: 0, equity: 0 },
-      usd: { assets: 0, liabilities: 0, equity: 0 }
+      hnl: { assets: 0, liabilities: 0, equity: 0, details: [] as any[] },
+      usd: { assets: 0, liabilities: 0, equity: 0, details: [] as any[] }
     };
 
     // Accounts
     accounts.forEach(acc => {
       const target = acc.currency === 'HNL' ? sheet.hnl : sheet.usd;
-      if (acc.type === 'ACTIVO') target.assets += acc.initialBalance;
-      else target.liabilities += acc.initialBalance; // Liabilities are positive balance in debt accounts usually
+      if (acc.type === 'ACTIVO') {
+          target.assets += acc.initialBalance;
+          target.details.push({ name: acc.name, type: 'ACTIVO', amount: acc.initialBalance, category: 'Cuenta Bancaria' });
+      } else {
+          target.liabilities += acc.initialBalance; 
+          target.details.push({ name: acc.name, type: 'PASIVO', amount: acc.initialBalance, category: 'Deuda/Tarjeta' });
+      }
     });
 
     // Properties (Assets)
     properties.forEach(prop => {
       const target = prop.currency === 'HNL' ? sheet.hnl : sheet.usd;
       target.assets += prop.value;
+      target.details.push({ name: prop.name, type: 'ACTIVO', amount: prop.value, category: 'Propiedad' });
     });
 
     // Equity
@@ -86,11 +92,9 @@ const ReportsPage: React.FC = () => {
 
   // --- CASHFLOW CALCULATION ---
   const calculateCashflow = () => {
-    // Filter transactions by selected month/year
     const filtered = transactions.filter(tx => {
       const d = new Date(tx.date);
-      // Fix timezone offset for month extraction if needed, but standard getMonth is usually enough for local dates if stored as ISO string YYYY-MM-DD
-      // Assuming date string YYYY-MM-DD
+      // Adjust for timezone if needed, but simple slicing is safer for YYYY-MM-DD
       const [y, m] = tx.date.split('-').map(Number);
       return y === selectedYear && (m - 1) === selectedMonth;
     });
@@ -98,14 +102,14 @@ const ReportsPage: React.FC = () => {
     const income = filtered.filter(t => t.type === 'INGRESO').reduce((sum, t) => sum + t.amount, 0);
     const expense = filtered.filter(t => t.type === 'GASTO').reduce((sum, t) => sum + t.amount, 0);
     
-    // Group by Category
     const categories: Record<string, { name: string, type: CategoryType, amount: number }> = {};
     
     filtered.forEach(tx => {
-      if (!categories[tx.categoryName]) {
-        categories[tx.categoryName] = { name: tx.categoryName, type: tx.type, amount: 0 };
+      const catName = tx.categoryName || 'Sin Categoría';
+      if (!categories[catName]) {
+        categories[catName] = { name: catName, type: tx.type, amount: 0 };
       }
-      categories[tx.categoryName].amount += tx.amount;
+      categories[catName].amount += tx.amount;
     });
 
     return {
@@ -123,11 +127,8 @@ const ReportsPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-slate-800">Reportes Financieros</h1>
-        
-        {/* Tabs */}
         <div className="flex bg-white p-1 rounded-lg border border-slate-200">
           <button 
             onClick={() => setActiveTab('BALANCE')}
@@ -146,62 +147,86 @@ const ReportsPage: React.FC = () => {
 
       {/* --- BALANCE SHEET TAB --- */}
       {activeTab === 'BALANCE' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            
-            {/* HNL Card */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-100 bg-indigo-50/50 flex justify-between items-center">
-                    <h3 className="font-bold text-indigo-900">Balance en Lempiras (HNL)</h3>
-                    <span className="px-2 py-1 bg-indigo-100 text-indigo-700 rounded text-xs font-bold">HNL</span>
-                </div>
-                <div className="p-6 space-y-6">
-                    <div>
-                        <p className="text-sm text-slate-500 mb-1">Total Activos</p>
+        <div className="space-y-8">
+            {/* HNL SECTION */}
+            <div className="space-y-4">
+                <h3 className="text-lg font-bold text-slate-700 flex items-center gap-2"><div className="w-2 h-6 bg-indigo-600 rounded-full"></div> Lempiras (HNL)</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                        <p className="text-slate-500 text-sm">Total Activos</p>
                         <p className="text-2xl font-bold text-emerald-600">{formatMoney(balance.hnl.assets, 'HNL')}</p>
-                        <div className="w-full bg-slate-100 h-2 rounded-full mt-2 overflow-hidden">
-                            <div className="h-full bg-emerald-500" style={{ width: '100%' }}></div>
-                        </div>
                     </div>
-                    <div>
-                        <p className="text-sm text-slate-500 mb-1">Total Pasivos</p>
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                        <p className="text-slate-500 text-sm">Total Pasivos</p>
                         <p className="text-2xl font-bold text-rose-600">{formatMoney(balance.hnl.liabilities, 'HNL')}</p>
-                        <div className="w-full bg-slate-100 h-2 rounded-full mt-2 overflow-hidden">
-                             {/* Simple ratio bar */}
-                            <div className="h-full bg-rose-500" style={{ width: `${Math.min((balance.hnl.liabilities / (balance.hnl.assets || 1)) * 100, 100)}%` }}></div>
-                        </div>
                     </div>
-                    <div className="pt-4 border-t border-slate-100">
-                        <p className="text-sm text-slate-500 mb-1">Patrimonio Neto</p>
-                        <p className="text-3xl font-bold text-slate-800">{formatMoney(balance.hnl.equity, 'HNL')}</p>
+                    <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 shadow-sm">
+                        <p className="text-indigo-600 text-sm font-medium">Patrimonio Neto</p>
+                        <p className="text-2xl font-bold text-indigo-900">{formatMoney(balance.hnl.equity, 'HNL')}</p>
                     </div>
+                </div>
+                {/* Detail Table HNL */}
+                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-slate-50 font-medium text-slate-500">
+                            <tr><th className="p-3">Cuenta / Propiedad</th><th className="p-3">Tipo</th><th className="p-3 text-right">Monto</th></tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {balance.hnl.details.map((item, i) => (
+                                <tr key={i} className="hover:bg-slate-50">
+                                    <td className="p-3">
+                                        <div className="font-medium text-slate-700">{item.name}</div>
+                                        <div className="text-xs text-slate-400">{item.category}</div>
+                                    </td>
+                                    <td className="p-3">
+                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${item.type === 'ACTIVO' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>{item.type}</span>
+                                    </td>
+                                    <td className="p-3 text-right font-mono">{formatMoney(item.amount, 'HNL')}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
-            {/* USD Card */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-100 bg-emerald-50/50 flex justify-between items-center">
-                    <h3 className="font-bold text-emerald-900">Balance en Dólares (USD)</h3>
-                    <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-xs font-bold">USD</span>
-                </div>
-                <div className="p-6 space-y-6">
-                    <div>
-                        <p className="text-sm text-slate-500 mb-1">Total Activos</p>
+            {/* USD SECTION */}
+            <div className="space-y-4 pt-4 border-t border-slate-200">
+                <h3 className="text-lg font-bold text-slate-700 flex items-center gap-2"><div className="w-2 h-6 bg-emerald-600 rounded-full"></div> Dólares (USD)</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                        <p className="text-slate-500 text-sm">Total Activos</p>
                         <p className="text-2xl font-bold text-emerald-600">{formatMoney(balance.usd.assets, 'USD')}</p>
-                        <div className="w-full bg-slate-100 h-2 rounded-full mt-2 overflow-hidden">
-                            <div className="h-full bg-emerald-500" style={{ width: '100%' }}></div>
-                        </div>
                     </div>
-                    <div>
-                        <p className="text-sm text-slate-500 mb-1">Total Pasivos</p>
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                        <p className="text-slate-500 text-sm">Total Pasivos</p>
                         <p className="text-2xl font-bold text-rose-600">{formatMoney(balance.usd.liabilities, 'USD')}</p>
-                        <div className="w-full bg-slate-100 h-2 rounded-full mt-2 overflow-hidden">
-                            <div className="h-full bg-rose-500" style={{ width: `${Math.min((balance.usd.liabilities / (balance.usd.assets || 1)) * 100, 100)}%` }}></div>
-                        </div>
                     </div>
-                    <div className="pt-4 border-t border-slate-100">
-                        <p className="text-sm text-slate-500 mb-1">Patrimonio Neto</p>
-                        <p className="text-3xl font-bold text-slate-800">{formatMoney(balance.usd.equity, 'USD')}</p>
+                    <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 shadow-sm">
+                        <p className="text-emerald-600 text-sm font-medium">Patrimonio Neto</p>
+                        <p className="text-2xl font-bold text-emerald-900">{formatMoney(balance.usd.equity, 'USD')}</p>
                     </div>
+                </div>
+                {/* Detail Table USD */}
+                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-slate-50 font-medium text-slate-500">
+                            <tr><th className="p-3">Cuenta / Propiedad</th><th className="p-3">Tipo</th><th className="p-3 text-right">Monto</th></tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {balance.usd.details.map((item, i) => (
+                                <tr key={i} className="hover:bg-slate-50">
+                                    <td className="p-3">
+                                        <div className="font-medium text-slate-700">{item.name}</div>
+                                        <div className="text-xs text-slate-400">{item.category}</div>
+                                    </td>
+                                    <td className="p-3">
+                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${item.type === 'ACTIVO' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>{item.type}</span>
+                                    </td>
+                                    <td className="p-3 text-right font-mono">{formatMoney(item.amount, 'USD')}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -210,8 +235,6 @@ const ReportsPage: React.FC = () => {
       {/* --- CASHFLOW TAB --- */}
       {activeTab === 'CASHFLOW' && (
         <div className="space-y-6">
-            
-            {/* Filters */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap gap-4 items-center">
                 <div className="flex items-center gap-2 text-slate-600">
                     <Calendar size={20} />
@@ -235,7 +258,6 @@ const ReportsPage: React.FC = () => {
                 </select>
             </div>
 
-            {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-emerald-50 p-5 rounded-xl border border-emerald-100">
                     <p className="text-emerald-600 font-medium text-sm mb-1">Ingresos Totales</p>
@@ -251,7 +273,6 @@ const ReportsPage: React.FC = () => {
                 </div>
             </div>
 
-            {/* Breakdown Table */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="px-6 py-4 border-b border-slate-100">
                     <h3 className="font-bold text-slate-800">Detalle por Categoría</h3>
