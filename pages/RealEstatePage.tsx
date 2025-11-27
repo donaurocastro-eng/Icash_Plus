@@ -3,7 +3,7 @@ import { Plus, Search, Edit2, Trash2, Building, Users, FileText, MapPin, Upload,
 import { Property, Tenant, Contract, Apartment, PropertyFormData, TenantFormData, ContractFormData, ApartmentFormData, PaymentFormData, BulkPaymentFormData, PropertyServiceItem, PropertyServiceItemFormData, ServicePaymentFormData } from '../types';
 import { PropertyService } from '../services/propertyService';
 import { TenantService } from '../services/tenantService';
-import { ContractService } from '../services/contractService'; // Correct import
+import { ContractService } from '../services/contractService';
 import { ApartmentService } from '../services/apartmentService';
 import { ServiceItemService } from '../services/serviceItemService';
 import PropertyModal from '../components/PropertyModal';
@@ -19,9 +19,6 @@ import ServicePaymentModal from '../components/ServicePaymentModal';
 import { AccountService } from '../services/accountService';
 import { CategoryService } from '../services/categoryService';
 import * as XLSX from 'xlsx';
-
-// ... (rest of the file is correct, maintaining existing logic)
-// Re-outputting full file structure to ensure consistency
 
 type Tab = 'PROPERTIES' | 'UNITS' | 'TENANTS' | 'CONTRACTS' | 'PAYMENTS' | 'SERVICES';
 
@@ -282,11 +279,27 @@ const RealEstatePage: React.FC = () => {
 
   const formatMoney = (n: number) => n.toLocaleString('es-HN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // Filtering logic
+  // --- FILTERING LOGIC ---
   const lowerSearch = searchTerm.toLowerCase();
-  const filteredProperties = properties.filter(p => p.name.toLowerCase().includes(lowerSearch));
-  const filteredUnits = apartments.filter(a => a.name.toLowerCase().includes(lowerSearch));
-  const filteredTenants = tenants.filter(t => t.fullName.toLowerCase().includes(lowerSearch));
+
+  const filteredProperties = properties.filter(p => 
+      p.name.toLowerCase().includes(lowerSearch) || 
+      p.code.toLowerCase().includes(lowerSearch)
+  );
+
+  const filteredUnits = apartments.filter(a => {
+      const parent = properties.find(p => p.code === a.propertyCode);
+      return a.name.toLowerCase().includes(lowerSearch) || 
+             a.code.toLowerCase().includes(lowerSearch) ||
+             parent?.name.toLowerCase().includes(lowerSearch);
+  });
+
+  const filteredTenants = tenants.filter(t => 
+      t.fullName.toLowerCase().includes(lowerSearch) || 
+      t.phone?.includes(lowerSearch) || 
+      t.email?.toLowerCase().includes(lowerSearch)
+  );
+
   const filteredContracts = contracts.filter(c => {
       const ten = tenants.find(t => t.code === c.tenantCode);
       const apt = apartments.find(a => a.code === c.apartmentCode);
@@ -294,7 +307,13 @@ const RealEstatePage: React.FC = () => {
              ten?.fullName.toLowerCase().includes(lowerSearch) || 
              apt?.name.toLowerCase().includes(lowerSearch);
   });
-  const filteredServices = services.filter(s => s.name.toLowerCase().includes(lowerSearch));
+
+  const filteredServices = services.filter(s => {
+      const prop = properties.find(p => p.code === s.propertyCode);
+      return s.name.toLowerCase().includes(lowerSearch) ||
+             s.code.toLowerCase().includes(lowerSearch) ||
+             prop?.name.toLowerCase().includes(lowerSearch);
+  });
 
   const getPayingContractLabel = () => {
       const c = viewingContract || payingContract;
@@ -338,7 +357,7 @@ const RealEstatePage: React.FC = () => {
         <div className="p-3 border-b border-slate-100 flex gap-3">
             <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                <input type="text" placeholder="Buscar..." className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white outline-none text-sm"
+                <input type="text" placeholder="Buscar por nombre, inquilino, propiedad..." className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white outline-none text-sm"
                     value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
             </div>
             <button className="p-2.5 text-slate-500 hover:text-brand-600 hover:bg-brand-50 rounded-xl border border-slate-200"><Filter size={18} /></button>
