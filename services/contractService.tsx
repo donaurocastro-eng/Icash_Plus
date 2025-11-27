@@ -302,8 +302,6 @@ export const ContractService = {
               contractCode: data.contractCode,
               accountCode: data.accountCode,
               amount: finalAmount, 
-              // FIX: Use the specific due date of the month being paid (item.date)
-              // instead of the current execution date.
               date: item.date, 
               description: item.description
           });
