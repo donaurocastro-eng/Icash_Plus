@@ -206,3 +206,13 @@ export enum AppRoute {
   REAL_ESTATE = 'real_estate',
   SETTINGS = 'settings'
 }
+export enum AppRoute {
+  DASHBOARD = 'dashboard',
+  ACCOUNTS = 'accounts',
+  CATEGORIES = 'categories',
+  TRANSACTIONS = 'transactions',
+  REAL_ESTATE = 'real_estate',
+  REPORTS = 'reports', // New route
+  SETTINGS = 'settings'
+}
+// ... (rest of the file remains unchanged)
