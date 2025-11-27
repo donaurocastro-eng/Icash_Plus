@@ -148,9 +148,14 @@ const ReportsPage: React.FC = () => {
       }));
 
       transactions.forEach(tx => {
+          // Strict property check
           if (tx.propertyCode !== selectedPropCode) return;
           
-          const [y, m] = tx.date.split('-').map(Number);
+          // Robust Date Parsing (YYYY-MM-DD)
+          // Using substring avoids timezone shifts that occur with Date objects
+          const y = parseInt(tx.date.substring(0, 4));
+          const m = parseInt(tx.date.substring(5, 7));
+          
           if (y !== selectedYear) return;
 
           const monthIdx = m - 1;
@@ -291,10 +296,20 @@ const ReportsPage: React.FC = () => {
                     <Calendar size={20} />
                     <span className="font-medium text-sm">Periodo:</span>
                 </div>
-                <select className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-sm" value={selectedMonth} onChange={(e) => setSelectedMonth(parseInt(e.target.value))}>
-                    {Array.from({length: 12}, (_, i) => <option key={i} value={i}>{new Date(0, i).toLocaleDateString('es-ES', {month: 'long'}).toUpperCase()}</option>)}
+                <select 
+                    className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-sm"
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+                >
+                    {Array.from({length: 12}, (_, i) => (
+                        <option key={i} value={i}>{new Date(0, i).toLocaleDateString('es-ES', {month: 'long'}).toUpperCase()}</option>
+                    ))}
                 </select>
-                <select className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-sm" value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))}>
+                <select 
+                    className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-sm"
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                >
                     {[2023, 2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
                 </select>
             </div>
@@ -315,9 +330,18 @@ const ReportsPage: React.FC = () => {
             </div>
 
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-100"><h3 className="font-bold text-slate-800">Detalle por Categoría</h3></div>
+                <div className="px-6 py-4 border-b border-slate-100">
+                    <h3 className="font-bold text-slate-800">Detalle por Categoría</h3>
+                </div>
                 <table className="w-full text-sm text-left">
-                    <thead className="bg-slate-50 text-slate-500 font-medium"><tr><th className="px-6 py-3">Categoría</th><th className="px-6 py-3">Tipo</th><th className="px-6 py-3 text-right">Monto</th><th className="px-6 py-3 text-right">% del Total</th></tr></thead>
+                    <thead className="bg-slate-50 text-slate-500 font-medium">
+                        <tr>
+                            <th className="px-6 py-3">Categoría</th>
+                            <th className="px-6 py-3">Tipo</th>
+                            <th className="px-6 py-3 text-right">Monto</th>
+                            <th className="px-6 py-3 text-right">% del Total</th>
+                        </tr>
+                    </thead>
                     <tbody className="divide-y divide-slate-100">
                         {cashflow.breakdown.map((cat, idx) => {
                              const totalBase = cat.type === 'INGRESO' ? cashflow.totalIncome : cashflow.totalExpense;
@@ -325,15 +349,26 @@ const ReportsPage: React.FC = () => {
                              return (
                                 <tr key={idx} className="hover:bg-slate-50">
                                     <td className="px-6 py-3 font-medium text-slate-700">{cat.name}</td>
-                                    <td className="px-6 py-3"><span className={`px-2 py-1 rounded text-xs font-bold ${cat.type === 'INGRESO' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{cat.type}</span></td>
+                                    <td className="px-6 py-3">
+                                        <span className={`px-2 py-1 rounded text-xs font-bold ${cat.type === 'INGRESO' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                                            {cat.type}
+                                        </span>
+                                    </td>
                                     <td className="px-6 py-3 text-right font-bold text-slate-700">{formatMoney(cat.amount)}</td>
                                     <td className="px-6 py-3 text-right text-slate-500">
-                                        <div className="flex items-center justify-end gap-2"><span className="text-xs">{percentage.toFixed(1)}%</span><div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden"><div className={`h-full ${cat.type === 'INGRESO' ? 'bg-emerald-500' : 'bg-rose-500'}`} style={{ width: `${percentage}%` }}></div></div></div>
+                                        <div className="flex items-center justify-end gap-2">
+                                            <span className="text-xs">{percentage.toFixed(1)}%</span>
+                                            <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                                <div className={`h-full ${cat.type === 'INGRESO' ? 'bg-emerald-500' : 'bg-rose-500'}`} style={{ width: `${percentage}%` }}></div>
+                                            </div>
+                                        </div>
                                     </td>
                                 </tr>
                              );
                         })}
-                        {cashflow.breakdown.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400">No hay movimientos en este periodo</td></tr>}
+                        {cashflow.breakdown.length === 0 && (
+                            <tr><td colSpan={4} className="p-8 text-center text-slate-400">No hay movimientos en este periodo</td></tr>
+                        )}
                     </tbody>
                 </table>
             </div>
