@@ -6,7 +6,8 @@ import {
   Calendar, 
   Wallet,
   Building,
-  CreditCard
+  CreditCard,
+  RefreshCw
 } from 'lucide-react';
 import { AccountService } from '../services/accountService';
 import { TransactionService } from '../services/transactionService';
@@ -24,9 +25,10 @@ const ReportsPage: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   
-  // Filters for Cashflow
+  // Filters & Settings
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [exchangeRate, setExchangeRate] = useState<number>(25.00); // Default rate
 
   useEffect(() => {
     const loadData = async () => {
@@ -49,56 +51,64 @@ const ReportsPage: React.FC = () => {
     loadData();
   }, []);
 
-  const formatMoney = (amount: number, currency: 'HNL' | 'USD' = 'HNL') => {
-    return new Intl.NumberFormat(currency === 'HNL' ? 'es-HN' : 'en-US', {
+  const formatMoney = (amount: number) => {
+    return new Intl.NumberFormat('es-HN', {
       style: 'currency',
-      currency: currency,
+      currency: 'HNL',
       minimumFractionDigits: 2
     }).format(amount);
   };
 
-  // --- BALANCE SHEET CALCULATION ---
-  const calculateBalanceSheet = () => {
-    const sheet = {
-      hnl: { assets: 0, liabilities: 0, equity: 0, details: [] as any[] },
-      usd: { assets: 0, liabilities: 0, equity: 0, details: [] as any[] }
+  // --- BALANCE SHEET CALCULATION (CONSOLIDATED IN HNL) ---
+  const calculateConsolidatedBalance = () => {
+    const balance = {
+      assets: { total: 0, details: [] as any[] },
+      liabilities: { total: 0, details: [] as any[] },
+      equity: 0
     };
 
-    // Accounts
+    // Helper to convert and sum
+    const processItem = (amount: number, currency: string, name: string, type: 'ACTIVO' | 'PASIVO', category: string, code: string) => {
+        let finalAmount = amount;
+        // Convert USD to HNL
+        if (currency === 'USD') {
+            finalAmount = amount * exchangeRate;
+        }
+
+        if (type === 'ACTIVO') {
+            balance.assets.total += finalAmount;
+            balance.assets.details.push({ name, code, amountHNL: finalAmount, original: amount, currency, category });
+        } else {
+            balance.liabilities.total += finalAmount;
+            balance.liabilities.details.push({ name, code, amountHNL: finalAmount, original: amount, currency, category });
+        }
+    };
+
+    // 1. Accounts
     accounts.forEach(acc => {
-      const target = acc.currency === 'HNL' ? sheet.hnl : sheet.usd;
-      if (acc.type === 'ACTIVO') {
-          target.assets += acc.initialBalance;
-          target.details.push({ name: acc.name, type: 'ACTIVO', amount: acc.initialBalance, category: 'Cuenta Bancaria' });
-      } else {
-          target.liabilities += acc.initialBalance; 
-          target.details.push({ name: acc.name, type: 'PASIVO', amount: acc.initialBalance, category: 'Deuda/Tarjeta' });
-      }
+        processItem(acc.initialBalance, acc.currency, acc.name, acc.type, acc.type === 'ACTIVO' ? 'Activos Líquidos' : 'Pasivos / Deudas', acc.code);
     });
 
-    // Properties (Assets)
+    // 2. Properties (Always Assets)
     properties.forEach(prop => {
-      const target = prop.currency === 'HNL' ? sheet.hnl : sheet.usd;
-      target.assets += prop.value;
-      target.details.push({ name: prop.name, type: 'ACTIVO', amount: prop.value, category: 'Propiedad' });
+        processItem(prop.value, prop.currency, prop.name, 'ACTIVO', 'Bienes Inmuebles', prop.code);
     });
 
-    // Equity
-    sheet.hnl.equity = sheet.hnl.assets - sheet.hnl.liabilities;
-    sheet.usd.equity = sheet.usd.assets - sheet.usd.liabilities;
-
-    return sheet;
+    balance.equity = balance.assets.total - balance.liabilities.total;
+    return balance;
   };
 
   // --- CASHFLOW CALCULATION ---
   const calculateCashflow = () => {
     const filtered = transactions.filter(tx => {
       const d = new Date(tx.date);
-      // Adjust for timezone if needed, but simple slicing is safer for YYYY-MM-DD
       const [y, m] = tx.date.split('-').map(Number);
       return y === selectedYear && (m - 1) === selectedMonth;
     });
 
+    // Simple sum, assuming mixed currency just adds up for now or convert if we had currency in transaction. 
+    // Assuming transactions are mainly HNL for cashflow or 1:1 for simplicity in this view. 
+    // Ideally, transactions should store currency too.
     const income = filtered.filter(t => t.type === 'INGRESO').reduce((sum, t) => sum + t.amount, 0);
     const expense = filtered.filter(t => t.type === 'GASTO').reduce((sum, t) => sum + t.amount, 0);
     
@@ -122,111 +132,135 @@ const ReportsPage: React.FC = () => {
 
   if (loading) return <div className="flex justify-center items-center h-full"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600"></div></div>;
 
-  const balance = calculateBalanceSheet();
+  const balance = calculateConsolidatedBalance();
   const cashflow = calculateCashflow();
+
+  // Grouping Assets for Display
+  const liquidAssets = balance.assets.details.filter(d => d.category === 'Activos Líquidos');
+  const realEstateAssets = balance.assets.details.filter(d => d.category === 'Bienes Inmuebles');
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <h1 className="text-2xl font-bold text-slate-800">Reportes Financieros</h1>
-        <div className="flex bg-white p-1 rounded-lg border border-slate-200">
-          <button 
-            onClick={() => setActiveTab('BALANCE')}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'BALANCE' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}
-          >
-            Balance General
-          </button>
-          <button 
-             onClick={() => setActiveTab('CASHFLOW')}
-             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'CASHFLOW' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}
-          >
-            Flujo Mensual
-          </button>
+        
+        <div className="flex gap-4 items-center">
+            {/* Exchange Rate Input */}
+            {activeTab === 'BALANCE' && (
+                <div className="flex items-center bg-slate-800 text-white px-3 py-1.5 rounded-lg shadow-md border border-slate-600">
+                    <span className="text-xs text-slate-300 mr-2 font-medium">Tasa Dólar:</span>
+                    <input 
+                        type="number" 
+                        step="0.01"
+                        className="w-16 bg-transparent text-right font-mono font-bold outline-none border-b border-slate-500 focus:border-brand-400"
+                        value={exchangeRate}
+                        onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 0)}
+                    />
+                </div>
+            )}
+
+            {/* Tabs */}
+            <div className="flex bg-white p-1 rounded-lg border border-slate-200 shadow-sm">
+            <button 
+                onClick={() => setActiveTab('BALANCE')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'BALANCE' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}
+            >
+                Balance General
+            </button>
+            <button 
+                onClick={() => setActiveTab('CASHFLOW')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'CASHFLOW' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}
+            >
+                Flujo Mensual
+            </button>
+            </div>
         </div>
       </div>
 
-      {/* --- BALANCE SHEET TAB --- */}
+      {/* --- BALANCE SHEET TAB (DARK THEME INSPIRED) --- */}
       {activeTab === 'BALANCE' && (
-        <div className="space-y-8">
-            {/* HNL SECTION */}
-            <div className="space-y-4">
-                <h3 className="text-lg font-bold text-slate-700 flex items-center gap-2"><div className="w-2 h-6 bg-indigo-600 rounded-full"></div> Lempiras (HNL)</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                        <p className="text-slate-500 text-sm">Total Activos</p>
-                        <p className="text-2xl font-bold text-emerald-600">{formatMoney(balance.hnl.assets, 'HNL')}</p>
-                    </div>
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                        <p className="text-slate-500 text-sm">Total Pasivos</p>
-                        <p className="text-2xl font-bold text-rose-600">{formatMoney(balance.hnl.liabilities, 'HNL')}</p>
-                    </div>
-                    <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 shadow-sm">
-                        <p className="text-indigo-600 text-sm font-medium">Patrimonio Neto</p>
-                        <p className="text-2xl font-bold text-indigo-900">{formatMoney(balance.hnl.equity, 'HNL')}</p>
-                    </div>
-                </div>
-                {/* Detail Table HNL */}
-                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-slate-50 font-medium text-slate-500">
-                            <tr><th className="p-3">Cuenta / Propiedad</th><th className="p-3">Tipo</th><th className="p-3 text-right">Monto</th></tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {balance.hnl.details.map((item, i) => (
-                                <tr key={i} className="hover:bg-slate-50">
-                                    <td className="p-3">
-                                        <div className="font-medium text-slate-700">{item.name}</div>
-                                        <div className="text-xs text-slate-400">{item.category}</div>
-                                    </td>
-                                    <td className="p-3">
-                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${item.type === 'ACTIVO' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>{item.type}</span>
-                                    </td>
-                                    <td className="p-3 text-right font-mono">{formatMoney(item.amount, 'HNL')}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+        <div className="bg-slate-900 rounded-2xl shadow-xl border border-slate-800 overflow-hidden text-slate-100 p-6">
+            <h2 className="text-xl font-bold mb-6">Balance General (Consolidado en Lempiras)</h2>
 
-            {/* USD SECTION */}
-            <div className="space-y-4 pt-4 border-t border-slate-200">
-                <h3 className="text-lg font-bold text-slate-700 flex items-center gap-2"><div className="w-2 h-6 bg-emerald-600 rounded-full"></div> Dólares (USD)</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                        <p className="text-slate-500 text-sm">Total Activos</p>
-                        <p className="text-2xl font-bold text-emerald-600">{formatMoney(balance.usd.assets, 'USD')}</p>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* LEFT COLUMN: ASSETS */}
+                <div className="space-y-6">
+                    <div className="flex justify-between items-center border-b border-indigo-500/50 pb-2">
+                        <h3 className="font-bold text-indigo-400 text-lg">Activos (lo que posees)</h3>
                     </div>
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                        <p className="text-slate-500 text-sm">Total Pasivos</p>
-                        <p className="text-2xl font-bold text-rose-600">{formatMoney(balance.usd.liabilities, 'USD')}</p>
+
+                    {/* Liquid Assets */}
+                    <div>
+                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Activos Líquidos / Cuentas</h4>
+                        <div className="space-y-2">
+                            {liquidAssets.map((item, i) => (
+                                <div key={i} className="flex justify-between text-sm hover:bg-slate-800/50 p-1 rounded transition-colors">
+                                    <span className="text-slate-300">[{item.code}] {item.name} {item.currency === 'USD' && <span className="text-xs text-emerald-500 ml-1">(USD)</span>}</span>
+                                    <span className="font-mono text-slate-100">{formatMoney(item.amountHNL)}</span>
+                                </div>
+                            ))}
+                        </div>
                     </div>
-                    <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 shadow-sm">
-                        <p className="text-emerald-600 text-sm font-medium">Patrimonio Neto</p>
-                        <p className="text-2xl font-bold text-emerald-900">{formatMoney(balance.usd.equity, 'USD')}</p>
+
+                    {/* Real Estate */}
+                    <div>
+                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 mt-4">Bienes Inmuebles</h4>
+                        <div className="space-y-2">
+                            {realEstateAssets.map((item, i) => (
+                                <div key={i} className="flex justify-between text-sm hover:bg-slate-800/50 p-1 rounded transition-colors">
+                                    <span className="text-slate-300">[{item.code}] {item.name} {item.currency === 'USD' && <span className="text-xs text-emerald-500 ml-1">(USD)</span>}</span>
+                                    <span className="font-mono text-slate-100">{formatMoney(item.amountHNL)}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Total Assets */}
+                    <div className="pt-4 border-t border-slate-700 flex justify-between items-end mt-4">
+                        <span className="text-slate-400 font-bold">TOTAL ACTIVOS</span>
+                        <span className="text-2xl font-bold text-emerald-400">{formatMoney(balance.assets.total)}</span>
                     </div>
                 </div>
-                {/* Detail Table USD */}
-                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-slate-50 font-medium text-slate-500">
-                            <tr><th className="p-3">Cuenta / Propiedad</th><th className="p-3">Tipo</th><th className="p-3 text-right">Monto</th></tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {balance.usd.details.map((item, i) => (
-                                <tr key={i} className="hover:bg-slate-50">
-                                    <td className="p-3">
-                                        <div className="font-medium text-slate-700">{item.name}</div>
-                                        <div className="text-xs text-slate-400">{item.category}</div>
-                                    </td>
-                                    <td className="p-3">
-                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${item.type === 'ACTIVO' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>{item.type}</span>
-                                    </td>
-                                    <td className="p-3 text-right font-mono">{formatMoney(item.amount, 'USD')}</td>
-                                </tr>
+
+                {/* RIGHT COLUMN: LIABILITIES */}
+                <div className="space-y-6">
+                    <div className="flex justify-between items-center border-b border-rose-500/50 pb-2">
+                        <h3 className="font-bold text-rose-400 text-lg">Pasivos (lo que debes)</h3>
+                    </div>
+
+                     {/* Liabilities List */}
+                     <div>
+                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Cuentas de Pasivo / Deudas</h4>
+                        <div className="space-y-2">
+                            {balance.liabilities.details.map((item, i) => (
+                                <div key={i} className="flex justify-between text-sm hover:bg-slate-800/50 p-1 rounded transition-colors">
+                                    <span className="text-slate-300">[{item.code}] {item.name} {item.currency === 'USD' && <span className="text-xs text-emerald-500 ml-1">(USD)</span>}</span>
+                                    <span className="font-mono text-slate-100">{formatMoney(item.amountHNL)}</span>
+                                </div>
                             ))}
-                        </tbody>
-                    </table>
+                            {balance.liabilities.details.length === 0 && <p className="text-slate-600 italic text-sm">Sin deudas registradas</p>}
+                        </div>
+                    </div>
+
+                    {/* Total Liabilities */}
+                    <div className="pt-4 border-t border-slate-700 flex justify-between items-end mt-4">
+                        <span className="text-slate-400 font-bold">TOTAL PASIVOS</span>
+                        <span className="text-2xl font-bold text-rose-400">{formatMoney(balance.liabilities.total)}</span>
+                    </div>
+
+                    {/* NET WORTH SUMMARY */}
+                    <div className="mt-12 bg-slate-800/50 p-6 rounded-xl border border-slate-700">
+                        <div className="flex justify-between items-center">
+                            <div>
+                                <p className="text-slate-400 text-sm uppercase tracking-wider font-bold">Patrimonio Neto</p>
+                                <p className="text-xs text-slate-500">(Activos - Pasivos)</p>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-3xl font-bold text-white">{formatMoney(balance.equity)}</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
