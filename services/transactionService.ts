@@ -76,6 +76,7 @@ export const TransactionService = {
     const category = categories.find(c => c.code === data.categoryCode);
     const account = accounts.find(a => a.code === data.accountCode);
     
+    // Enhanced Error Messages
     if (!category) throw new Error(`La categoría seleccionada (${data.categoryCode}) no es válida o no existe.`);
     if (!account) throw new Error(`La cuenta seleccionada (${data.accountCode}) no es válida o no existe.`);
 
