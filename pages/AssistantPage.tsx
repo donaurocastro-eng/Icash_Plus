@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from "@google/genai";
-import { Send, Bot, User, Sparkles, AlertCircle, RefreshCcw, ShieldAlert } from 'lucide-react';
+import { Send, Bot, User, Sparkles, RefreshCcw, ShieldAlert } from 'lucide-react';
 import { AccountService } from '../services/accountService';
 import { TransactionService } from '../services/transactionService';
 import { PropertyService } from '../services/propertyService';
@@ -27,7 +27,6 @@ const AssistantPage: React.FC = () => {
   const [initializing, setInitializing] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  // Use 'any' for the chat session ref to avoid strict type import issues
   const chatSession = useRef<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -52,7 +51,6 @@ const AssistantPage: React.FC = () => {
         ContractService.getAll()
       ]);
 
-      // Summarize Transactions (Last 50)
       const recentTx = transactions.slice(0, 50).map(t => ({
         date: t.date,
         desc: t.description,
@@ -62,7 +60,6 @@ const AssistantPage: React.FC = () => {
         acc: t.accountName
       }));
 
-      // Summarize Data for AI
       const contextData = {
         currentDate: new Date().toISOString().split('T')[0],
         accounts: accounts.map(a => ({ name: a.name, balance: a.initialBalance, currency: a.currency, type: a.type })),
@@ -85,13 +82,11 @@ const AssistantPage: React.FC = () => {
     setInitializing(true);
     setError(null);
     try {
-      // Acceso robusto a la API Key
-      // @ts-ignore
-      const env = import.meta.env;
-      const apiKey = env?.VITE_API_KEY;
+      // Access API Key safely for Vite environment
+      const apiKey = import.meta.env.VITE_API_KEY;
 
       if (!apiKey) {
-        throw new Error("API Key no encontrada. Por favor configura VITE_API_KEY en Vercel.");
+        throw new Error("API Key no encontrada. Configura la variable VITE_API_KEY en Vercel.");
       }
 
       const contextData = await gatherFinancialContext();
@@ -110,8 +105,7 @@ const AssistantPage: React.FC = () => {
         2. Use the provided data to answer questions about balances, spending, income, and net worth.
         3. If a user asks something not in the data, politely say you don't have that information.
         4. Format currency correctly (HNL for Lempiras, USD for Dollars).
-        5. You can use Markdown for bolding lists or key figures.
-        6. Speak in Spanish (Español) as the app is in Spanish.
+        5. Speak in Spanish (Español) as the app is in Spanish.
       `;
 
       const chat = ai.chats.create({
@@ -138,7 +132,6 @@ const AssistantPage: React.FC = () => {
     const userText = inputValue;
     setInputValue('');
     
-    // Add User Message
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
@@ -152,7 +145,6 @@ const AssistantPage: React.FC = () => {
       const result = await chatSession.current.sendMessage({ message: userText });
       const aiText = result.text;
       
-      // Add AI Message
       const aiMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: 'model',
@@ -230,7 +222,6 @@ const AssistantPage: React.FC = () => {
                     : 'bg-white border border-slate-200 text-slate-700 rounded-tl-none'
                 }`}
               >
-                {/* Simple rendering for newlines */}
                 {msg.text.split('\n').map((line, i) => (
                   <p key={i} className={line ? "min-h-[1.2em]" : "h-2"}>{line}</p>
                 ))}
