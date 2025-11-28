@@ -11,7 +11,7 @@ import {
   Building,
   Cloud,
   HardDrive,
-  PieChart // New Icon for Reports
+  PieChart 
 } from 'lucide-react';
 import { AppRoute } from '../types';
 import { db } from '../services/db';
@@ -83,8 +83,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentRoute, onNavigate }) =
             <NavItem route={AppRoute.CATEGORIES} icon={Tag} label="Categorías" />
             <NavItem route={AppRoute.TRANSACTIONS} icon={ArrowRightLeft} label="Movimientos" />
             <NavItem route={AppRoute.REAL_ESTATE} icon={Building} label="Bienes Raíces" />
-            {/* Ensure Reports is here */}
-            <NavItem route={AppRoute.REPORTS} icon={PieChart} label="Reportes" /> 
+            <NavItem route={AppRoute.REPORTS} icon={PieChart} label="Reportes" />
             <NavItem route={AppRoute.SETTINGS} icon={Settings} label="Configuración" />
           </nav>
 
@@ -96,10 +95,16 @@ const Layout: React.FC<LayoutProps> = ({ children, currentRoute, onNavigate }) =
               <span>{dbConnected ? 'Modo: Nube (Neon)' : 'Modo: Local'}</span>
               <span className={`ml-auto w-2 h-2 rounded-full ${dbConnected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
             </div>
+            
             <button className="flex items-center space-x-2 text-slate-400 hover:text-red-500 transition-colors px-2 py-1 w-full text-sm">
               <LogOut size={16} />
               <span>Cerrar Sesión</span>
             </button>
+            
+            {/* Version Badge */}
+            <div className="text-center pt-2">
+               <span className="text-[10px] font-mono text-slate-300">v1.2.0</span>
+            </div>
           </div>
         </div>
       </aside>
