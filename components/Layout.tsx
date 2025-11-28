@@ -11,12 +11,16 @@ import {
   Building,
   Cloud,
   HardDrive,
-  PieChart // New Icon
+  PieChart // New Icon for Reports
 } from 'lucide-react';
 import { AppRoute } from '../types';
 import { db } from '../services/db';
 
-// ... (LayoutProps interface same as before)
+interface LayoutProps {
+  children: React.ReactNode;
+  currentRoute: AppRoute;
+  onNavigate: (route: AppRoute) => void;
+}
 
 const Layout: React.FC<LayoutProps> = ({ children, currentRoute, onNavigate }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
@@ -79,7 +83,8 @@ const Layout: React.FC<LayoutProps> = ({ children, currentRoute, onNavigate }) =
             <NavItem route={AppRoute.CATEGORIES} icon={Tag} label="Categorías" />
             <NavItem route={AppRoute.TRANSACTIONS} icon={ArrowRightLeft} label="Movimientos" />
             <NavItem route={AppRoute.REAL_ESTATE} icon={Building} label="Bienes Raíces" />
-            <NavItem route={AppRoute.REPORTS} icon={PieChart} label="Reportes" /> {/* NEW ITEM */}
+            {/* Ensure Reports is here */}
+            <NavItem route={AppRoute.REPORTS} icon={PieChart} label="Reportes" /> 
             <NavItem route={AppRoute.SETTINGS} icon={Settings} label="Configuración" />
           </nav>
 
