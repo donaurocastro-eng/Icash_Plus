@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { X, Save, AlertCircle, Calendar, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
-import { TransactionFormData, Category, Account, CategoryType } from '../types';
+import { TransactionFormData, Category, Account, CategoryType, Transaction } from '../types';
 import { CategoryService } from '../services/categoryService';
 import { AccountService } from '../services/accountService';
 
@@ -8,6 +8,7 @@ interface TransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (data: TransactionFormData) => Promise<void>;
+  editingTransaction?: Transaction | null;
   isSubmitting: boolean;
 }
 
@@ -15,6 +16,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
   isOpen, 
   onClose, 
   onSubmit, 
+  editingTransaction,
   isSubmitting 
 }) => {
   const [formData, setFormData] = useState<TransactionFormData>({
@@ -32,23 +34,44 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  // Load dependencies only when modal opens
   useEffect(() => {
     if (isOpen) {
       loadDependencies();
-      // Reset form
-      setFormData({
-        date: new Date().toISOString().split('T')[0],
-        description: '',
-        amount: 0,
-        type: 'GASTO',
-        categoryCode: '',
-        accountCode: '',
-        propertyCode: '',
-        propertyName: ''
-      });
-      setError(null);
     }
   }, [isOpen]);
+
+  // Watch for changes in editingTransaction OR isOpen to populate form
+  useEffect(() => {
+    if (isOpen) {
+      if (editingTransaction) {
+          console.log("Editing transaction:", editingTransaction); // Debug
+          setFormData({
+            date: editingTransaction.date,
+            description: editingTransaction.description,
+            amount: editingTransaction.amount,
+            type: editingTransaction.type,
+            categoryCode: editingTransaction.categoryCode,
+            accountCode: editingTransaction.accountCode,
+            propertyCode: editingTransaction.propertyCode || '',
+            propertyName: editingTransaction.propertyName || ''
+          });
+      } else {
+          // Reset to default only if NOT editing (New Mode)
+          setFormData({
+            date: new Date().toISOString().split('T')[0],
+            description: '',
+            amount: 0,
+            type: 'GASTO',
+            categoryCode: '',
+            accountCode: '',
+            propertyCode: '',
+            propertyName: ''
+          });
+      }
+      setError(null);
+    }
+  }, [isOpen, editingTransaction]);
 
   const loadDependencies = async () => {
     try {
@@ -74,7 +97,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
     
     try {
       await onSubmit(formData);
-      onClose();
+      // onClose is handled by parent
     } catch (err: any) {
       setError(err.message || "Error al guardar la transacción.");
     }
@@ -93,9 +116,9 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden transform transition-all scale-100 max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 sticky top-0 z-10">
           <div>
-            <h3 className="text-lg font-bold text-slate-800">Nueva Transacción</h3>
+            <h3 className="text-lg font-bold text-slate-800">{editingTransaction ? 'Editar Transacción' : 'Nueva Transacción'}</h3>
             <p className="text-xs text-slate-500 mt-1">
-              Registra un Ingreso o un Gasto (Código TR-XXXXX automático)
+              {editingTransaction ? `Modificando registro existente` : 'Registra un Ingreso o un Gasto'}
             </p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
@@ -244,7 +267,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
               ) : (
                 <>
                   <Save size={18} className="mr-2" />
-                  Guardar Transacción
+                  {editingTransaction ? 'Actualizar' : 'Guardar'}
                 </>
               )}
             </button>
