@@ -27,7 +27,7 @@ const AssistantPage: React.FC = () => {
   const [initializing, setInitializing] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  // Use 'any' for the chat session ref to avoid strict type import issues at runtime
+  // Use 'any' for the chat session ref to avoid strict type import issues if types are missing
   const chatSession = useRef<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -85,12 +85,12 @@ const AssistantPage: React.FC = () => {
     setInitializing(true);
     setError(null);
     try {
-      // Access the API key using Vite's standard method.
-      // We cast to 'any' to avoid TypeScript errors if types/vite/client is not configured.
+      // Access the API key using Vite's standard method for production.
+      // Casting to 'any' bypasses potential TS check errors if vite-env.d.ts is missing.
       const apiKey = (import.meta as any).env.VITE_API_KEY;
 
       if (!apiKey) {
-        throw new Error("Falta la API Key. Por favor configura la variable de entorno VITE_API_KEY en Vercel.");
+        throw new Error("Falta la API Key. Asegúrate de configurar la variable de entorno VITE_API_KEY en Vercel.");
       }
 
       const contextData = await gatherFinancialContext();
