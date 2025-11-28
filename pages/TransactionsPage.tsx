@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Plus, Search, Trash2, ArrowDownCircle, ArrowUpCircle, Calendar, Tag, CreditCard, FileSpreadsheet, Upload } from 'lucide-react';
+import { Plus, Search, Trash2, ArrowDownCircle, ArrowUpCircle, Calendar, Tag, CreditCard, FileSpreadsheet, Upload, Edit2 } from 'lucide-react';
 import { Transaction, TransactionFormData, Account, Category, CategoryType } from '../types';
 import { TransactionService } from '../services/transactionService';
 import { AccountService } from '../services/accountService';
@@ -22,6 +22,7 @@ const TransactionsPage: React.FC = () => {
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
 
@@ -57,6 +58,21 @@ const TransactionsPage: React.FC = () => {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleUpdate = async (data: TransactionFormData) => {
+      if (!editingTransaction) return;
+      setIsSubmitting(true);
+      try {
+          await TransactionService.update(editingTransaction.code, data);
+          await loadTransactions();
+          setIsModalOpen(false);
+          setEditingTransaction(null);
+      } catch (e: any) {
+          alert(e.message);
+      } finally {
+          setIsSubmitting(false);
+      }
   };
 
   const handleDelete = async (code: string) => {
@@ -137,7 +153,7 @@ const TransactionsPage: React.FC = () => {
                     categoryCode: String(catCode).trim(),
                     accountCode: String(accCode).trim(),
                     propertyCode: propCode ? String(propCode).trim() : undefined,
-                    propertyName: '' // Service will handle fetch if needed or leave blank
+                    propertyName: '' 
                 });
                 success++;
             } catch (err) {
@@ -217,7 +233,7 @@ const TransactionsPage: React.FC = () => {
             <div className="w-px h-8 bg-slate-200 mx-1 hidden sm:block"></div>
 
             <button 
-            onClick={() => setIsModalOpen(true)}
+            onClick={() => { setEditingTransaction(null); setIsModalOpen(true); }}
             className="flex items-center justify-center space-x-2 bg-brand-600 text-white px-5 py-2.5 rounded-lg hover:bg-brand-700 transition-colors shadow-lg shadow-brand-500/20"
             >
             <Plus size={20} />
@@ -326,13 +342,22 @@ const TransactionsPage: React.FC = () => {
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <button 
-                        onClick={() => handleDelete(tx.code)}
-                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors opacity-0 group-hover:opacity-100"
-                        title="Eliminar"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button 
+                            onClick={() => { setEditingTransaction(tx); setIsModalOpen(true); }}
+                            className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-md transition-colors"
+                            title="Editar"
+                        >
+                            <Edit2 size={16} />
+                        </button>
+                        <button 
+                            onClick={() => handleDelete(tx.code)}
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                            title="Eliminar"
+                        >
+                            <Trash2 size={16} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -345,7 +370,8 @@ const TransactionsPage: React.FC = () => {
       <TransactionModal 
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onSubmit={handleCreate}
+        onSubmit={editingTransaction ? handleUpdate : handleCreate}
+        editingTransaction={editingTransaction}
         isSubmitting={isSubmitting}
       />
     </div>
