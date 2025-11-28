@@ -82,17 +82,12 @@ const AssistantPage: React.FC = () => {
     setInitializing(true);
     setError(null);
     try {
-      // Access API Key safely
-      let apiKey = '';
-      try {
-        // Safe access to prevent crash if import.meta.env is undefined
-        apiKey = import.meta.env?.VITE_API_KEY || '';
-      } catch (e) {
-        console.warn("Could not read env vars directly", e);
-      }
+      // Access API Key safely using import.meta.env
+      // We check if import.meta exists first to avoid runtime crashes in weird envs
+      const apiKey = import.meta.env.VITE_API_KEY;
 
-      if (!apiKey || apiKey === 'undefined') {
-        throw new Error("API Key no encontrada. Configura la variable VITE_API_KEY en Vercel y redesplega.");
+      if (!apiKey || typeof apiKey !== 'string' || apiKey.length < 10) {
+        throw new Error("API Key no configurada.");
       }
 
       const contextData = await gatherFinancialContext();
@@ -203,11 +198,17 @@ const AssistantPage: React.FC = () => {
             <div className="p-4 bg-rose-50 border border-rose-100 rounded-xl text-rose-700 text-sm flex items-start gap-3">
                 <ShieldAlert size={20} className="shrink-0 mt-0.5" />
                 <div className="flex flex-col gap-1">
-                    <span className="font-bold">Error de Configuración</span>
-                    <span>{error}</span>
-                    <span className="text-xs opacity-80 mt-1">
-                        Asegúrate de haber agregado <code>VITE_API_KEY</code> en las variables de entorno de Vercel y redesplegado la aplicación.
-                    </span>
+                    <span className="font-bold">Error: Falta Configuración</span>
+                    <span>No se encontró la llave de seguridad (API KEY) para la Inteligencia Artificial.</span>
+                    <div className="mt-2 text-xs bg-white p-2 rounded border border-rose-100">
+                        <strong>Pasos para solucionar en Vercel:</strong>
+                        <ol className="list-decimal ml-4 mt-1 space-y-1">
+                            <li>Ve a tu proyecto en Vercel &gt; Settings &gt; Environment Variables</li>
+                            <li>Clave: <code>VITE_API_KEY</code></li>
+                            <li>Valor: <code>(Tu clave AIza...)</code></li>
+                            <li>Guarda y ve a Deployments &gt; Redeploy</li>
+                        </ol>
+                    </div>
                 </div>
             </div>
         )}
