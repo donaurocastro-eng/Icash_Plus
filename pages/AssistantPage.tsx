@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from "@google/genai";
-import { Send, Bot, User, Sparkles, AlertCircle, RefreshCcw } from 'lucide-react';
+import { Send, Bot, User, Sparkles, AlertCircle, RefreshCcw, ShieldAlert } from 'lucide-react';
 import { AccountService } from '../services/accountService';
 import { TransactionService } from '../services/transactionService';
 import { PropertyService } from '../services/propertyService';
@@ -27,7 +27,7 @@ const AssistantPage: React.FC = () => {
   const [initializing, setInitializing] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  // Use 'any' for the chat session ref to avoid strict type import issues if types are missing
+  // Use 'any' for the chat session ref to avoid strict type import issues
   const chatSession = useRef<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -85,11 +85,13 @@ const AssistantPage: React.FC = () => {
     setInitializing(true);
     setError(null);
     try {
+      // Acceso robusto a la API Key
       // @ts-ignore
-      const apiKey = import.meta.env.VITE_API_KEY;
+      const env = import.meta.env;
+      const apiKey = env?.VITE_API_KEY;
 
       if (!apiKey) {
-        throw new Error("Falta la API Key. Asegúrate de configurar la variable de entorno VITE_API_KEY en Vercel.");
+        throw new Error("API Key no encontrada. Por favor configura VITE_API_KEY en Vercel.");
       }
 
       const contextData = await gatherFinancialContext();
@@ -123,7 +125,7 @@ const AssistantPage: React.FC = () => {
       chatSession.current = chat;
     } catch (err: any) {
       console.error(err);
-      setError(err.message || "Failed to initialize AI.");
+      setError(err.message || "No se pudo iniciar el asistente AI.");
     } finally {
       setInitializing(false);
     }
@@ -200,9 +202,15 @@ const AssistantPage: React.FC = () => {
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/30">
         {error && (
-            <div className="p-4 bg-rose-50 border border-rose-100 rounded-xl text-rose-700 text-sm flex items-center gap-2">
-                <AlertCircle size={18} />
-                <span>{error}</span>
+            <div className="p-4 bg-rose-50 border border-rose-100 rounded-xl text-rose-700 text-sm flex items-start gap-3">
+                <ShieldAlert size={20} className="shrink-0 mt-0.5" />
+                <div className="flex flex-col gap-1">
+                    <span className="font-bold">Error de Configuración</span>
+                    <span>{error}</span>
+                    <span className="text-xs opacity-80 mt-1">
+                        Asegúrate de haber agregado <code>VITE_API_KEY</code> en las variables de entorno de Vercel.
+                    </span>
+                </div>
             </div>
         )}
         
