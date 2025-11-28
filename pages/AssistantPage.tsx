@@ -85,9 +85,8 @@ const AssistantPage: React.FC = () => {
     setInitializing(true);
     setError(null);
     try {
-      // Access the API key using Vite's standard method for production.
-      // Casting to 'any' bypasses potential TS check errors if vite-env.d.ts is missing.
-      const apiKey = (import.meta as any).env.VITE_API_KEY;
+      // @ts-ignore
+      const apiKey = import.meta.env.VITE_API_KEY;
 
       if (!apiKey) {
         throw new Error("Falta la API Key. Asegúrate de configurar la variable de entorno VITE_API_KEY en Vercel.");
