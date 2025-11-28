@@ -3,6 +3,7 @@ export default {
   content: [
     "./index.html",
     "./**/*.{js,ts,jsx,tsx}",
+    "!./node_modules/**", // Explicitly exclude node_modules to fix performance warning
   ],
   theme: {
     extend: {
