@@ -279,7 +279,7 @@ const RealEstatePage: React.FC = () => {
 
   const formatMoney = (n: number) => n.toLocaleString('es-HN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // Filtering logic
+  // --- FILTERING LOGIC ---
   const lowerSearch = searchTerm.toLowerCase();
 
   const filteredProperties = properties.filter(p => 
