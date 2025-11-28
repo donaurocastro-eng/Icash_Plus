@@ -2,8 +2,10 @@
 export default {
   content: [
     "./index.html",
-    "./**/*.{js,ts,jsx,tsx}",
-    "!./node_modules/**", // Explicitly exclude node_modules to fix performance warning
+    "./components/**/*.{js,ts,jsx,tsx}",
+    "./pages/**/*.{js,ts,jsx,tsx}",
+    "./services/**/*.{js,ts,jsx,tsx}",
+    "./*.{js,ts,jsx,tsx}"
   ],
   theme: {
     extend: {

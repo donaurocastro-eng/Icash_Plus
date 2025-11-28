@@ -6,7 +6,7 @@ import TransactionsPage from './pages/TransactionsPage';
 import RealEstatePage from './pages/RealEstatePage';
 import SettingsPage from './pages/SettingsPage';
 import DashboardPage from './pages/DashboardPage';
-import ReportsPage from './pages/ReportsPage'; // New import
+import ReportsPage from './pages/ReportsPage';
 import { AppRoute } from './types';
 
 const App: React.FC = () => {
@@ -22,7 +22,7 @@ const App: React.FC = () => {
         return <TransactionsPage />;
       case AppRoute.REAL_ESTATE:
         return <RealEstatePage />;
-      case AppRoute.REPORTS: // New route case
+      case AppRoute.REPORTS:
         return <ReportsPage />;
       case AppRoute.SETTINGS:
         return <SettingsPage />;

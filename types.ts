@@ -1,3 +1,4 @@
+
 export type AccountType = 'ACTIVO' | 'PASIVO';
 export type CategoryType = 'GASTO' | 'INGRESO';
 export type Currency = 'HNL' | 'USD';
@@ -204,15 +205,6 @@ export enum AppRoute {
   CATEGORIES = 'categories',
   TRANSACTIONS = 'transactions',
   REAL_ESTATE = 'real_estate',
+  REPORTS = 'reports',
   SETTINGS = 'settings'
 }
-export enum AppRoute {
-  DASHBOARD = 'dashboard',
-  ACCOUNTS = 'accounts',
-  CATEGORIES = 'categories',
-  TRANSACTIONS = 'transactions',
-  REAL_ESTATE = 'real_estate',
-  REPORTS = 'reports', // New route
-  SETTINGS = 'settings'
-}
-// ... (rest of the file remains unchanged)
