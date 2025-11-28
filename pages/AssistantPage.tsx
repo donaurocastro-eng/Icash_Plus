@@ -6,6 +6,9 @@ import { TransactionService } from '../services/transactionService';
 import { PropertyService } from '../services/propertyService';
 import { ContractService } from '../services/contractService';
 
+// Clave API configurada directamente para evitar errores de entorno en Vercel
+const API_KEY = "AIzaSyAJDCmpd0Q3GLoSRB8KqyoS6UqHAt9q64o";
+
 interface Message {
   id: string;
   role: 'user' | 'model';
@@ -82,17 +85,9 @@ const AssistantPage: React.FC = () => {
     setInitializing(true);
     setError(null);
     try {
-      // Access API Key safely using import.meta.env
-      // We check if import.meta exists first to avoid runtime crashes in weird envs
-      const apiKey = import.meta.env.VITE_API_KEY;
-
-      if (!apiKey || typeof apiKey !== 'string' || apiKey.length < 10) {
-        throw new Error("API Key no configurada.");
-      }
-
       const contextData = await gatherFinancialContext();
       
-      const ai = new GoogleGenAI({ apiKey: apiKey });
+      const ai = new GoogleGenAI({ apiKey: API_KEY });
       
       const systemInstruction = `
         You are an expert financial assistant for the app ICASH_PLUS.
@@ -198,17 +193,8 @@ const AssistantPage: React.FC = () => {
             <div className="p-4 bg-rose-50 border border-rose-100 rounded-xl text-rose-700 text-sm flex items-start gap-3">
                 <ShieldAlert size={20} className="shrink-0 mt-0.5" />
                 <div className="flex flex-col gap-1">
-                    <span className="font-bold">Error: Falta Configuración</span>
-                    <span>No se encontró la llave de seguridad (API KEY) para la Inteligencia Artificial.</span>
-                    <div className="mt-2 text-xs bg-white p-2 rounded border border-rose-100">
-                        <strong>Pasos para solucionar en Vercel:</strong>
-                        <ol className="list-decimal ml-4 mt-1 space-y-1">
-                            <li>Ve a tu proyecto en Vercel &gt; Settings &gt; Environment Variables</li>
-                            <li>Clave: <code>VITE_API_KEY</code></li>
-                            <li>Valor: <code>(Tu clave AIza...)</code></li>
-                            <li>Guarda y ve a Deployments &gt; Redeploy</li>
-                        </ol>
-                    </div>
+                    <span className="font-bold">Error de Conexión</span>
+                    <span>{error}</span>
                 </div>
             </div>
         )}
