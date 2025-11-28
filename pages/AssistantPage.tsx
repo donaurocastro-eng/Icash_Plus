@@ -82,8 +82,9 @@ const AssistantPage: React.FC = () => {
     setInitializing(true);
     setError(null);
     try {
-      // Access API Key safely for Vite environment
-      const apiKey = import.meta.env.VITE_API_KEY;
+      // Access API Key safely. Using optional chaining to prevent crash if env is missing.
+      // In Vite, import.meta.env should exist, but the importmap was breaking it.
+      const apiKey = import.meta.env?.VITE_API_KEY;
 
       if (!apiKey) {
         throw new Error("API Key no encontrada. Configura la variable VITE_API_KEY en Vercel.");
