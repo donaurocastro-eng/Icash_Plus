@@ -11,7 +11,8 @@ import {
   Building,
   Cloud,
   HardDrive,
-  PieChart
+  PieChart,
+  Bot
 } from 'lucide-react';
 import { AppRoute } from '../types';
 import { db } from '../services/db';
@@ -84,6 +85,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentRoute, onNavigate }) =
             <NavItem route={AppRoute.TRANSACTIONS} icon={ArrowRightLeft} label="Movimientos" />
             <NavItem route={AppRoute.REAL_ESTATE} icon={Building} label="Bienes Raíces" />
             <NavItem route={AppRoute.REPORTS} icon={PieChart} label="Reportes" />
+            <NavItem route={AppRoute.AI_ASSISTANT} icon={Bot} label="Asistente AI" />
             <div className="pt-2 pb-2">
               <div className="h-px bg-slate-100 mx-2"></div>
             </div>

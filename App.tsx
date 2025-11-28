@@ -7,6 +7,7 @@ import RealEstatePage from './pages/RealEstatePage';
 import SettingsPage from './pages/SettingsPage';
 import DashboardPage from './pages/DashboardPage';
 import ReportsPage from './pages/ReportsPage';
+import AssistantPage from './pages/AssistantPage';
 import { AppRoute } from './types';
 
 const App: React.FC = () => {
@@ -24,6 +25,8 @@ const App: React.FC = () => {
         return <RealEstatePage />;
       case AppRoute.REPORTS:
         return <ReportsPage />;
+      case AppRoute.AI_ASSISTANT:
+        return <AssistantPage />;
       case AppRoute.SETTINGS:
         return <SettingsPage />;
       case AppRoute.DASHBOARD:

@@ -206,5 +206,6 @@ export enum AppRoute {
   TRANSACTIONS = 'transactions',
   REAL_ESTATE = 'real_estate',
   REPORTS = 'reports',
+  AI_ASSISTANT = 'ai_assistant',
   SETTINGS = 'settings'
 }

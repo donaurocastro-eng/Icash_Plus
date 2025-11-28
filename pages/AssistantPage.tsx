@@ -85,21 +85,17 @@ const AssistantPage: React.FC = () => {
     setInitializing(true);
     setError(null);
     try {
-      // Safe access to process.env to prevent ReferenceError in strict browser environments
-      let apiKey = '';
-      try {
-        if (typeof process !== 'undefined' && process.env) {
-            apiKey = process.env.API_KEY || '';
-        }
-      } catch (e) {
-        console.warn("Process env not available", e);
-      }
+      // Access the API key using Vite's standard method.
+      // We cast to 'any' to avoid TypeScript errors if types/vite/client is not configured.
+      const apiKey = (import.meta as any).env.VITE_API_KEY;
 
-      if (!apiKey) throw new Error("API Key not found. Ensure API_KEY is set in the environment.");
+      if (!apiKey) {
+        throw new Error("Falta la API Key. Por favor configura la variable de entorno VITE_API_KEY en Vercel.");
+      }
 
       const contextData = await gatherFinancialContext();
       
-      const ai = new GoogleGenAI({ apiKey });
+      const ai = new GoogleGenAI({ apiKey: apiKey });
       
       const systemInstruction = `
         You are an expert financial assistant for the app ICASH_PLUS.
