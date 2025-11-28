@@ -6,7 +6,7 @@ import { TransactionService } from '../services/transactionService';
 import { PropertyService } from '../services/propertyService';
 import { ContractService } from '../services/contractService';
 
-// Clave API configurada directamente para evitar errores de entorno en Vercel
+// Clave API configurada directamente
 const API_KEY = "AIzaSyAJDCmpd0Q3GLoSRB8KqyoS6UqHAt9q64o";
 
 interface Message {
