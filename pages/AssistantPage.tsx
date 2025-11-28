@@ -82,12 +82,11 @@ const AssistantPage: React.FC = () => {
     setInitializing(true);
     setError(null);
     try {
-      // Access API Key safely. Using optional chaining to prevent crash if env is missing.
-      // In Vite, import.meta.env should exist, but the importmap was breaking it.
-      const apiKey = import.meta.env?.VITE_API_KEY;
+      // Access API Key using standard Vite injection
+      const apiKey = import.meta.env.VITE_API_KEY;
 
-      if (!apiKey) {
-        throw new Error("API Key no encontrada. Configura la variable VITE_API_KEY en Vercel.");
+      if (!apiKey || apiKey === 'undefined') {
+        throw new Error("API Key no encontrada. Configura la variable VITE_API_KEY en Vercel y redesplega.");
       }
 
       const contextData = await gatherFinancialContext();
@@ -201,7 +200,7 @@ const AssistantPage: React.FC = () => {
                     <span className="font-bold">Error de Configuración</span>
                     <span>{error}</span>
                     <span className="text-xs opacity-80 mt-1">
-                        Asegúrate de haber agregado <code>VITE_API_KEY</code> en las variables de entorno de Vercel.
+                        Asegúrate de haber agregado <code>VITE_API_KEY</code> en las variables de entorno de Vercel y redesplegado la aplicación.
                     </span>
                 </div>
             </div>
