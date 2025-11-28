@@ -82,8 +82,14 @@ const AssistantPage: React.FC = () => {
     setInitializing(true);
     setError(null);
     try {
-      // Access API Key using standard Vite injection
-      const apiKey = import.meta.env.VITE_API_KEY;
+      // Access API Key safely
+      let apiKey = '';
+      try {
+        // Safe access to prevent crash if import.meta.env is undefined
+        apiKey = import.meta.env?.VITE_API_KEY || '';
+      } catch (e) {
+        console.warn("Could not read env vars directly", e);
+      }
 
       if (!apiKey || apiKey === 'undefined') {
         throw new Error("API Key no encontrada. Configura la variable VITE_API_KEY en Vercel y redesplega.");
