@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { 
   TrendingUp, 
@@ -14,7 +15,8 @@ import {
 import { AccountService } from '../services/accountService';
 import { TransactionService } from '../services/transactionService';
 import { PropertyService } from '../services/propertyService';
-import { Account, Transaction, Property, CategoryType } from '../types';
+import { LoanService } from '../services/loanService';
+import { Account, Transaction, Property, Loan, CategoryType } from '../types';
 import ReportDrilldownModal from '../components/ReportDrilldownModal';
 
 type ReportTab = 'BALANCE' | 'CASHFLOW' | 'BY_PROPERTY';
@@ -36,6 +38,7 @@ const ReportsPage: React.FC = () => {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
+  const [loans, setLoans] = useState<Loan[]>([]);
   
   // Filters
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
@@ -50,14 +53,16 @@ const ReportsPage: React.FC = () => {
     const loadData = async () => {
       setLoading(true);
       try {
-        const [accData, txData, propData] = await Promise.all([
+        const [accData, txData, propData, loanData] = await Promise.all([
           AccountService.getAll(),
           TransactionService.getAll(),
-          PropertyService.getAll()
+          PropertyService.getAll(),
+          LoanService.getAll()
         ]);
         setAccounts(accData);
         setTransactions(txData);
         setProperties(propData);
+        setLoans(loanData);
       } catch (e) {
         console.error("Error loading report data", e);
       } finally {
@@ -96,12 +101,32 @@ const ReportsPage: React.FC = () => {
         }
     };
 
+    // 1. Accounts
     accounts.forEach(acc => {
-        processItem(acc.initialBalance, acc.currency, acc.name, acc.type, acc.type === 'ACTIVO' ? 'Activos Líquidos' : 'Pasivos / Deudas', acc.code);
+        processItem(acc.initialBalance, acc.currency, acc.name, acc.type, acc.type === 'ACTIVO' ? 'Activos Líquidos' : 'Pasivos Corrientes', acc.code);
     });
 
+    // 2. Properties
     properties.forEach(prop => {
         processItem(prop.value, prop.currency, prop.name, 'ACTIVO', 'Bienes Inmuebles', prop.code);
+    });
+
+    // 3. Loans (Pasivos)
+    loans.filter(l => !l.isArchived).forEach(loan => {
+        let outstandingBalance = loan.initialAmount;
+      
+        // Calculate remaining balance based on payment plan
+        if (loan.paymentPlan && loan.paymentPlan.length > 0) {
+            const paidInstallments = loan.paymentPlan.filter(p => p.status === 'PAID');
+            if (paidInstallments.length > 0) {
+                // The remaining balance after the last payment
+                outstandingBalance = paidInstallments[paidInstallments.length - 1].remainingBalance;
+            }
+        }
+        
+        if (outstandingBalance > 0.01) {
+            processItem(outstandingBalance, loan.currency, `Préstamo: ${loan.lenderName}`, 'PASIVO', 'Préstamos Bancarios', loan.loanCode);
+        }
     });
 
     balance.equity = balance.assets.total - balance.liabilities.total;
@@ -181,6 +206,8 @@ const ReportsPage: React.FC = () => {
 
   const liquidAssets = balance.assets.details.filter(d => d.category === 'Activos Líquidos');
   const realEstateAssets = balance.assets.details.filter(d => d.category === 'Bienes Inmuebles');
+  const loansLiabilities = balance.liabilities.details.filter(d => d.category === 'Préstamos Bancarios');
+  const otherLiabilities = balance.liabilities.details.filter(d => d.category !== 'Préstamos Bancarios');
 
   return (
     <div className="space-y-6">
@@ -257,15 +284,27 @@ const ReportsPage: React.FC = () => {
                         <h3 className="font-bold text-rose-400 text-lg">Pasivos (lo que debes)</h3>
                     </div>
                      <div>
-                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Cuentas de Pasivo / Deudas</h4>
+                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Préstamos</h4>
                         <div className="space-y-2">
-                            {balance.liabilities.details.map((item, i) => (
+                            {loansLiabilities.map((item, i) => (
+                                <div key={i} className="flex justify-between text-sm hover:bg-slate-800/50 p-1 rounded transition-colors">
+                                    <span className="text-slate-300">{item.name} {item.currency === 'USD' && <span className="text-xs text-emerald-500 ml-1">(USD)</span>}</span>
+                                    <span className="font-mono text-slate-100">{formatMoney(item.amountHNL)}</span>
+                                </div>
+                            ))}
+                            {loansLiabilities.length === 0 && <p className="text-slate-600 italic text-sm">Sin préstamos activos</p>}
+                        </div>
+                    </div>
+                     <div>
+                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 mt-4">Otras Deudas (Tarjetas, etc.)</h4>
+                        <div className="space-y-2">
+                            {otherLiabilities.map((item, i) => (
                                 <div key={i} className="flex justify-between text-sm hover:bg-slate-800/50 p-1 rounded transition-colors">
                                     <span className="text-slate-300">[{item.code}] {item.name} {item.currency === 'USD' && <span className="text-xs text-emerald-500 ml-1">(USD)</span>}</span>
                                     <span className="font-mono text-slate-100">{formatMoney(item.amountHNL)}</span>
                                 </div>
                             ))}
-                            {balance.liabilities.details.length === 0 && <p className="text-slate-600 italic text-sm">Sin deudas registradas</p>}
+                            {otherLiabilities.length === 0 && <p className="text-slate-600 italic text-sm">Sin otras deudas</p>}
                         </div>
                     </div>
                     <div className="pt-4 border-t border-slate-700 flex justify-between items-end mt-4">
