@@ -77,7 +77,7 @@ const DashboardPage: React.FC = () => {
             <p className="text-slate-600">Tu base de datos necesita mantenimiento.</p>
             <div className="pt-2">
                 <div className="flex flex-col gap-2 text-sm text-indigo-700 bg-indigo-50 p-4 rounded-lg border border-indigo-100 text-left">
-                    <p>Ve a <strong>Configuración</strong> > <strong>Inicializar / Reparar Tablas</strong>.</p>
+                    <p>Ve a <strong>Configuración</strong> &gt; <strong>Inicializar / Reparar Tablas</strong>.</p>
                 </div>
             </div>
         </div>

@@ -192,20 +192,59 @@ export const LoanService = {
   },
 
   regeneratePlan: async (loanId: string, params: { interestRate: number, term: number, monthlyInsurance: number, startDate: string, amount: number }): Promise<void> => {
-      const schedule = LoanService.generateAmortizationSchedule(
-          params.amount,
-          params.interestRate,
-          params.term,
-          params.startDate,
-          params.monthlyInsurance
-      );
+      // 1. Fetch current loan to check for history
+      const loans = await LoanService.getAll();
+      const loan = loans.find(l => l.id === loanId);
+      if (!loan) throw new Error("Préstamo no encontrado");
 
-      await LoanService.update(loanId, {
-          interestRate: params.interestRate,
-          term: params.term,
-          monthlyInsurance: params.monthlyInsurance,
-          paymentPlan: schedule
-      });
+      const paidInstallments = loan.paymentPlan?.filter(p => p.status === 'PAID') || [];
+
+      if (paidInstallments.length === 0) {
+          // No history, standard regeneration
+          const schedule = LoanService.generateAmortizationSchedule(
+              params.amount,
+              params.interestRate,
+              params.term,
+              params.startDate,
+              params.monthlyInsurance
+          );
+
+          await LoanService.update(loanId, {
+              interestRate: params.interestRate,
+              term: params.term,
+              monthlyInsurance: params.monthlyInsurance,
+              paymentPlan: schedule
+          });
+      } else {
+          // REFINANCING LOGIC: Preserve history, generate new future
+          const lastPayment = paidInstallments[paidInstallments.length - 1];
+          // Determine the starting payment number for the new sequence
+          const startIdx = lastPayment.paymentNumber + 1;
+
+          const newSchedule = LoanService.generateAmortizationSchedule(
+              params.amount, // This should be the outstanding balance passed from modal
+              params.interestRate,
+              params.term, // Remaining term
+              params.startDate,
+              params.monthlyInsurance
+          );
+
+          // Re-index new schedule to follow history
+          const reindexedSchedule = newSchedule.map((p, i) => ({
+              ...p,
+              paymentNumber: startIdx + i
+          }));
+
+          // Combine: History + New Future
+          const finalPlan = [...paidInstallments, ...reindexedSchedule];
+
+          await LoanService.update(loanId, {
+              interestRate: params.interestRate,
+              term: params.term,
+              monthlyInsurance: params.monthlyInsurance,
+              paymentPlan: finalPlan
+          });
+      }
   },
 
   delete: async (id: string): Promise<void> => {
@@ -245,8 +284,6 @@ export const LoanService = {
       const financialCost = interestPart + insurancePart;
       
       // Capital = Todo lo pagado menos el costo financiero (incluye abono extra)
-      // Nota: Si por alguna razón el usuario edita el monto para pagar MENOS que los intereses, 
-      // priorizamos cubrir intereses (banca estándar).
       capitalPart = totalTxAmount - financialCost;
       if (capitalPart < 0) capitalPart = 0; 
 
@@ -293,7 +330,7 @@ export const LoanService = {
           });
       }
 
-      // Fallback: If for some reason we couldn't split (e.g. no plan data), create single tx
+      // Fallback: If for some reason we couldn't split, create single tx
       if (financialCost <= 0.01 && capitalPart <= 0.01) {
            await TransactionService.create({
               date: date,
@@ -338,7 +375,7 @@ export const LoanService = {
                   // Generate new future
                   const monthlyInsurance = loan.monthlyInsurance || 0;
                   const monthlyRate = loan.interestRate / 100 / 12;
-                  const standardPayment = loan.paymentPlan[0]; // Assume fixed payment
+                  const standardPayment = loan.paymentPlan[0]; 
                   const originalMonthlyTotal = standardPayment ? standardPayment.totalPayment : amount; 
                   
                   const newSchedulePart: Payment[] = [];
