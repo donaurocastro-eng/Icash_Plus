@@ -228,24 +228,87 @@ export const LoanService = {
 
       const totalTxAmount = amount + extraPrincipal;
 
-      // 1. Create Transaction (Expense)
-      const categories = await CategoryService.getAll();
-      let loanCat = categories.find(c => c.name.includes('Préstamo') && c.type === 'GASTO');
-      if (!loanCat) loanCat = categories.find(c => c.type === 'GASTO');
-      
-      await TransactionService.create({
-          date: date,
-          description: `Pago Préstamo ${loan.lenderName}` + (paymentNumber ? ` (Cuota #${paymentNumber})` : '') + (extraPrincipal > 0 ? ' + Abono' : ''),
-          amount: totalTxAmount,
-          type: 'GASTO',
-          categoryCode: loanCat?.code || '',
-          accountCode: fromAccountId,
-          loanId: loan.id,
-          loanCode: loan.loanCode,
-          paymentNumber: paymentNumber
-      });
+      // 1. Identify specific Installment to calculate Split (Capital vs Interest)
+      let interestPart = 0;
+      let insurancePart = 0;
+      let capitalPart = 0;
 
-      // 2. Update Payment Plan
+      if (paymentNumber && loan.paymentPlan) {
+          const installment = loan.paymentPlan.find(p => p.paymentNumber === paymentNumber);
+          if (installment) {
+              interestPart = installment.interest;
+              insurancePart = installment.insurance;
+          }
+      }
+
+      // Costo Financiero = Interés + Seguro
+      const financialCost = interestPart + insurancePart;
+      
+      // Capital = Todo lo pagado menos el costo financiero (incluye abono extra)
+      // Nota: Si por alguna razón el usuario edita el monto para pagar MENOS que los intereses, 
+      // priorizamos cubrir intereses (banca estándar).
+      capitalPart = totalTxAmount - financialCost;
+      if (capitalPart < 0) capitalPart = 0; 
+
+      // 2. Fetch Categories (Prioritizing User Requests)
+      const categories = await CategoryService.getAll();
+      
+      // CAT-EXP-011: Pago de Préstamo (Capital)
+      let catCapital = categories.find(c => c.code === 'CAT-EXP-011');
+      if (!catCapital) catCapital = categories.find(c => c.name.includes('Préstamo') && c.type === 'GASTO');
+      if (!catCapital) catCapital = categories.find(c => c.type === 'GASTO');
+
+      // CAT-EXP-014: Impuestos y Gastos Financieros (Interés)
+      let catInterest = categories.find(c => c.code === 'CAT-EXP-014');
+      if (!catInterest) catInterest = categories.find(c => (c.name.includes('Financiero') || c.name.includes('Interés')) && c.type === 'GASTO');
+      if (!catInterest) catInterest = categories.find(c => c.type === 'GASTO');
+
+      // 3. Create Transaction 1: Financial Cost (Intereses + Seguros)
+      if (financialCost > 0.01 && catInterest) {
+          await TransactionService.create({
+              date: date,
+              description: `Intereses y Seguros - Préstamo ${loan.lenderName} (Cuota #${paymentNumber})`,
+              amount: financialCost,
+              type: 'GASTO',
+              categoryCode: catInterest.code,
+              accountCode: fromAccountId,
+              loanId: loan.id,
+              loanCode: loan.loanCode,
+              paymentNumber: paymentNumber
+          });
+      }
+
+      // 4. Create Transaction 2: Capital (Principal + Extra)
+      if (capitalPart > 0.01 && catCapital) {
+          await TransactionService.create({
+              date: date,
+              description: `Abono a Capital - Préstamo ${loan.lenderName}` + (paymentNumber ? ` (Cuota #${paymentNumber})` : '') + (extraPrincipal > 0 ? ' + Extra' : ''),
+              amount: capitalPart,
+              type: 'GASTO',
+              categoryCode: catCapital.code,
+              accountCode: fromAccountId,
+              loanId: loan.id,
+              loanCode: loan.loanCode,
+              paymentNumber: paymentNumber
+          });
+      }
+
+      // Fallback: If for some reason we couldn't split (e.g. no plan data), create single tx
+      if (financialCost <= 0.01 && capitalPart <= 0.01) {
+           await TransactionService.create({
+              date: date,
+              description: `Pago Préstamo ${loan.lenderName}` + (paymentNumber ? ` (Cuota #${paymentNumber})` : ''),
+              amount: totalTxAmount,
+              type: 'GASTO',
+              categoryCode: catCapital?.code || '',
+              accountCode: fromAccountId,
+              loanId: loan.id,
+              loanCode: loan.loanCode,
+              paymentNumber: paymentNumber
+          });
+      }
+
+      // 5. Update Payment Plan (Same Logic as before)
       if (paymentNumber && loan.paymentPlan) {
           const paymentIndex = loan.paymentPlan.findIndex(p => p.paymentNumber === paymentNumber);
           if (paymentIndex === -1) return;
