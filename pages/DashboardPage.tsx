@@ -96,8 +96,12 @@ const DashboardPage: React.FC = () => {
   accounts.forEach(acc => {
     const target = acc.currency === 'HNL' ? totals.hnl : totals.usd;
     const balance = Number(acc.initialBalance);
-    if (acc.type === 'ACTIVO') target.assets += balance;
-    else target.liabilities += balance;
+    if (acc.type === 'ACTIVO') {
+        target.assets += balance;
+    } else {
+        // PASIVO: Sum Absolute Value (Magnitude of Debt)
+        target.liabilities += Math.abs(balance);
+    }
   });
 
   // 2. Properties (Assets)
@@ -116,7 +120,7 @@ const DashboardPage: React.FC = () => {
       
       // Calculate remaining balance based on payment plan
       if (loan.paymentPlan && loan.paymentPlan.length > 0) {
-          // Sort strictly by paymentNumber to ensure order
+          // Sort strictly by paymentNumber to ensure correct order
           const paidInstallments = loan.paymentPlan
             .filter(p => p.status === 'PAID')
             .sort((a, b) => a.paymentNumber - b.paymentNumber);
@@ -128,13 +132,16 @@ const DashboardPage: React.FC = () => {
           }
       }
       
-      target.liabilities += outstandingBalance;
-      target.loans += outstandingBalance;
+      // Ensure positive magnitude for debt summation
+      const debtAmount = Math.abs(outstandingBalance);
+      target.liabilities += debtAmount;
+      target.loans += debtAmount;
   });
 
   // --- CONSOLIDATED CALCULATIONS (Base HNL) ---
   const consolidatedAssetsHNL = totals.hnl.assets + (totals.usd.assets * EXCHANGE_RATE);
   const consolidatedLiabilitiesHNL = totals.hnl.liabilities + (totals.usd.liabilities * EXCHANGE_RATE);
+  // Net Worth = Assets - Liabilities (since Liabilities are now positive magnitudes)
   const consolidatedNetWorthHNL = consolidatedAssetsHNL - consolidatedLiabilitiesHNL;
 
   // --- CASHFLOW ---

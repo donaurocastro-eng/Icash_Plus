@@ -82,7 +82,7 @@ const ReportsPage: React.FC = () => {
     };
 
     const processItem = (amount: number, currency: string, name: string, type: 'ACTIVO' | 'PASIVO', category: string, code: string) => {
-        // Force Number type strictly to avoid string concatenation or NaN
+        // Force Number type strictly
         const numAmount = Number(amount) || 0;
         let finalAmount = numAmount;
         
@@ -92,8 +92,12 @@ const ReportsPage: React.FC = () => {
             balance.assets.total += finalAmount;
             balance.assets.details.push({ name, code, amountHNL: finalAmount, original: numAmount, currency, category });
         } else {
-            balance.liabilities.total += finalAmount;
-            balance.liabilities.details.push({ name, code, amountHNL: finalAmount, original: numAmount, currency, category });
+            // PASIVO: Use Absolute Value for display and summation (Option B)
+            const absAmount = Math.abs(finalAmount);
+            const absOriginal = Math.abs(numAmount);
+            
+            balance.liabilities.total += absAmount;
+            balance.liabilities.details.push({ name, code, amountHNL: absAmount, original: absOriginal, currency, category });
         }
     };
 
@@ -126,7 +130,9 @@ const ReportsPage: React.FC = () => {
         }
         
         // Ensure we don't process negligble amounts or NaNs
-        if (!isNaN(outstandingBalance) && outstandingBalance > 0.01) {
+        // Loans are liabilities, so we pass them to processItem as 'PASIVO'
+        // Outstanding balance is typically positive in DB, but treated as liability magnitude
+        if (!isNaN(outstandingBalance) && Math.abs(outstandingBalance) > 0.01) {
             processItem(outstandingBalance, loan.currency, `Préstamo: ${loan.lenderName}`, 'PASIVO', 'Préstamos Bancarios', loan.loanCode);
         }
     });
