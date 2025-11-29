@@ -89,15 +89,18 @@ const ReportsPage: React.FC = () => {
     };
 
     const processItem = (amount: number, currency: string, name: string, type: 'ACTIVO' | 'PASIVO', category: string, code: string) => {
-        let finalAmount = amount;
-        if (currency === 'USD') finalAmount = amount * exchangeRate;
+        // Enforce Number to prevent string concatenation
+        let numAmount = Number(amount);
+        let finalAmount = numAmount;
+        
+        if (currency === 'USD') finalAmount = numAmount * exchangeRate;
 
         if (type === 'ACTIVO') {
             balance.assets.total += finalAmount;
-            balance.assets.details.push({ name, code, amountHNL: finalAmount, original: amount, currency, category });
+            balance.assets.details.push({ name, code, amountHNL: finalAmount, original: numAmount, currency, category });
         } else {
             balance.liabilities.total += finalAmount;
-            balance.liabilities.details.push({ name, code, amountHNL: finalAmount, original: amount, currency, category });
+            balance.liabilities.details.push({ name, code, amountHNL: finalAmount, original: numAmount, currency, category });
         }
     };
 
@@ -113,14 +116,14 @@ const ReportsPage: React.FC = () => {
 
     // 3. Loans (Pasivos)
     loans.filter(l => !l.isArchived).forEach(loan => {
-        let outstandingBalance = loan.initialAmount;
+        let outstandingBalance = Number(loan.initialAmount);
       
         // Calculate remaining balance based on payment plan
         if (loan.paymentPlan && loan.paymentPlan.length > 0) {
             const paidInstallments = loan.paymentPlan.filter(p => p.status === 'PAID');
             if (paidInstallments.length > 0) {
                 // The remaining balance after the last payment
-                outstandingBalance = paidInstallments[paidInstallments.length - 1].remainingBalance;
+                outstandingBalance = Number(paidInstallments[paidInstallments.length - 1].remainingBalance);
             }
         }
         
