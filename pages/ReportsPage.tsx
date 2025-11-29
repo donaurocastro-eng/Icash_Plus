@@ -177,7 +177,6 @@ const ReportsPage: React.FC = () => {
           if (tx.propertyCode !== selectedPropCode) return;
           
           // Robust Date Parsing (YYYY-MM-DD)
-          // Using substring avoids timezone shifts that occur with Date objects
           const y = parseInt(tx.date.substring(0, 4));
           const m = parseInt(tx.date.substring(5, 7));
           
@@ -208,6 +207,9 @@ const ReportsPage: React.FC = () => {
   const realEstateAssets = balance.assets.details.filter(d => d.category === 'Bienes Inmuebles');
   const loansLiabilities = balance.liabilities.details.filter(d => d.category === 'Préstamos Bancarios');
   const otherLiabilities = balance.liabilities.details.filter(d => d.category !== 'Préstamos Bancarios');
+
+  // Calculate Subtotal for Loans Display
+  const totalLoansHNL = loansLiabilities.reduce((sum, item) => sum + item.amountHNL, 0);
 
   return (
     <div className="space-y-6">
@@ -284,7 +286,7 @@ const ReportsPage: React.FC = () => {
                         <h3 className="font-bold text-rose-400 text-lg">Pasivos (lo que debes)</h3>
                     </div>
                      <div>
-                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Préstamos</h4>
+                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Préstamos Bancarios</h4>
                         <div className="space-y-2">
                             {loansLiabilities.map((item, i) => (
                                 <div key={i} className="flex justify-between text-sm hover:bg-slate-800/50 p-1 rounded transition-colors">
@@ -292,6 +294,12 @@ const ReportsPage: React.FC = () => {
                                     <span className="font-mono text-slate-100">{formatMoney(item.amountHNL)}</span>
                                 </div>
                             ))}
+                            {loansLiabilities.length > 0 && (
+                                <div className="flex justify-between text-sm pt-2 mt-2 border-t border-slate-800">
+                                    <span className="text-rose-400 font-bold italic">Subtotal Préstamos</span>
+                                    <span className="font-mono font-bold text-rose-400">{formatMoney(totalLoansHNL)}</span>
+                                </div>
+                            )}
                             {loansLiabilities.length === 0 && <p className="text-slate-600 italic text-sm">Sin préstamos activos</p>}
                         </div>
                     </div>

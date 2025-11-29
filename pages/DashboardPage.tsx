@@ -87,8 +87,8 @@ const DashboardPage: React.FC = () => {
   // --- CALCULATIONS ---
 
   const totals = {
-    hnl: { assets: 0, liabilities: 0, realEstate: 0 },
-    usd: { assets: 0, liabilities: 0, realEstate: 0 }
+    hnl: { assets: 0, liabilities: 0, realEstate: 0, loans: 0 },
+    usd: { assets: 0, liabilities: 0, realEstate: 0, loans: 0 }
   };
 
   // 1. Accounts
@@ -106,7 +106,8 @@ const DashboardPage: React.FC = () => {
   });
 
   // 3. Loans (Liabilities)
-  loans.filter(l => !l.isArchived).forEach(loan => {
+  const activeLoans = loans.filter(l => !l.isArchived);
+  activeLoans.forEach(loan => {
       const target = loan.currency === 'HNL' ? totals.hnl : totals.usd;
       let outstandingBalance = loan.initialAmount;
       
@@ -117,10 +118,10 @@ const DashboardPage: React.FC = () => {
               // The remaining balance after the last payment is the current debt
               outstandingBalance = paidInstallments[paidInstallments.length - 1].remainingBalance;
           }
-          // If no installments paid, outstanding is initialAmount (default)
       }
       
       target.liabilities += outstandingBalance;
+      target.loans += outstandingBalance;
   });
 
   // --- CASHFLOW ---
@@ -178,6 +179,25 @@ const DashboardPage: React.FC = () => {
           </div>
         </div>
 
+        {/* Loans / Debt Summary */}
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden">
+           <div className="absolute top-0 right-0 p-4 opacity-10">
+            <Landmark size={48} className="text-rose-600" />
+          </div>
+          <p className="text-slate-500 text-sm font-medium">Deuda Total (Préstamos)</p>
+          <div className="flex flex-col mt-1">
+             <h3 className="text-2xl font-bold text-rose-700">
+              {formatHNL(totals.hnl.loans)}
+            </h3>
+            {totals.usd.loans > 0 && (
+                <span className="text-sm font-bold text-rose-500"> + {formatUSD(totals.usd.loans)}</span>
+            )}
+          </div>
+          <div className="mt-2 text-xs text-slate-500">
+             {activeLoans.length} préstamos activos
+          </div>
+        </div>
+
         {/* Monthly Cashflow */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden">
            <div className="absolute top-0 right-0 p-4 opacity-10">
@@ -198,21 +218,6 @@ const DashboardPage: React.FC = () => {
               <TrendingDown size={12} className="mr-1" />
               {formatHNL(monthlyExpense)}
             </div>
-          </div>
-        </div>
-
-        {/* Real Estate */}
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden">
-           <div className="absolute top-0 right-0 p-4 opacity-10">
-            <Building size={48} className="text-orange-600" />
-          </div>
-          <p className="text-slate-500 text-sm font-medium">Bienes Raíces</p>
-          <h3 className="text-2xl font-bold text-slate-800 mt-1">
-            {properties.length} <span className="text-sm font-normal text-slate-400">Propiedades</span>
-          </h3>
-           <div className="mt-2 text-xs text-slate-500">
-             Valor: <span className="font-semibold text-slate-700">{formatHNL(totals.hnl.realEstate)}</span>
-             {totals.usd.realEstate > 0 && <span> + {formatUSD(totals.usd.realEstate)}</span>}
           </div>
         </div>
       </div>
@@ -275,6 +280,10 @@ const DashboardPage: React.FC = () => {
              <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
               <span className="text-sm text-slate-600">Proyección Mensual</span>
               <span className="font-bold text-emerald-600">{formatHNL(projectedRent)}</span>
+            </div>
+            <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
+              <span className="text-sm text-slate-600">Valor Inmuebles</span>
+              <span className="font-bold text-slate-700">{formatHNL(totals.hnl.realEstate)}</span>
             </div>
           </div>
         </div>
