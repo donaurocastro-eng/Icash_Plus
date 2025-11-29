@@ -4,9 +4,7 @@ import {
   TrendingUp, 
   TrendingDown, 
   DollarSign, 
-  Building, 
   Wallet, 
-  CreditCard,
   Users,
   Database,
   Landmark
@@ -27,6 +25,9 @@ const DashboardPage: React.FC = () => {
   const [loans, setLoans] = useState<Loan[]>([]);
   
   const [schemaError, setSchemaError] = useState<string | null>(null);
+  
+  // Tasa de cambio para visualización consolidada (referencial)
+  const EXCHANGE_RATE = 25.00;
 
   useEffect(() => {
     const loadData = async () => {
@@ -94,35 +95,46 @@ const DashboardPage: React.FC = () => {
   // 1. Accounts
   accounts.forEach(acc => {
     const target = acc.currency === 'HNL' ? totals.hnl : totals.usd;
-    if (acc.type === 'ACTIVO') target.assets += acc.initialBalance;
-    else target.liabilities += acc.initialBalance;
+    const balance = Number(acc.initialBalance);
+    if (acc.type === 'ACTIVO') target.assets += balance;
+    else target.liabilities += balance;
   });
 
   // 2. Properties (Assets)
   properties.forEach(prop => {
     const target = prop.currency === 'HNL' ? totals.hnl : totals.usd;
-    target.realEstate += prop.value;
-    target.assets += prop.value;
+    const value = Number(prop.value);
+    target.realEstate += value;
+    target.assets += value;
   });
 
   // 3. Loans (Liabilities)
   const activeLoans = loans.filter(l => !l.isArchived);
   activeLoans.forEach(loan => {
       const target = loan.currency === 'HNL' ? totals.hnl : totals.usd;
-      let outstandingBalance = loan.initialAmount;
+      let outstandingBalance = Number(loan.initialAmount);
       
-      // If payment plan exists, check the last paid installment to find remaining balance
+      // Fix: Ensure we get the correct remaining balance by sorting paid installments
       if (loan.paymentPlan && loan.paymentPlan.length > 0) {
-          const paidInstallments = loan.paymentPlan.filter(p => p.status === 'PAID');
+          const paidInstallments = loan.paymentPlan
+            .filter(p => p.status === 'PAID')
+            .sort((a, b) => a.paymentNumber - b.paymentNumber); // Sort strictly by number
+            
           if (paidInstallments.length > 0) {
-              // The remaining balance after the last payment is the current debt
-              outstandingBalance = paidInstallments[paidInstallments.length - 1].remainingBalance;
+              // The remaining balance after the last paid installment is the current debt
+              const lastPayment = paidInstallments[paidInstallments.length - 1];
+              outstandingBalance = Number(lastPayment.remainingBalance);
           }
       }
       
       target.liabilities += outstandingBalance;
       target.loans += outstandingBalance;
   });
+
+  // --- CONSOLIDATED CALCULATIONS (Base HNL) ---
+  const consolidatedAssetsHNL = totals.hnl.assets + (totals.usd.assets * EXCHANGE_RATE);
+  const consolidatedLiabilitiesHNL = totals.hnl.liabilities + (totals.usd.liabilities * EXCHANGE_RATE);
+  const consolidatedNetWorthHNL = consolidatedAssetsHNL - consolidatedLiabilitiesHNL;
 
   // --- CASHFLOW ---
   const now = new Date();
@@ -131,11 +143,11 @@ const DashboardPage: React.FC = () => {
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   });
 
-  const monthlyIncome = currentMonthTx.filter(t => t.type === 'INGRESO').reduce((sum, t) => sum + t.amount, 0); 
-  const monthlyExpense = currentMonthTx.filter(t => t.type === 'GASTO').reduce((sum, t) => sum + t.amount, 0);
+  const monthlyIncome = currentMonthTx.filter(t => t.type === 'INGRESO').reduce((sum, t) => sum + Number(t.amount), 0); 
+  const monthlyExpense = currentMonthTx.filter(t => t.type === 'GASTO').reduce((sum, t) => sum + Number(t.amount), 0);
 
   const activeContracts = contracts.filter(c => c.status === 'ACTIVE');
-  const projectedRent = activeContracts.reduce((sum, c) => sum + c.amount, 0);
+  const projectedRent = activeContracts.reduce((sum, c) => sum + Number(c.amount), 0);
 
   // --- FORMATTERS ---
   const formatHNL = (n: number) => new Intl.NumberFormat('es-HN', { style: 'currency', currency: 'HNL', minimumFractionDigits: 2 }).format(n);
@@ -149,27 +161,27 @@ const DashboardPage: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* HNL Net Worth */}
+        {/* CONSOLIDATED NET WORTH (HNL) */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden group">
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
             <Wallet size={48} className="text-indigo-600" />
           </div>
-          <p className="text-slate-500 text-sm font-medium">Patrimonio Neto (HNL)</p>
+          <p className="text-slate-500 text-sm font-medium">Patrimonio Neto (Consolidado)</p>
           <h3 className="text-2xl font-bold text-indigo-900 mt-1">
-            {formatHNL(totals.hnl.assets - totals.hnl.liabilities)}
+            {formatHNL(consolidatedNetWorthHNL)}
           </h3>
           <div className="mt-2 text-xs text-slate-400 flex flex-col gap-0.5">
-            <span>Activos: <span className="text-emerald-600 font-medium">{formatHNL(totals.hnl.assets)}</span></span>
-            <span>Pasivos: <span className="text-red-500 font-medium">{formatHNL(totals.hnl.liabilities)}</span></span>
+            <span>Activos Totales: <span className="text-emerald-600 font-medium">{formatHNL(consolidatedAssetsHNL)}</span></span>
+            <span>Pasivos Totales: <span className="text-red-500 font-medium">{formatHNL(consolidatedLiabilitiesHNL)}</span></span>
           </div>
         </div>
 
-        {/* USD Net Worth */}
+        {/* USD Net Worth (Pure USD) */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden group">
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
             <DollarSign size={48} className="text-emerald-600" />
           </div>
-          <p className="text-slate-500 text-sm font-medium">Patrimonio Neto (USD)</p>
+          <p className="text-slate-500 text-sm font-medium">Patrimonio Neto (Solo USD)</p>
           <h3 className="text-2xl font-bold text-emerald-900 mt-1">
             {formatUSD(totals.usd.assets - totals.usd.liabilities)}
           </h3>
@@ -252,7 +264,7 @@ const DashboardPage: React.FC = () => {
                     </td>
                     <td className="px-6 py-3 text-right font-medium">
                       <span className={tx.type === 'INGRESO' ? 'text-emerald-600' : 'text-rose-600'}>
-                        {tx.type === 'INGRESO' ? '+' : '-'}{formatHNL(tx.amount)}
+                        {tx.type === 'INGRESO' ? '+' : '-'}{formatHNL(Number(tx.amount))}
                       </span>
                     </td>
                   </tr>

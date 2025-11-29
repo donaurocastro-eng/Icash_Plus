@@ -1,15 +1,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { 
-  TrendingUp, 
-  TrendingDown, 
-  DollarSign, 
   Calendar, 
-  Wallet,
   Building,
-  CreditCard,
-  RefreshCw,
-  FileText,
   Search
 } from 'lucide-react';
 import { AccountService } from '../services/accountService';
@@ -89,8 +82,8 @@ const ReportsPage: React.FC = () => {
     };
 
     const processItem = (amount: number, currency: string, name: string, type: 'ACTIVO' | 'PASIVO', category: string, code: string) => {
-        // Enforce Number to prevent string concatenation
-        let numAmount = Number(amount);
+        // Force Number type strictly to avoid string concatenation
+        const numAmount = Number(amount);
         let finalAmount = numAmount;
         
         if (currency === 'USD') finalAmount = numAmount * exchangeRate;
@@ -119,15 +112,21 @@ const ReportsPage: React.FC = () => {
         let outstandingBalance = Number(loan.initialAmount);
       
         // Calculate remaining balance based on payment plan
+        // Fix: Sort strictly by payment number to get correct last payment
         if (loan.paymentPlan && loan.paymentPlan.length > 0) {
-            const paidInstallments = loan.paymentPlan.filter(p => p.status === 'PAID');
+            const paidInstallments = loan.paymentPlan
+                .filter(p => p.status === 'PAID')
+                .sort((a, b) => a.paymentNumber - b.paymentNumber);
+                
             if (paidInstallments.length > 0) {
                 // The remaining balance after the last payment
-                outstandingBalance = Number(paidInstallments[paidInstallments.length - 1].remainingBalance);
+                const lastPayment = paidInstallments[paidInstallments.length - 1];
+                outstandingBalance = Number(lastPayment.remainingBalance);
             }
         }
         
-        if (outstandingBalance > 0.01) {
+        // Ensure we don't process negligble amounts or NaNs
+        if (!isNaN(outstandingBalance) && outstandingBalance > 0.01) {
             processItem(outstandingBalance, loan.currency, `Préstamo: ${loan.lenderName}`, 'PASIVO', 'Préstamos Bancarios', loan.loanCode);
         }
     });
@@ -143,15 +142,15 @@ const ReportsPage: React.FC = () => {
       return y === selectedYear && (m - 1) === selectedMonth;
     });
 
-    const income = filtered.filter(t => t.type === 'INGRESO').reduce((sum, t) => sum + t.amount, 0);
-    const expense = filtered.filter(t => t.type === 'GASTO').reduce((sum, t) => sum + t.amount, 0);
+    const income = filtered.filter(t => t.type === 'INGRESO').reduce((sum, t) => sum + Number(t.amount), 0);
+    const expense = filtered.filter(t => t.type === 'GASTO').reduce((sum, t) => sum + Number(t.amount), 0);
     
     const categories: Record<string, { name: string, type: CategoryType, amount: number }> = {};
     
     filtered.forEach(tx => {
       const catName = tx.categoryName || 'Sin Categoría';
       if (!categories[catName]) categories[catName] = { name: catName, type: tx.type, amount: 0 };
-      categories[catName].amount += tx.amount;
+      categories[catName].amount += Number(tx.amount);
     });
 
     return {
@@ -176,10 +175,8 @@ const ReportsPage: React.FC = () => {
       }));
 
       transactions.forEach(tx => {
-          // Strict property check
           if (tx.propertyCode !== selectedPropCode) return;
           
-          // Robust Date Parsing (YYYY-MM-DD)
           const y = parseInt(tx.date.substring(0, 4));
           const m = parseInt(tx.date.substring(5, 7));
           
@@ -187,14 +184,14 @@ const ReportsPage: React.FC = () => {
 
           const monthIdx = m - 1;
           if (monthIdx >= 0 && monthIdx < 12) {
-              if (tx.type === 'INGRESO') months[monthIdx].income += tx.amount;
-              else months[monthIdx].expense += tx.amount;
+              const amount = Number(tx.amount);
+              if (tx.type === 'INGRESO') months[monthIdx].income += amount;
+              else months[monthIdx].expense += amount;
               
               months[monthIdx].transactions.push(tx);
           }
       });
 
-      // Calc net
       months.forEach(m => m.net = m.income - m.expense);
       return months;
   };
@@ -211,7 +208,6 @@ const ReportsPage: React.FC = () => {
   const loansLiabilities = balance.liabilities.details.filter(d => d.category === 'Préstamos Bancarios');
   const otherLiabilities = balance.liabilities.details.filter(d => d.category !== 'Préstamos Bancarios');
 
-  // Calculate Subtotal for Loans Display
   const totalLoansHNL = loansLiabilities.reduce((sum, item) => sum + item.amountHNL, 0);
 
   return (
