@@ -52,6 +52,11 @@ export interface Transaction {
   propertyCode?: string;  
   propertyName?: string;  
   
+  // New fields for Loans
+  loanId?: string;
+  loanCode?: string;
+  paymentNumber?: number;
+  
   createdAt: string;
 }
 
@@ -64,6 +69,9 @@ export interface TransactionFormData {
   accountCode: string;
   propertyCode?: string;
   propertyName?: string;
+  loanId?: string;
+  loanCode?: string;
+  paymentNumber?: number;
 }
 
 // --- REAL ESTATE TYPES ---
@@ -199,12 +207,74 @@ export interface BulkPaymentFormData {
     items: BulkPaymentItem[];
 }
 
+// --- LOAN TYPES ---
+
+export type PaymentStatus = 'PENDING' | 'PAID';
+
+export interface Payment {
+    paymentNumber: number;
+    dueDate: string;
+    principal: number;
+    interest: number;
+    insurance: number;
+    totalPayment: number;
+    remainingBalance: number;
+    status: PaymentStatus;
+    paidAmount?: number;
+    paidDate?: string;
+    extraPrincipalPaid?: number;
+}
+
+export interface Loan {
+    id: string; // UUID from DB
+    loanCode: string; // Readable code (PREST-001)
+    lenderName: string;
+    loanNumber?: string;
+    initialAmount: number;
+    currency: Currency;
+    loanDate: string;
+    notes?: string;
+    isArchived: boolean;
+    
+    // Terms
+    interestRate?: number; // Annual %
+    term?: number; // Months
+    monthlyInsurance?: number;
+    
+    // Computed/Stored Plan
+    paymentPlan: Payment[];
+    
+    createdAt: string;
+}
+
+export interface LoanFormData {
+    lenderName: string;
+    loanNumber?: string;
+    initialAmount: number;
+    currency: Currency;
+    loanDate: string;
+    notes?: string;
+    interestRate?: number;
+    term?: number;
+    monthlyInsurance?: number;
+}
+
+export interface LoanPaymentData {
+    loan: Loan;
+    amount: number;
+    extraPrincipal: number;
+    fromAccountId: string; // Account Code in our system
+    date: string;
+    paymentNumber?: number;
+}
+
 export enum AppRoute {
   DASHBOARD = 'dashboard',
   ACCOUNTS = 'accounts',
   CATEGORIES = 'categories',
   TRANSACTIONS = 'transactions',
   REAL_ESTATE = 'real_estate',
+  LOANS = 'loans',
   REPORTS = 'reports',
   AI_ASSISTANT = 'ai_assistant',
   SETTINGS = 'settings'

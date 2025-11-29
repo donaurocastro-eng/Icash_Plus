@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Save, CheckCircle, XCircle, AlertTriangle, Database, RefreshCw, ShieldAlert, Activity, Terminal, Trash2, Building, Wrench, FileText } from 'lucide-react';
 import { db } from '../services/db';
@@ -25,17 +26,10 @@ const SettingsPage: React.FC = () => {
     if(urlToCheck) setSchemaStatus('ok');
   };
 
-  const handleTest = async () => { /* ... */ };
-  const handleSave = () => { /* ... */ };
-  const handleDisconnect = () => { /* ... */ };
-  const handlePatchContracts = async () => { /* ... */ };
-  const handleMigrateRealEstate = async () => { /* ... */ };
-  const handleForceRecreateAccounts = async () => { /* ... */ };
-
   const handleInitializeStepByStep = async () => {
     const currentStoredUrl = db.getUrl();
     if (!currentStoredUrl) return;
-    if (!window.confirm("Se actualizará la estructura de la base de datos. ¿Continuar?")) return;
+    if (!window.confirm("Se actualizará la estructura de la base de datos (Incluyendo tablas de Préstamos). ¿Continuar?")) return;
     
     setInitLoading(true);
     setInitLogs(["🚀 INICIANDO ACTUALIZACIÓN..."]); 
@@ -43,7 +37,37 @@ const SettingsPage: React.FC = () => {
     try {
         await db.query("SELECT 1");
         
-        // ... existing steps ...
+        // LOANS TABLE
+        addLog("🛠️ Verificando tabla de Préstamos (loans)...");
+        await db.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`); // Ensure UUID extension
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS public.loans (
+              id uuid NOT NULL DEFAULT uuid_generate_v4(),
+              created_at timestamp with time zone NOT NULL DEFAULT now(),
+              lender_name text NOT NULL,
+              loan_number text NULL,
+              initial_amount numeric NOT NULL,
+              currency text NOT NULL,
+              loan_date timestamp with time zone NOT NULL,
+              notes text NULL,
+              is_archived boolean NOT NULL DEFAULT false,
+              interest_rate numeric NULL,
+              term integer NULL,
+              monthly_insurance numeric NULL,
+              payment_plan jsonb NULL,
+              loan_type text NULL,
+              loan_code text NULL,
+              CONSTRAINT loans_pkey PRIMARY KEY (id),
+              CONSTRAINT loans_loan_code_key UNIQUE (loan_code)
+            );
+        `);
+
+        addLog("🔧 Actualizando tabla de transacciones...");
+        await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS loan_id uuid NULL;`);
+        await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS loan_code text NULL;`);
+        await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS payment_number integer NULL;`);
+
+        // EXISTING UPDATES (Just in case)
         addLog("🛠️ Verificando servicios...");
         await db.query(`
             CREATE TABLE IF NOT EXISTS public.property_services (
@@ -55,11 +79,7 @@ const SettingsPage: React.FC = () => {
                 created_at timestamp with time zone DEFAULT now() NOT NULL
             );
         `);
-        
-        addLog("🔧 Agregando columna 'default_category_code'...");
         await db.query(`ALTER TABLE public.property_services ADD COLUMN IF NOT EXISTS default_category_code text;`);
-
-        addLog("🔧 Agregando columna 'default_account_code'...");
         await db.query(`ALTER TABLE public.property_services ADD COLUMN IF NOT EXISTS default_account_code text;`);
 
         addLog("✨ ¡Proceso completado! Recargando...");
@@ -76,10 +96,10 @@ const SettingsPage: React.FC = () => {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-12">
-      {/* ... UI ... */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="p-6">
-          <h2 className="text-lg font-bold text-slate-800 mb-4">Mantenimiento</h2>
+          <h2 className="text-lg font-bold text-slate-800 mb-4">Mantenimiento Base de Datos</h2>
+          <p className="text-sm text-slate-500 mb-4">Utiliza esta opción si acabas de agregar nuevas funcionalidades (como Préstamos) y necesitas actualizar las tablas.</p>
           
           <button 
             onClick={handleInitializeStepByStep}
@@ -87,7 +107,7 @@ const SettingsPage: React.FC = () => {
             className={`w-full flex items-center justify-center space-x-2 px-4 py-3 text-white rounded-lg font-bold shadow-md transition-colors disabled:opacity-50 bg-indigo-600 hover:bg-indigo-700`}
           >
             {initLoading ? <RefreshCw size={18} className="animate-spin" /> : <Database size={18} />}
-            <span>Inicializar / Reparar Tablas (Actualizar Servicios)</span>
+            <span>Inicializar / Reparar Tablas</span>
           </button>
 
           {initLogs.length > 0 && (

@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { 
   LayoutDashboard, 
@@ -12,7 +13,8 @@ import {
   Cloud,
   HardDrive,
   PieChart,
-  Bot
+  Bot,
+  Landmark
 } from 'lucide-react';
 import { AppRoute } from '../types';
 import { db } from '../services/db';
@@ -84,6 +86,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentRoute, onNavigate }) =
             <NavItem route={AppRoute.CATEGORIES} icon={Tag} label="Categorías" />
             <NavItem route={AppRoute.TRANSACTIONS} icon={ArrowRightLeft} label="Movimientos" />
             <NavItem route={AppRoute.REAL_ESTATE} icon={Building} label="Bienes Raíces" />
+            <NavItem route={AppRoute.LOANS} icon={Landmark} label="Préstamos" />
             <NavItem route={AppRoute.REPORTS} icon={PieChart} label="Reportes" />
             <NavItem route={AppRoute.AI_ASSISTANT} icon={Bot} label="Asistente AI" />
             <div className="pt-2 pb-2">
@@ -108,7 +111,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentRoute, onNavigate }) =
             
             {/* Version Badge */}
             <div className="text-center pt-2">
-               <span className="text-[10px] font-mono text-slate-300">v1.2.0</span>
+               <span className="text-[10px] font-mono text-slate-300">v1.3.0</span>
             </div>
           </div>
         </div>

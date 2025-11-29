@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { 
   TrendingUp, 
@@ -7,14 +8,15 @@ import {
   Wallet, 
   CreditCard,
   Users,
-  AlertTriangle,
-  Database
+  Database,
+  Landmark
 } from 'lucide-react';
 import { AccountService } from '../services/accountService';
 import { TransactionService } from '../services/transactionService';
 import { PropertyService } from '../services/propertyService';
 import { ContractService } from '../services/contractService';
-import { Account, Transaction, Property, Contract } from '../types';
+import { LoanService } from '../services/loanService';
+import { Account, Transaction, Property, Contract, Loan } from '../types';
 
 const DashboardPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -22,6 +24,7 @@ const DashboardPage: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
+  const [loans, setLoans] = useState<Loan[]>([]);
   
   const [schemaError, setSchemaError] = useState<string | null>(null);
 
@@ -29,23 +32,22 @@ const DashboardPage: React.FC = () => {
     const loadData = async () => {
       try {
         setSchemaError(null);
-        // We catch errors individually to identify which service failed if needed, 
-        // but Promise.all is fine for a dashboard that needs everything.
-        const [accData, txData, propData, contData] = await Promise.all([
+        const [accData, txData, propData, contData, loanData] = await Promise.all([
           AccountService.getAll(),
           TransactionService.getAll(),
           PropertyService.getAll(),
-          ContractService.getAll()
+          ContractService.getAll(),
+          LoanService.getAll()
         ]);
         setAccounts(accData);
         setTransactions(txData);
         setProperties(propData);
         setContracts(contData);
+        setLoans(loanData);
       } catch (error: any) {
         console.error("Error loading dashboard data", error);
         const msg = error.message || '';
-        // Detect specific SQL errors related to missing schema
-        if (msg.includes('does not exist') || msg.includes('initial_balance') || msg.includes('properties') || msg.includes('apartment_code') || msg.includes('next_payment_date')) {
+        if (msg.includes('does not exist') || msg.includes('initial_balance')) {
             setSchemaError(msg);
         }
       } finally {
@@ -63,7 +65,6 @@ const DashboardPage: React.FC = () => {
     );
   }
 
-  // --- ERROR STATE: SCHEMA MISMATCH ---
   if (schemaError) {
     return (
       <div className="flex flex-col items-center justify-center h-[80vh] p-4">
@@ -71,23 +72,11 @@ const DashboardPage: React.FC = () => {
             <div className="w-20 h-20 bg-amber-50 rounded-full flex items-center justify-center mx-auto text-amber-500 mb-4">
                 <Database size={40} />
             </div>
-            
             <h2 className="text-2xl font-bold text-slate-800">Actualización Requerida</h2>
-            
-            <div className="bg-slate-50 p-4 rounded-lg text-left text-sm border border-slate-200 text-slate-600 font-mono overflow-x-auto">
-                Error: {schemaError}
-            </div>
-
-            <p className="text-slate-600">
-                Tu base de datos tiene una estructura antigua. Faltan tablas o columnas necesarias (como <code>next_payment_date</code>).
-            </p>
-
+            <p className="text-slate-600">Tu base de datos necesita mantenimiento.</p>
             <div className="pt-2">
-                <p className="text-sm font-medium text-slate-500 mb-4">Para solucionar esto automáticamente:</p>
                 <div className="flex flex-col gap-2 text-sm text-indigo-700 bg-indigo-50 p-4 rounded-lg border border-indigo-100 text-left">
-                    <p>1. Ve a la pestaña <strong>Configuración</strong> en el menú lateral.</p>
-                    <p>2. Busca la sección <strong>Estado del Esquema</strong>.</p>
-                    <p>3. Presiona el botón <strong>"Inicializar / Reparar Tablas"</strong>.</p>
+                    <p>Ve a <strong>Configuración</strong> > <strong>Inicializar / Reparar Tablas</strong>.</p>
                 </div>
             </div>
         </div>
@@ -97,46 +86,59 @@ const DashboardPage: React.FC = () => {
 
   // --- CALCULATIONS ---
 
-  // 1. Assets & Liabilities (Separated by Currency)
   const totals = {
     hnl: { assets: 0, liabilities: 0, realEstate: 0 },
     usd: { assets: 0, liabilities: 0, realEstate: 0 }
   };
 
+  // 1. Accounts
   accounts.forEach(acc => {
     const target = acc.currency === 'HNL' ? totals.hnl : totals.usd;
     if (acc.type === 'ACTIVO') target.assets += acc.initialBalance;
     else target.liabilities += acc.initialBalance;
   });
 
+  // 2. Properties (Assets)
   properties.forEach(prop => {
     const target = prop.currency === 'HNL' ? totals.hnl : totals.usd;
     target.realEstate += prop.value;
-    target.assets += prop.value; // Real Estate is an Asset
+    target.assets += prop.value;
   });
 
-  // 2. Monthly Cashflow (Current Month)
+  // 3. Loans (Liabilities)
+  loans.filter(l => !l.isArchived).forEach(loan => {
+      const target = loan.currency === 'HNL' ? totals.hnl : totals.usd;
+      let outstandingBalance = loan.initialAmount;
+      
+      // If payment plan exists, check the last paid installment to find remaining balance
+      if (loan.paymentPlan && loan.paymentPlan.length > 0) {
+          const paidInstallments = loan.paymentPlan.filter(p => p.status === 'PAID');
+          if (paidInstallments.length > 0) {
+              // The remaining balance after the last payment is the current debt
+              outstandingBalance = paidInstallments[paidInstallments.length - 1].remainingBalance;
+          }
+          // If no installments paid, outstanding is initialAmount (default)
+      }
+      
+      target.liabilities += outstandingBalance;
+  });
+
+  // --- CASHFLOW ---
   const now = new Date();
   const currentMonthTx = transactions.filter(t => {
     const d = new Date(t.date);
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   });
 
-  const monthlyIncome = currentMonthTx
-    .filter(t => t.type === 'INGRESO')
-    .reduce((sum, t) => sum + t.amount, 0); 
-  
-  const monthlyExpense = currentMonthTx
-    .filter(t => t.type === 'GASTO')
-    .reduce((sum, t) => sum + t.amount, 0);
+  const monthlyIncome = currentMonthTx.filter(t => t.type === 'INGRESO').reduce((sum, t) => sum + t.amount, 0); 
+  const monthlyExpense = currentMonthTx.filter(t => t.type === 'GASTO').reduce((sum, t) => sum + t.amount, 0);
 
-  // 3. Rental Income Projection
   const activeContracts = contracts.filter(c => c.status === 'ACTIVE');
   const projectedRent = activeContracts.reduce((sum, c) => sum + c.amount, 0);
 
   // --- FORMATTERS ---
-  const formatHNL = (n: number) => new Intl.NumberFormat('es-HN', { style: 'currency', currency: 'HNL' }).format(n);
-  const formatUSD = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
+  const formatHNL = (n: number) => new Intl.NumberFormat('es-HN', { style: 'currency', currency: 'HNL', minimumFractionDigits: 2 }).format(n);
+  const formatUSD = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
 
   return (
     <div className="space-y-6 pb-8">
@@ -145,7 +147,6 @@ const DashboardPage: React.FC = () => {
         <p className="text-slate-500">Resumen de tu situación patrimonial.</p>
       </div>
 
-      {/* --- KPI CARDS --- */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* HNL Net Worth */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden group">
@@ -156,7 +157,7 @@ const DashboardPage: React.FC = () => {
           <h3 className="text-2xl font-bold text-indigo-900 mt-1">
             {formatHNL(totals.hnl.assets - totals.hnl.liabilities)}
           </h3>
-          <div className="mt-2 text-xs text-slate-400 flex flex-col">
+          <div className="mt-2 text-xs text-slate-400 flex flex-col gap-0.5">
             <span>Activos: <span className="text-emerald-600 font-medium">{formatHNL(totals.hnl.assets)}</span></span>
             <span>Pasivos: <span className="text-red-500 font-medium">{formatHNL(totals.hnl.liabilities)}</span></span>
           </div>
@@ -171,7 +172,7 @@ const DashboardPage: React.FC = () => {
           <h3 className="text-2xl font-bold text-emerald-900 mt-1">
             {formatUSD(totals.usd.assets - totals.usd.liabilities)}
           </h3>
-          <div className="mt-2 text-xs text-slate-400 flex flex-col">
+          <div className="mt-2 text-xs text-slate-400 flex flex-col gap-0.5">
             <span>Activos: <span className="text-emerald-600 font-medium">{formatUSD(totals.usd.assets)}</span></span>
             <span>Pasivos: <span className="text-red-500 font-medium">{formatUSD(totals.usd.liabilities)}</span></span>
           </div>
@@ -200,7 +201,7 @@ const DashboardPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Real Estate Summary */}
+        {/* Real Estate */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden">
            <div className="absolute top-0 right-0 p-4 opacity-10">
             <Building size={48} className="text-orange-600" />
@@ -210,16 +211,15 @@ const DashboardPage: React.FC = () => {
             {properties.length} <span className="text-sm font-normal text-slate-400">Propiedades</span>
           </h3>
            <div className="mt-2 text-xs text-slate-500">
-             Valor Estimado: <span className="font-semibold text-slate-700">{formatHNL(totals.hnl.realEstate)}</span>
+             Valor: <span className="font-semibold text-slate-700">{formatHNL(totals.hnl.realEstate)}</span>
              {totals.usd.realEstate > 0 && <span> + {formatUSD(totals.usd.realEstate)}</span>}
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* --- RECENT TRANSACTIONS --- */}
         <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col">
-          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="px-6 py-4 border-b border-slate-100">
             <h3 className="font-bold text-slate-800">Actividad Reciente</h3>
           </div>
           <div className="flex-1 overflow-auto">
@@ -252,19 +252,11 @@ const DashboardPage: React.FC = () => {
                     </td>
                   </tr>
                 ))}
-                {transactions.length === 0 && (
-                  <tr>
-                    <td colSpan={3} className="px-6 py-8 text-center text-slate-400">
-                      No hay movimientos recientes
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>
         </div>
 
-        {/* --- RENTAL SUMMARY --- */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 flex flex-col space-y-4">
           <div className="flex items-center space-x-3">
             <div className="p-3 bg-indigo-50 text-indigo-600 rounded-full">
@@ -272,10 +264,9 @@ const DashboardPage: React.FC = () => {
             </div>
             <div>
               <h3 className="font-bold text-slate-800">Alquileres</h3>
-              <p className="text-xs text-slate-500">Resumen de Contratos</p>
+              <p className="text-xs text-slate-500">Resumen</p>
             </div>
           </div>
-          
           <div className="space-y-4 pt-2">
             <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
               <span className="text-sm text-slate-600">Contratos Activos</span>
@@ -285,53 +276,9 @@ const DashboardPage: React.FC = () => {
               <span className="text-sm text-slate-600">Proyección Mensual</span>
               <span className="font-bold text-emerald-600">{formatHNL(projectedRent)}</span>
             </div>
-            
-            <div className="pt-2">
-              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Próximos Vencimientos</h4>
-              <ul className="space-y-2">
-                {contracts.filter(c => c.status === 'ACTIVE').slice(0,3).map(c => (
-                  <li key={c.code} className="text-xs flex justify-between text-slate-600">
-                    <span>{c.code}</span>
-                    <span className="text-slate-400">{new Date(c.endDate).toLocaleDateString()}</span>
-                  </li>
-                ))}
-                {activeContracts.length === 0 && (
-                   <li className="text-xs text-slate-400 italic">No hay contratos activos</li>
-                )}
-              </ul>
-            </div>
           </div>
         </div>
       </div>
-      
-      {/* --- QUICK ACCOUNTS --- */}
-      <div>
-        <h3 className="font-bold text-slate-800 mb-4">Mis Cuentas</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-           {accounts.slice(0, 6).map(acc => (
-             <div key={acc.code} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                   <div className={`p-2 rounded-lg ${acc.isSystem ? 'bg-amber-100 text-amber-600' : 'bg-blue-50 text-blue-600'}`}>
-                     {acc.isSystem ? <Wallet size={18} /> : <CreditCard size={18} />}
-                   </div>
-                   <div>
-                     <p className="font-medium text-slate-800 text-sm truncate max-w-[120px]">{acc.name}</p>
-                     <p className="text-xs text-slate-400">{acc.bankName}</p>
-                   </div>
-                </div>
-                <div className="text-right">
-                  <p className={`font-bold ${acc.currency === 'HNL' ? 'text-indigo-600' : 'text-emerald-600'}`}>
-                    {acc.currency === 'HNL' ? formatHNL(acc.initialBalance) : formatUSD(acc.initialBalance)}
-                  </p>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${acc.type === 'ACTIVO' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
-                    {acc.type}
-                  </span>
-                </div>
-             </div>
-           ))}
-        </div>
-      </div>
-
     </div>
   );
 };

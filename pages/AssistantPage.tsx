@@ -6,9 +6,6 @@ import { TransactionService } from '../services/transactionService';
 import { PropertyService } from '../services/propertyService';
 import { ContractService } from '../services/contractService';
 
-// Clave API configurada directamente
-const API_KEY = "AIzaSyAJDCmpd0Q3GLoSRB8KqyoS6UqHAt9q64o";
-
 interface Message {
   id: string;
   role: 'user' | 'model';
@@ -87,7 +84,7 @@ const AssistantPage: React.FC = () => {
     try {
       const contextData = await gatherFinancialContext();
       
-      const ai = new GoogleGenAI({ apiKey: API_KEY });
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       const systemInstruction = `
         You are an expert financial assistant for the app ICASH_PLUS.

@@ -1,9 +1,11 @@
+
 import React, { useState } from 'react';
 import Layout from './components/Layout';
 import AccountsPage from './pages/AccountsPage';
 import CategoriesPage from './pages/CategoriesPage';
 import TransactionsPage from './pages/TransactionsPage';
 import RealEstatePage from './pages/RealEstatePage';
+import LoansPage from './pages/LoansPage';
 import SettingsPage from './pages/SettingsPage';
 import DashboardPage from './pages/DashboardPage';
 import ReportsPage from './pages/ReportsPage';
@@ -23,6 +25,8 @@ const App: React.FC = () => {
         return <TransactionsPage />;
       case AppRoute.REAL_ESTATE:
         return <RealEstatePage />;
+      case AppRoute.LOANS:
+        return <LoansPage />;
       case AppRoute.REPORTS:
         return <ReportsPage />;
       case AppRoute.AI_ASSISTANT:
