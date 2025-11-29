@@ -114,11 +114,12 @@ const DashboardPage: React.FC = () => {
       const target = loan.currency === 'HNL' ? totals.hnl : totals.usd;
       let outstandingBalance = Number(loan.initialAmount);
       
-      // Fix: Ensure we get the correct remaining balance by sorting paid installments
+      // Calculate remaining balance based on payment plan
       if (loan.paymentPlan && loan.paymentPlan.length > 0) {
+          // Sort strictly by paymentNumber to ensure order
           const paidInstallments = loan.paymentPlan
             .filter(p => p.status === 'PAID')
-            .sort((a, b) => a.paymentNumber - b.paymentNumber); // Sort strictly by number
+            .sort((a, b) => a.paymentNumber - b.paymentNumber);
             
           if (paidInstallments.length > 0) {
               // The remaining balance after the last paid installment is the current debt

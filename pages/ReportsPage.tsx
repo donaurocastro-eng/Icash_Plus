@@ -82,8 +82,8 @@ const ReportsPage: React.FC = () => {
     };
 
     const processItem = (amount: number, currency: string, name: string, type: 'ACTIVO' | 'PASIVO', category: string, code: string) => {
-        // Force Number type strictly to avoid string concatenation
-        const numAmount = Number(amount);
+        // Force Number type strictly to avoid string concatenation or NaN
+        const numAmount = Number(amount) || 0;
         let finalAmount = numAmount;
         
         if (currency === 'USD') finalAmount = numAmount * exchangeRate;
@@ -112,8 +112,8 @@ const ReportsPage: React.FC = () => {
         let outstandingBalance = Number(loan.initialAmount);
       
         // Calculate remaining balance based on payment plan
-        // Fix: Sort strictly by payment number to get correct last payment
         if (loan.paymentPlan && loan.paymentPlan.length > 0) {
+            // Sort to ensure we find the latest payment correctly
             const paidInstallments = loan.paymentPlan
                 .filter(p => p.status === 'PAID')
                 .sort((a, b) => a.paymentNumber - b.paymentNumber);
