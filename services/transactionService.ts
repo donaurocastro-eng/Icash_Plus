@@ -41,7 +41,6 @@ const updateLocalAccountBalance = async (accountCode: string, amount: number, ty
 
   // Logic for Local Transfers (No DB)
   if (type === 'TRANSFERENCIA' && destinationCode) {
-      // Transfer Logic:
       // Create: Source -amount, Dest +amount
       // Reversal: Source +amount, Dest -amount
       let sourceAdj = -amount;
