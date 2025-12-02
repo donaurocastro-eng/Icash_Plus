@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { X, Save, AlertCircle, Calendar, ArrowDownCircle, ArrowUpCircle, ArrowRightLeft, CreditCard, Tag } from 'lucide-react';
-import { TransactionFormData, Category, Account, CategoryType, Transaction } from '../types';
+import { TransactionFormData, Category, Account, Transaction } from '../types';
 import { CategoryService } from '../services/categoryService';
 import { AccountService } from '../services/accountService';
 
@@ -51,7 +51,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
             type: editingTransaction.type,
             categoryCode: editingTransaction.categoryCode,
             accountCode: editingTransaction.accountCode,
-            destinationAccountCode: editingTransaction.destinationAccountCode || '',
+            destinationAccountCode: '', // Editing transfers not supported directly
             propertyCode: editingTransaction.propertyCode || '',
             propertyName: editingTransaction.propertyName || ''
           });
@@ -97,11 +97,11 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
 
     if (formData.type === 'TRANSFERENCIA') {
         if (!formData.destinationAccountCode) {
-            setError("Debes seleccionar una Cuenta Destino para la transferencia.");
+            setError("Selecciona la cuenta de destino para la transferencia.");
             return;
         }
         if (formData.accountCode === formData.destinationAccountCode) {
-            setError("La cuenta origen y destino no pueden ser la misma.");
+            setError("No puedes transferir a la misma cuenta.");
             return;
         }
     } else {
@@ -152,25 +152,27 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
           <div className="grid grid-cols-3 gap-3">
             <div 
               className={`cursor-pointer border rounded-lg p-2 flex flex-col items-center justify-center transition-all ${formData.type === 'GASTO' ? 'bg-rose-50 border-rose-500 text-rose-700 font-medium ring-1 ring-rose-500' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
-              onClick={() => setFormData({...formData, type: 'GASTO', categoryCode: '', destinationAccountCode: ''})}
+              onClick={() => setFormData({...formData, type: 'GASTO', categoryCode: ''})}
             >
               <ArrowDownCircle size={20} className="mb-1" />
               <span className="text-xs font-bold">GASTO</span>
             </div>
             <div 
               className={`cursor-pointer border rounded-lg p-2 flex flex-col items-center justify-center transition-all ${formData.type === 'INGRESO' ? 'bg-emerald-50 border-emerald-500 text-emerald-700 font-medium ring-1 ring-emerald-500' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
-              onClick={() => setFormData({...formData, type: 'INGRESO', categoryCode: '', destinationAccountCode: ''})}
+              onClick={() => setFormData({...formData, type: 'INGRESO', categoryCode: ''})}
             >
               <ArrowUpCircle size={20} className="mb-1" />
               <span className="text-xs font-bold">INGRESO</span>
             </div>
-            <div 
-              className={`cursor-pointer border rounded-lg p-2 flex flex-col items-center justify-center transition-all ${formData.type === 'TRANSFERENCIA' ? 'bg-blue-50 border-blue-500 text-blue-700 font-medium ring-1 ring-blue-500' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
-              onClick={() => setFormData({...formData, type: 'TRANSFERENCIA', categoryCode: ''})}
-            >
-              <ArrowRightLeft size={20} className="mb-1" />
-              <span className="text-xs font-bold">TRANSFERIR</span>
-            </div>
+            {!editingTransaction && (
+                <div 
+                className={`cursor-pointer border rounded-lg p-2 flex flex-col items-center justify-center transition-all ${formData.type === 'TRANSFERENCIA' ? 'bg-blue-50 border-blue-500 text-blue-700 font-medium ring-1 ring-blue-500' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                onClick={() => setFormData({...formData, type: 'TRANSFERENCIA', categoryCode: 'SYSTEM'})}
+                >
+                <ArrowRightLeft size={20} className="mb-1" />
+                <span className="text-xs font-bold">TRANSFERIR</span>
+                </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -205,7 +207,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
                 <label className="block text-sm font-medium text-slate-700">Descripción</label>
                 <textarea
                   className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none resize-none h-24"
-                  placeholder={formData.type === 'TRANSFERENCIA' ? "Pago de Tarjeta, Ahorro mensual..." : "Detalle de la transacción..."}
+                  placeholder={formData.type === 'TRANSFERENCIA' ? "Pago de Tarjeta, Ahorro..." : "Detalle..."}
                   value={formData.description}
                   onChange={e => setFormData({...formData, description: e.target.value})}
                 />
@@ -216,7 +218,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
             <div className="space-y-4">
               <div className="space-y-1">
                 <label className="block text-sm font-medium text-slate-700">
-                    {formData.type === 'TRANSFERENCIA' ? 'Desde (Origen)' : 'Cuenta Bancaria / Efectivo'}
+                    {formData.type === 'TRANSFERENCIA' ? 'Desde (Cuenta Origen)' : 'Cuenta'}
                 </label>
                 <div className="relative">
                     <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -225,10 +227,10 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
                     value={formData.accountCode}
                     onChange={e => setFormData({...formData, accountCode: e.target.value})}
                     >
-                    <option value="">Seleccione una cuenta</option>
+                    <option value="">Seleccione cuenta...</option>
                     {accounts.map(acc => (
                         <option key={acc.code} value={acc.code}>
-                        {acc.name} ({acc.currency})
+                        {acc.name} ({acc.currency}) - {acc.initialBalance}
                         </option>
                     ))}
                     </select>
@@ -236,18 +238,18 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
               </div>
 
               {formData.type === 'TRANSFERENCIA' ? (
-                  <div className="space-y-1">
-                    <label className="block text-sm font-medium text-slate-700">Hacia (Destino)</label>
+                  <div className="space-y-1 bg-blue-50 p-3 rounded-lg border border-blue-100">
+                    <label className="block text-sm font-bold text-blue-800 mb-1">Hacia (Cuenta Destino)</label>
                     <div className="relative">
-                        <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                        <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400" size={18} />
                         <select
-                        className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none bg-white"
+                        className="w-full pl-10 pr-4 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white"
                         value={formData.destinationAccountCode}
                         onChange={e => setFormData({...formData, destinationAccountCode: e.target.value})}
                         >
-                        <option value="">Seleccione cuenta destino</option>
+                        <option value="">Seleccione destino...</option>
                         {accounts
-                            .filter(a => a.code !== formData.accountCode) // Exclude source account
+                            .filter(a => a.code !== formData.accountCode)
                             .map(acc => (
                             <option key={acc.code} value={acc.code}>
                             {acc.name} ({acc.currency})
@@ -255,11 +257,13 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
                         ))}
                         </select>
                     </div>
-                    <p className="text-xs text-slate-400 mt-1">Ideal para pagos de tarjeta o ahorros.</p>
+                    <p className="text-xs text-blue-600 mt-2">
+                        Se crearán automáticamente dos transacciones: Un <strong>GASTO</strong> en el origen y un <strong>INGRESO</strong> en el destino.
+                    </p>
                   </div>
               ) : (
                   <div className="space-y-1">
-                    <label className="block text-sm font-medium text-slate-700">Categoría ({formData.type})</label>
+                    <label className="block text-sm font-medium text-slate-700">Categoría</label>
                     <div className="relative">
                         <Tag className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                         <select
@@ -267,7 +271,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
                         value={formData.categoryCode}
                         onChange={e => setFormData({...formData, categoryCode: e.target.value})}
                         >
-                        <option value="">Seleccione una categoría</option>
+                        <option value="">Seleccione categoría</option>
                         {filteredCategories.length === 0 && <option disabled>No hay categorías disponibles</option>}
                         {filteredCategories.map(cat => (
                             <option key={cat.code} value={cat.code}>

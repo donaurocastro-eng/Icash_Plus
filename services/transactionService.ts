@@ -23,13 +23,11 @@ const generateNextCode = (existing: Transaction[]): string => {
   return `TR-${nextId.toString().padStart(5, '0')}`;
 };
 
-// Helper to safe convert DB dates to string YYYY-MM-DD
 const toDateString = (val: any): string => {
   if (val instanceof Date) return val.toISOString().split('T')[0];
   return String(val);
 };
 
-// Local helper
 const updateLocalAccountBalance = async (accountCode: string, amount: number, type: 'INGRESO' | 'GASTO', isReversal: boolean = false) => {
   const accountsData = localStorage.getItem(ACCOUNTS_KEY);
   if (!accountsData) return;
@@ -37,11 +35,6 @@ const updateLocalAccountBalance = async (accountCode: string, amount: number, ty
   const index = accounts.findIndex(a => a.code === accountCode);
   if (index !== -1) {
     let adjustment = amount;
-    
-    // Logic:
-    // INGRESO: +amount
-    // GASTO: -amount
-    
     if (type === 'GASTO') adjustment = -amount;
     if (isReversal) adjustment = -adjustment;
     
@@ -53,7 +46,6 @@ const updateLocalAccountBalance = async (accountCode: string, amount: number, ty
 export const TransactionService = {
   getAll: async (): Promise<Transaction[]> => {
     if (db.isConfigured()) {
-      // Removed destination_account_code/name from query
       const rows = await db.query(`
         SELECT 
           code, date, description, amount, type,
@@ -77,6 +69,31 @@ export const TransactionService = {
   },
 
   create: async (data: TransactionFormData): Promise<Transaction> => {
+    // --- AUTOMATED TRANSFER LOGIC ---
+    if (data.type === 'TRANSFERENCIA') {
+        if (!data.destinationAccountCode) throw new Error("Cuenta destino requerida.");
+        
+        // 1. Create OUT Transaction (Gasto)
+        await TransactionService.create({
+            ...data,
+            type: 'GASTO',
+            categoryCode: 'CAT-EXP-013', // Transferencia Saliente
+            description: `Transferencia Saliente: ${data.description}`
+        });
+
+        // 2. Create IN Transaction (Ingreso)
+        const inTx = await TransactionService.create({
+            ...data,
+            type: 'INGRESO',
+            accountCode: data.destinationAccountCode,
+            categoryCode: 'CAT-INC-007', // Transferencia Entrante
+            description: `Transferencia Entrante: ${data.description}`
+        });
+        
+        return inTx; // Return the second one just as confirmation
+    }
+
+    // --- STANDARD LOGIC ---
     const accounts = await AccountService.getAll();
     const cleanAccCode = data.accountCode.trim();
     const account = accounts.find(a => a.code === cleanAccCode);
@@ -85,8 +102,9 @@ export const TransactionService = {
     const categories = await CategoryService.getAll();
     const cleanCatCode = data.categoryCode.trim();
     const category = categories.find(c => c.code === cleanCatCode);
-    if (!category) throw new Error(`La categoría '${cleanCatCode}' no existe.`);
-    const categoryName = category.name;
+    // If category not found (e.g. initial setup), fallback or throw
+    const categoryName = category ? category.name : 'General'; 
+    const finalCatCode = category ? category.code : cleanCatCode;
 
     if (db.isConfigured()) {
       const rows = await db.query('SELECT code FROM transactions');
@@ -102,12 +120,11 @@ export const TransactionService = {
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       `, [
         newCode, data.date, data.description, data.amount, data.type,
-        category.code, category.name,
+        finalCatCode, categoryName,
         account.code, account.name,
         data.propertyCode, data.propertyName
       ]);
 
-      // Update Balances
       let adjustment = data.amount;
       if (data.type === 'GASTO') adjustment = -adjustment;
       await db.query(`UPDATE accounts SET initial_balance = initial_balance + $1 WHERE code = $2`, [adjustment, account.code]);
@@ -115,7 +132,7 @@ export const TransactionService = {
       return {
         code: newCode,
         ...data,
-        categoryName: category.name,
+        categoryName: categoryName,
         accountName: account.name,
         createdAt: new Date().toISOString()
       } as Transaction;
@@ -130,8 +147,8 @@ export const TransactionService = {
         description: data.description,
         amount: Number(data.amount),
         type: data.type,
-        categoryCode: category.code,
-        categoryName: category.name,
+        categoryCode: finalCatCode,
+        categoryName: categoryName,
         accountCode: account.code,
         accountName: account.name,
         propertyCode: data.propertyCode || '',
@@ -141,7 +158,6 @@ export const TransactionService = {
       const updatedList = [newTransaction, ...existing];
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
       
-      // Update Local Balances
       await updateLocalAccountBalance(account.code, newTransaction.amount, data.type as 'GASTO'|'INGRESO', false);
       
       return newTransaction;
@@ -149,26 +165,27 @@ export const TransactionService = {
   },
 
   update: async (code: string, data: TransactionFormData): Promise<Transaction> => {
+    // Block editing of auto-generated transfers for safety simplicity
+    if (data.type === 'TRANSFERENCIA') throw new Error("No se pueden editar transferencias. Elimine y cree de nuevo.");
+
     const accounts = await AccountService.getAll();
     const account = accounts.find(a => a.code === data.accountCode);
     if (!account) throw new Error(`Cuenta inválida.`);
 
     const categories = await CategoryService.getAll();
     const category = categories.find(c => c.code === data.categoryCode);
-    if (!category) throw new Error(`Categoría inválida.`);
-    
+    const categoryName = category ? category.name : 'General';
+
     if (db.isConfigured()) {
         const oldTxRows = await db.query('SELECT amount, type, account_code FROM transactions WHERE code=$1', [code]);
         if (oldTxRows.length === 0) throw new Error("Transacción no encontrada");
         const oldTx = oldTxRows[0];
         
-        // Reverse Old
         let reverseAdj = Number(oldTx.amount);
         if (oldTx.type === 'GASTO') reverseAdj = -reverseAdj;
         reverseAdj = -reverseAdj;
         await db.query(`UPDATE accounts SET initial_balance = initial_balance + $1 WHERE code = $2`, [reverseAdj, oldTx.account_code]);
 
-        // Apply New
         let newAdj = data.amount;
         if (data.type === 'GASTO') newAdj = -newAdj;
         await db.query(`UPDATE accounts SET initial_balance = initial_balance + $1 WHERE code = $2`, [newAdj, account.code]);
@@ -177,11 +194,11 @@ export const TransactionService = {
             UPDATE transactions 
             SET date=$1, description=$2, amount=$3, type=$4, category_code=$5, category_name=$6, account_code=$7, account_name=$8, property_code=$9, property_name=$10
             WHERE code=$11
-        `, [data.date, data.description, data.amount, data.type, category.code, category.name, account.code, account.name, data.propertyCode, data.propertyName, code]);
+        `, [data.date, data.description, data.amount, data.type, data.categoryCode, categoryName, account.code, account.name, data.propertyCode, data.propertyName, code]);
 
-        return { code, ...data, categoryName: category.name, accountName: account.name, createdAt: new Date().toISOString() } as Transaction;
+        return { code, ...data, categoryName, accountName: account.name, createdAt: new Date().toISOString() } as Transaction;
     } else {
-         throw new Error("Edición local limitada. Elimina y crea de nuevo.");
+         throw new Error("Edición local limitada.");
     }
   },
 
@@ -192,7 +209,6 @@ export const TransactionService = {
        const tx = rows[0];
        const amount = Number(tx.amount);
 
-       // Reverse Normal
        let adjustment = amount;
        if (tx.type === 'GASTO') adjustment = -adjustment;
        adjustment = -adjustment; 

@@ -48,14 +48,9 @@ export interface Transaction {
   accountCode: string;
   accountName: string;
   
-  // Fields for Transfers
-  destinationAccountCode?: string;
-  destinationAccountName?: string;
-
   propertyCode?: string;  
   propertyName?: string;  
   
-  // New fields for Loans
   loanId?: string;
   loanCode?: string;
   paymentNumber?: number;
@@ -68,9 +63,9 @@ export interface TransactionFormData {
   description: string;
   amount: number;
   type: CategoryType;
-  categoryCode: string; // Optional for transfers
+  categoryCode: string; 
   accountCode: string;
-  destinationAccountCode?: string; // Required for transfers
+  destinationAccountCode?: string; // New: For UI Logic only
   propertyCode?: string;
   propertyName?: string;
   loanId?: string;
@@ -78,10 +73,11 @@ export interface TransactionFormData {
   paymentNumber?: number;
 }
 
-// --- REAL ESTATE TYPES ---
+// ... Rest of types remain unchanged ...
+// (Real Estate, Loans, etc.)
 
 export interface Property {
-  code: string;         // AP-001 (Now represents Building/Complex)
+  code: string;         
   name: string;
   cadastralKey?: string;
   annualTax: number;
@@ -100,9 +96,9 @@ export interface PropertyFormData {
 }
 
 export interface Apartment {
-  code: string;         // UNIT-001
-  propertyCode: string; // Link to Parent Property
-  name: string;         // e.g. "Apt 101"
+  code: string;         
+  propertyCode: string; 
+  name: string;         
   status: 'AVAILABLE' | 'RENTED' | 'MAINTENANCE';
   createdAt: string;
 }
@@ -160,14 +156,13 @@ export interface ContractPrice {
   endDate?: string;
 }
 
-// Recurring Services/Expenses for Properties
 export interface PropertyServiceItem {
-  code: string;          // SERV-001
-  propertyCode: string;  // Linked to Building/Property
-  name: string;          // e.g. "Agua Potable"
-  defaultAmount: number; // Estimated cost
-  defaultCategoryCode?: string; // Link to Expense Category
-  defaultAccountCode?: string; // NEW: Link to Payment Account
+  code: string;          
+  propertyCode: string;  
+  name: string;          
+  defaultAmount: number; 
+  defaultCategoryCode?: string; 
+  defaultAccountCode?: string; 
   active: boolean;
   createdAt: string;
 }
@@ -194,7 +189,7 @@ export interface PaymentFormData {
   contractCode: string;
   date: string;
   amount: number;
-  accountCode: string; // Destination account (Bank/Cash)
+  accountCode: string; 
   description: string;
 }
 
@@ -210,8 +205,6 @@ export interface BulkPaymentFormData {
     accountCode: string;
     items: BulkPaymentItem[];
 }
-
-// --- LOAN TYPES ---
 
 export type PaymentStatus = 'PENDING' | 'PAID';
 
@@ -230,8 +223,8 @@ export interface Payment {
 }
 
 export interface Loan {
-    id: string; // UUID from DB
-    loanCode: string; // Readable code (PREST-001)
+    id: string; 
+    loanCode: string; 
     lenderName: string;
     loanNumber?: string;
     initialAmount: number;
@@ -239,15 +232,10 @@ export interface Loan {
     loanDate: string;
     notes?: string;
     isArchived: boolean;
-    
-    // Terms
-    interestRate?: number; // Annual %
-    term?: number; // Months
+    interestRate?: number; 
+    term?: number; 
     monthlyInsurance?: number;
-    
-    // Computed/Stored Plan
     paymentPlan: Payment[];
-    
     createdAt: string;
 }
 
@@ -267,7 +255,7 @@ export interface LoanPaymentData {
     loan: Loan;
     amount: number;
     extraPrincipal: number;
-    fromAccountId: string; // Account Code in our system
+    fromAccountId: string; 
     date: string;
     paymentNumber?: number;
 }
