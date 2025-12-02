@@ -1,6 +1,5 @@
-
 import React, { useEffect, useState } from 'react';
-import { X, Save, AlertCircle, Calendar, ArrowDownCircle, ArrowUpCircle, ArrowRightLeft } from 'lucide-react';
+import { X, Save, AlertCircle, Calendar, ArrowDownCircle, ArrowUpCircle, ArrowRightLeft, CreditCard, Tag } from 'lucide-react';
 import { TransactionFormData, Category, Account, CategoryType, Transaction } from '../types';
 import { CategoryService } from '../services/categoryService';
 import { AccountService } from '../services/accountService';
@@ -219,55 +218,64 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
                 <label className="block text-sm font-medium text-slate-700">
                     {formData.type === 'TRANSFERENCIA' ? 'Desde (Origen)' : 'Cuenta Bancaria / Efectivo'}
                 </label>
-                <select
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none bg-white"
-                  value={formData.accountCode}
-                  onChange={e => setFormData({...formData, accountCode: e.target.value})}
-                >
-                  <option value="">Seleccione una cuenta</option>
-                  {accounts.map(acc => (
-                    <option key={acc.code} value={acc.code}>
-                      {acc.name} ({acc.currency}) - Saldo: {acc.initialBalance}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                    <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <select
+                    className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none bg-white"
+                    value={formData.accountCode}
+                    onChange={e => setFormData({...formData, accountCode: e.target.value})}
+                    >
+                    <option value="">Seleccione una cuenta</option>
+                    {accounts.map(acc => (
+                        <option key={acc.code} value={acc.code}>
+                        {acc.name} ({acc.currency})
+                        </option>
+                    ))}
+                    </select>
+                </div>
               </div>
 
               {formData.type === 'TRANSFERENCIA' ? (
                   <div className="space-y-1">
                     <label className="block text-sm font-medium text-slate-700">Hacia (Destino)</label>
-                    <select
-                      className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none bg-white"
-                      value={formData.destinationAccountCode}
-                      onChange={e => setFormData({...formData, destinationAccountCode: e.target.value})}
-                    >
-                      <option value="">Seleccione cuenta destino</option>
-                      {accounts
-                        .filter(a => a.code !== formData.accountCode) // Exclude source account
-                        .map(acc => (
-                        <option key={acc.code} value={acc.code}>
-                          {acc.name} ({acc.currency})
-                        </option>
-                      ))}
-                    </select>
+                    <div className="relative">
+                        <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                        <select
+                        className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none bg-white"
+                        value={formData.destinationAccountCode}
+                        onChange={e => setFormData({...formData, destinationAccountCode: e.target.value})}
+                        >
+                        <option value="">Seleccione cuenta destino</option>
+                        {accounts
+                            .filter(a => a.code !== formData.accountCode) // Exclude source account
+                            .map(acc => (
+                            <option key={acc.code} value={acc.code}>
+                            {acc.name} ({acc.currency})
+                            </option>
+                        ))}
+                        </select>
+                    </div>
                     <p className="text-xs text-slate-400 mt-1">Ideal para pagos de tarjeta o ahorros.</p>
                   </div>
               ) : (
                   <div className="space-y-1">
                     <label className="block text-sm font-medium text-slate-700">Categoría ({formData.type})</label>
-                    <select
-                      className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none bg-white"
-                      value={formData.categoryCode}
-                      onChange={e => setFormData({...formData, categoryCode: e.target.value})}
-                    >
-                      <option value="">Seleccione una categoría</option>
-                      {filteredCategories.length === 0 && <option disabled>No hay categorías disponibles</option>}
-                      {filteredCategories.map(cat => (
-                        <option key={cat.code} value={cat.code}>
-                          {cat.name}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="relative">
+                        <Tag className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                        <select
+                        className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none bg-white"
+                        value={formData.categoryCode}
+                        onChange={e => setFormData({...formData, categoryCode: e.target.value})}
+                        >
+                        <option value="">Seleccione una categoría</option>
+                        {filteredCategories.length === 0 && <option disabled>No hay categorías disponibles</option>}
+                        {filteredCategories.map(cat => (
+                            <option key={cat.code} value={cat.code}>
+                            {cat.name}
+                            </option>
+                        ))}
+                        </select>
+                    </div>
                   </div>
               )}
 

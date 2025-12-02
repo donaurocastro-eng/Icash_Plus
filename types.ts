@@ -1,4 +1,3 @@
-
 export type AccountType = 'ACTIVO' | 'PASIVO';
 export type CategoryType = 'GASTO' | 'INGRESO' | 'TRANSFERENCIA';
 export type Currency = 'HNL' | 'USD';
