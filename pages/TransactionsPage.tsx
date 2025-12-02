@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Plus, Search, Trash2, ArrowDownCircle, ArrowUpCircle, Calendar, Tag, CreditCard, FileSpreadsheet, Upload, Edit2, ArrowRightLeft } from 'lucide-react';
-import { Transaction, TransactionFormData, Account, Category, CategoryType } from '../types';
+import { Plus, Search, Trash2, ArrowDownCircle, ArrowUpCircle, Calendar, ArrowRightLeft, Edit2, FileSpreadsheet, Upload } from 'lucide-react';
+import { Transaction, TransactionFormData, Account, Category } from '../types';
 import { TransactionService } from '../services/transactionService';
 import { AccountService } from '../services/accountService';
 import { CategoryService } from '../services/categoryService';
@@ -85,7 +85,7 @@ const TransactionsPage: React.FC = () => {
     }
   };
 
-  // ... (Excel logic remains same) ...
+  // --- EXCEL LOGIC START ---
   const handleDownloadTemplate = () => {
     const wb = XLSX.utils.book_new();
     const headers = ['Fecha (YYYY-MM-DD)', 'Descripcion', 'Monto', 'Tipo (GASTO/INGRESO)', 'Codigo_Categoria', 'Codigo_Cuenta', 'Codigo_Propiedad (Opcional)'];
@@ -110,10 +110,48 @@ const TransactionsPage: React.FC = () => {
         const data = e.target?.result;
         const wb = XLSX.read(data, { type: 'binary' });
         const json = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) as any[];
+        
         if (json.length === 0) { alert("Archivo vacío"); return; }
-        // ... (Excel processing logic) ...
+
+        let successCount = 0;
+        let errorCount = 0;
+
+        for (const row of json) {
+            try {
+                // Map Excel columns to FormData
+                const date = row['Fecha (YYYY-MM-DD)'] || row['Fecha'] || new Date().toISOString().split('T')[0];
+                const desc = row['Descripcion'] || row['Descripción'] || 'Sin descripción';
+                const amount = parseFloat(row['Monto']) || 0;
+                const typeRaw = (row['Tipo (GASTO/INGRESO)'] || row['Tipo'] || 'GASTO').toUpperCase();
+                const type = (typeRaw === 'INGRESO') ? 'INGRESO' : 'GASTO'; // Default to GASTO if invalid
+                const catCode = row['Codigo_Categoria'] || row['Categoria'];
+                const accCode = row['Codigo_Cuenta'] || row['Cuenta'];
+                const propCode = row['Codigo_Propiedad (Opcional)'] || row['Propiedad'] || '';
+
+                if (!amount || !catCode || !accCode) {
+                    console.warn("Skipping invalid row", row);
+                    errorCount++;
+                    continue;
+                }
+
+                await TransactionService.create({
+                    date: String(date),
+                    description: String(desc),
+                    amount: amount,
+                    type: type as any,
+                    categoryCode: String(catCode),
+                    accountCode: String(accCode),
+                    propertyCode: String(propCode)
+                });
+                successCount++;
+            } catch (err) {
+                console.error("Row error", err);
+                errorCount++;
+            }
+        }
+        
         await loadTransactions();
-        alert(`Importación finalizada.`);
+        alert(`Importación finalizada.\n✅ Exitosos: ${successCount}\n❌ Fallidos: ${errorCount}`);
       } catch (err) {
           console.error(err);
           alert("Error al leer el archivo Excel.");
@@ -123,6 +161,7 @@ const TransactionsPage: React.FC = () => {
     };
     reader.readAsBinaryString(file);
   };
+  // --- EXCEL LOGIC END ---
 
   const formatDate = (isoString: string) => {
     const date = new Date(isoString);
@@ -169,7 +208,21 @@ const TransactionsPage: React.FC = () => {
         </div>
         
         <div className="flex flex-wrap items-center gap-3">
-            {/* ... Buttons ... */}
+            {/* Excel Actions Group */}
+            <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
+                <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept=".xlsx, .xls" className="hidden" />
+                <button onClick={handleDownloadTemplate} className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-brand-600 rounded-md transition-colors text-sm font-medium border-r border-slate-100" title="Descargar Plantilla Excel">
+                    <FileSpreadsheet size={16} />
+                    <span className="hidden sm:inline">Plantilla</span>
+                </button>
+                <button onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-emerald-600 rounded-md transition-colors text-sm font-medium disabled:opacity-50" title="Subir archivo Excel">
+                    {isImporting ? <div className="animate-spin h-4 w-4 border-2 border-emerald-600 border-t-transparent rounded-full"/> : <Upload size={16} />}
+                    <span className="hidden sm:inline">Importar</span>
+                </button>
+            </div>
+
+            <div className="w-px h-8 bg-slate-200 mx-1 hidden sm:block"></div>
+
             <button 
             onClick={() => { setEditingTransaction(null); setIsModalOpen(true); }}
             className="flex items-center justify-center space-x-2 bg-brand-600 text-white px-5 py-2.5 rounded-lg hover:bg-brand-700 transition-colors shadow-lg shadow-brand-500/20"
@@ -183,7 +236,6 @@ const TransactionsPage: React.FC = () => {
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         {/* Filters Toolbar */}
         <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-wrap items-center gap-4">
-          {/* ... Search ... */}
           <div className="relative max-w-md flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <input 
@@ -194,7 +246,6 @@ const TransactionsPage: React.FC = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          {/* ... Month/Year Selects ... */}
           <div className="flex items-center gap-2">
              <select 
                 className="px-3 py-2 bg-white border border-slate-300 rounded-lg outline-none text-sm focus:ring-2 focus:ring-brand-500"
