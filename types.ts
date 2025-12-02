@@ -1,6 +1,6 @@
 
 export type AccountType = 'ACTIVO' | 'PASIVO';
-export type CategoryType = 'GASTO' | 'INGRESO';
+export type CategoryType = 'GASTO' | 'INGRESO' | 'TRANSFERENCIA';
 export type Currency = 'HNL' | 'USD';
 
 export interface Account {
@@ -49,6 +49,10 @@ export interface Transaction {
   accountCode: string;
   accountName: string;
   
+  // Fields for Transfers
+  destinationAccountCode?: string;
+  destinationAccountName?: string;
+
   propertyCode?: string;  
   propertyName?: string;  
   
@@ -65,8 +69,9 @@ export interface TransactionFormData {
   description: string;
   amount: number;
   type: CategoryType;
-  categoryCode: string;
+  categoryCode: string; // Optional for transfers
   accountCode: string;
+  destinationAccountCode?: string; // Required for transfers
   propertyCode?: string;
   propertyName?: string;
   loanId?: string;

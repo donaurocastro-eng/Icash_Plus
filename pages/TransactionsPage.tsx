@@ -1,5 +1,6 @@
+
 import React, { useEffect, useState, useRef } from 'react';
-import { Plus, Search, Trash2, ArrowDownCircle, ArrowUpCircle, Calendar, Tag, CreditCard, FileSpreadsheet, Upload, Edit2 } from 'lucide-react';
+import { Plus, Search, Trash2, ArrowDownCircle, ArrowUpCircle, Calendar, Tag, CreditCard, FileSpreadsheet, Upload, Edit2, ArrowRightLeft } from 'lucide-react';
 import { Transaction, TransactionFormData, Account, Category, CategoryType } from '../types';
 import { TransactionService } from '../services/transactionService';
 import { AccountService } from '../services/accountService';
@@ -218,7 +219,7 @@ const TransactionsPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Transacciones</h1>
-          <p className="text-slate-500">Registro detallado de ingresos y gastos.</p>
+          <p className="text-slate-500">Registro detallado de ingresos, gastos y transferencias.</p>
         </div>
         
         <div className="flex flex-wrap items-center gap-3">
@@ -314,10 +315,17 @@ const TransactionsPage: React.FC = () => {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <div className={`flex items-center font-bold ${tx.type === 'INGRESO' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                        {tx.type === 'INGRESO' ? <ArrowUpCircle size={14} className="mr-1.5" /> : <ArrowDownCircle size={14} className="mr-1.5" />}
-                        {formatMoney(tx.amount)}
-                      </div>
+                        {tx.type === 'TRANSFERENCIA' ? (
+                            <div className="flex items-center font-bold text-blue-600">
+                                <ArrowRightLeft size={14} className="mr-1.5" />
+                                {formatMoney(tx.amount)}
+                            </div>
+                        ) : (
+                            <div className={`flex items-center font-bold ${tx.type === 'INGRESO' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                {tx.type === 'INGRESO' ? <ArrowUpCircle size={14} className="mr-1.5" /> : <ArrowDownCircle size={14} className="mr-1.5" />}
+                                {formatMoney(tx.amount)}
+                            </div>
+                        )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-col">
@@ -327,8 +335,18 @@ const TransactionsPage: React.FC = () => {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-col">
-                        <span className="text-slate-700">{tx.accountName}</span>
-                        <span className="text-xs text-slate-400">{tx.accountCode}</span>
+                        {tx.type === 'TRANSFERENCIA' && tx.destinationAccountCode ? (
+                            <div className="flex items-center gap-1 text-xs">
+                                <span>{tx.accountName}</span>
+                                <ArrowRightLeft size={10} className="text-blue-400"/>
+                                <span className="font-bold">{tx.destinationAccountName}</span>
+                            </div>
+                        ) : (
+                            <>
+                                <span className="text-slate-700">{tx.accountName}</span>
+                                <span className="text-xs text-slate-400">{tx.accountCode}</span>
+                            </>
+                        )}
                       </div>
                     </td>
                     <td className="px-4 py-3">

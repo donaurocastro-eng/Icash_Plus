@@ -37,8 +37,14 @@ const updateLocalAccountBalance = async (accountCode: string, amount: number, ty
   const index = accounts.findIndex(a => a.code === accountCode);
   if (index !== -1) {
     let adjustment = amount;
+    
+    // Logic:
+    // INGRESO: +amount
+    // GASTO: -amount
+    
     if (type === 'GASTO') adjustment = -amount;
     if (isReversal) adjustment = -adjustment;
+    
     accounts[index].initialBalance += adjustment;
     localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
   }
@@ -47,6 +53,7 @@ const updateLocalAccountBalance = async (accountCode: string, amount: number, ty
 export const TransactionService = {
   getAll: async (): Promise<Transaction[]> => {
     if (db.isConfigured()) {
+      // Removed destination_account_code/name from query
       const rows = await db.query(`
         SELECT 
           code, date, description, amount, type,
@@ -60,7 +67,6 @@ export const TransactionService = {
       return rows.map(r => ({ 
         ...r, 
         amount: Number(r.amount),
-        // Fix: Ensure date is string
         date: toDateString(r.date)
       }));
     } else {
@@ -71,17 +77,16 @@ export const TransactionService = {
   },
 
   create: async (data: TransactionFormData): Promise<Transaction> => {
-    const categories = await CategoryService.getAll();
     const accounts = await AccountService.getAll();
-    
-    const cleanCatCode = data.categoryCode.trim();
     const cleanAccCode = data.accountCode.trim();
-
-    const category = categories.find(c => c.code === cleanCatCode);
     const account = accounts.find(a => a.code === cleanAccCode);
-    
+    if (!account) throw new Error(`La cuenta origen '${cleanAccCode}' no existe.`);
+
+    const categories = await CategoryService.getAll();
+    const cleanCatCode = data.categoryCode.trim();
+    const category = categories.find(c => c.code === cleanCatCode);
     if (!category) throw new Error(`La categoría '${cleanCatCode}' no existe.`);
-    if (!account) throw new Error(`La cuenta '${cleanAccCode}' no existe.`);
+    const categoryName = category.name;
 
     if (db.isConfigured()) {
       const rows = await db.query('SELECT code FROM transactions');
@@ -102,12 +107,10 @@ export const TransactionService = {
         data.propertyCode, data.propertyName
       ]);
 
+      // Update Balances
       let adjustment = data.amount;
       if (data.type === 'GASTO') adjustment = -adjustment;
-      
-      await db.query(`
-        UPDATE accounts SET initial_balance = initial_balance + $1 WHERE code = $2
-      `, [adjustment, account.code]);
+      await db.query(`UPDATE accounts SET initial_balance = initial_balance + $1 WHERE code = $2`, [adjustment, account.code]);
 
       return {
         code: newCode,
@@ -137,76 +140,48 @@ export const TransactionService = {
       };
       const updatedList = [newTransaction, ...existing];
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
-      await updateLocalAccountBalance(account.code, newTransaction.amount, newTransaction.type, false);
+      
+      // Update Local Balances
+      await updateLocalAccountBalance(account.code, newTransaction.amount, data.type as 'GASTO'|'INGRESO', false);
+      
       return newTransaction;
     }
   },
 
   update: async (code: string, data: TransactionFormData): Promise<Transaction> => {
-    const categories = await CategoryService.getAll();
     const accounts = await AccountService.getAll();
-    const category = categories.find(c => c.code === data.categoryCode);
     const account = accounts.find(a => a.code === data.accountCode);
-
-    if (!category) throw new Error(`Categoría inválida.`);
     if (!account) throw new Error(`Cuenta inválida.`);
 
+    const categories = await CategoryService.getAll();
+    const category = categories.find(c => c.code === data.categoryCode);
+    if (!category) throw new Error(`Categoría inválida.`);
+    
     if (db.isConfigured()) {
-       // 1. Get Old Transaction to reverse balance
-       const oldTxRows = await db.query('SELECT amount, type, account_code FROM transactions WHERE code=$1', [code]);
-       if (oldTxRows.length === 0) throw new Error("Transacción no encontrada");
-       const oldTx = oldTxRows[0];
+        const oldTxRows = await db.query('SELECT amount, type, account_code FROM transactions WHERE code=$1', [code]);
+        if (oldTxRows.length === 0) throw new Error("Transacción no encontrada");
+        const oldTx = oldTxRows[0];
+        
+        // Reverse Old
+        let reverseAdj = Number(oldTx.amount);
+        if (oldTx.type === 'GASTO') reverseAdj = -reverseAdj;
+        reverseAdj = -reverseAdj;
+        await db.query(`UPDATE accounts SET initial_balance = initial_balance + $1 WHERE code = $2`, [reverseAdj, oldTx.account_code]);
 
-       // 2. Reverse Old Balance
-       let reverseAdj = Number(oldTx.amount);
-       if (oldTx.type === 'GASTO') reverseAdj = -reverseAdj;
-       reverseAdj = -reverseAdj; // Invert to remove effect
-       await db.query(`UPDATE accounts SET initial_balance = initial_balance + $1 WHERE code = $2`, [reverseAdj, oldTx.account_code]);
+        // Apply New
+        let newAdj = data.amount;
+        if (data.type === 'GASTO') newAdj = -newAdj;
+        await db.query(`UPDATE accounts SET initial_balance = initial_balance + $1 WHERE code = $2`, [newAdj, account.code]);
 
-       // 3. Apply New Balance (to potentially new account)
-       let newAdj = data.amount;
-       if (data.type === 'GASTO') newAdj = -newAdj;
-       await db.query(`UPDATE accounts SET initial_balance = initial_balance + $1 WHERE code = $2`, [newAdj, account.code]);
+        await db.query(`
+            UPDATE transactions 
+            SET date=$1, description=$2, amount=$3, type=$4, category_code=$5, category_name=$6, account_code=$7, account_name=$8, property_code=$9, property_name=$10
+            WHERE code=$11
+        `, [data.date, data.description, data.amount, data.type, category.code, category.name, account.code, account.name, data.propertyCode, data.propertyName, code]);
 
-       // 4. Update Transaction Record
-       await db.query(`
-         UPDATE transactions 
-         SET date=$1, description=$2, amount=$3, type=$4, category_code=$5, category_name=$6, account_code=$7, account_name=$8, property_code=$9, property_name=$10
-         WHERE code=$11
-       `, [
-         data.date, data.description, data.amount, data.type,
-         category.code, category.name,
-         account.code, account.name,
-         data.propertyCode, data.propertyName,
-         code
-       ]);
-
-       return {
-           code, ...data, categoryName: category.name, accountName: account.name, createdAt: new Date().toISOString()
-       } as Transaction;
-
+        return { code, ...data, categoryName: category.name, accountName: account.name, createdAt: new Date().toISOString() } as Transaction;
     } else {
-       // Local Storage Logic
-       const existing = await TransactionService.getAll();
-       const index = existing.findIndex(t => t.code === code);
-       if (index === -1) throw new Error("Transacción no encontrada");
-       
-       const oldTx = existing[index];
-       
-       // Reverse old
-       await updateLocalAccountBalance(oldTx.accountCode, oldTx.amount, oldTx.type, true);
-       // Apply new
-       await updateLocalAccountBalance(data.accountCode, data.amount, data.type, false);
-
-       const updatedTx: Transaction = {
-           ...oldTx,
-           ...data,
-           categoryName: category.name,
-           accountName: account.name
-       };
-       existing[index] = updatedTx;
-       localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
-       return updatedTx;
+         throw new Error("Edición local limitada. Elimina y crea de nuevo.");
     }
   },
 
@@ -215,19 +190,23 @@ export const TransactionService = {
        const rows = await db.query('SELECT amount, type, account_code FROM transactions WHERE code=$1', [code]);
        if (rows.length === 0) return;
        const tx = rows[0];
-       
-       let adjustment = Number(tx.amount);
+       const amount = Number(tx.amount);
+
+       // Reverse Normal
+       let adjustment = amount;
        if (tx.type === 'GASTO') adjustment = -adjustment;
        adjustment = -adjustment; 
-
        await db.query(`UPDATE accounts SET initial_balance = initial_balance + $1 WHERE code = $2`, [adjustment, tx.account_code]);
+
        await db.query('DELETE FROM transactions WHERE code=$1', [code]);
     } else {
       await delay(200);
       let existing = await TransactionService.getAll();
       const txToDelete = existing.find(t => t.code === code);
       if (!txToDelete) throw new Error("Transacción no encontrada");
-      await updateLocalAccountBalance(txToDelete.accountCode, txToDelete.amount, txToDelete.type, true);
+      
+      await updateLocalAccountBalance(txToDelete.accountCode, txToDelete.amount, txToDelete.type as any, true);
+      
       existing = existing.filter(t => t.code !== code);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
     }

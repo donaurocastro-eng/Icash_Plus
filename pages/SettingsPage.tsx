@@ -29,7 +29,7 @@ const SettingsPage: React.FC = () => {
   const handleInitializeStepByStep = async () => {
     const currentStoredUrl = db.getUrl();
     if (!currentStoredUrl) return;
-    if (!window.confirm("Se actualizará la estructura de la base de datos (Incluyendo tablas de Préstamos). ¿Continuar?")) return;
+    if (!window.confirm("Se actualizará la estructura de la base de datos (Incluyendo soporte para Transferencias). ¿Continuar?")) return;
     
     setInitLoading(true);
     setInitLogs(["🚀 INICIANDO ACTUALIZACIÓN..."]); 
@@ -66,6 +66,10 @@ const SettingsPage: React.FC = () => {
         await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS loan_id uuid NULL;`);
         await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS loan_code text NULL;`);
         await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS payment_number integer NULL;`);
+        
+        // NEW COLUMNS FOR TRANSFERS
+        await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS destination_account_code text NULL;`);
+        await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS destination_account_name text NULL;`);
 
         // EXISTING UPDATES (Just in case)
         addLog("🛠️ Verificando servicios...");
@@ -99,7 +103,7 @@ const SettingsPage: React.FC = () => {
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="p-6">
           <h2 className="text-lg font-bold text-slate-800 mb-4">Mantenimiento Base de Datos</h2>
-          <p className="text-sm text-slate-500 mb-4">Utiliza esta opción si acabas de agregar nuevas funcionalidades (como Préstamos) y necesitas actualizar las tablas.</p>
+          <p className="text-sm text-slate-500 mb-4">Utiliza esta opción si acabas de agregar nuevas funcionalidades (como Préstamos o Transferencias) y necesitas actualizar las tablas.</p>
           
           <button 
             onClick={handleInitializeStepByStep}
