@@ -1,9 +1,11 @@
-
 import React, { useEffect, useState } from 'react';
 import { 
   Calendar, 
   Building,
-  Search
+  Search,
+  Wallet,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import { AccountService } from '../services/accountService';
 import { TransactionService } from '../services/transactionService';
@@ -12,7 +14,7 @@ import { LoanService } from '../services/loanService';
 import { Account, Transaction, Property, Loan, CategoryType } from '../types';
 import ReportDrilldownModal from '../components/ReportDrilldownModal';
 
-type ReportTab = 'BALANCE' | 'CASHFLOW' | 'BY_PROPERTY';
+type ReportTab = 'BALANCE' | 'CASHFLOW' | 'BY_PROPERTY' | 'BY_ACCOUNT';
 
 interface MonthlyStats {
     monthIndex: number;
@@ -21,6 +23,18 @@ interface MonthlyStats {
     expense: number;
     net: number;
     transactions: Transaction[];
+}
+
+interface AccountMonthlyStats {
+    accountCode: string;
+    accountName: string;
+    currency: string;
+    initialBalance: number;
+    income: number;
+    expense: number;
+    transfersIn: number;
+    transfersOut: number;
+    finalBalance: number;
 }
 
 const ReportsPage: React.FC = () => {
@@ -40,6 +54,11 @@ const ReportsPage: React.FC = () => {
 
   // Property Report State
   const [selectedPropCode, setSelectedPropCode] = useState('');
+  
+  // Account Report State (Multi-Select)
+  const [selectedAccountCodes, setSelectedAccountCodes] = useState<string[]>([]);
+
+  // Modal State
   const [viewingMonthDetails, setViewingMonthDetails] = useState<MonthlyStats | null>(null);
 
   useEffect(() => {
@@ -73,6 +92,12 @@ const ReportsPage: React.FC = () => {
     }).format(amount);
   };
 
+  const toggleAccountSelection = (code: string) => {
+      setSelectedAccountCodes(prev => 
+          prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]
+      );
+  };
+
   // --- BALANCE SHEET ---
   const calculateConsolidatedBalance = () => {
     const balance = {
@@ -82,7 +107,6 @@ const ReportsPage: React.FC = () => {
     };
 
     const processItem = (amount: number, currency: string, name: string, type: 'ACTIVO' | 'PASIVO', category: string, code: string) => {
-        // Force Number type strictly
         const numAmount = Number(amount) || 0;
         let finalAmount = numAmount;
         
@@ -92,7 +116,6 @@ const ReportsPage: React.FC = () => {
             balance.assets.total += finalAmount;
             balance.assets.details.push({ name, code, amountHNL: finalAmount, original: numAmount, currency, category });
         } else {
-            // PASIVO: Use Absolute Value for display and summation (Option B)
             const absAmount = Math.abs(finalAmount);
             const absOriginal = Math.abs(numAmount);
             
@@ -101,37 +124,24 @@ const ReportsPage: React.FC = () => {
         }
     };
 
-    // 1. Accounts
     accounts.forEach(acc => {
         processItem(acc.initialBalance, acc.currency, acc.name, acc.type, acc.type === 'ACTIVO' ? 'Activos Líquidos' : 'Pasivos Corrientes', acc.code);
     });
 
-    // 2. Properties
     properties.forEach(prop => {
         processItem(prop.value, prop.currency, prop.name, 'ACTIVO', 'Bienes Inmuebles', prop.code);
     });
 
-    // 3. Loans (Pasivos)
     loans.filter(l => !l.isArchived).forEach(loan => {
         let outstandingBalance = Number(loan.initialAmount);
-      
-        // Calculate remaining balance based on payment plan
         if (loan.paymentPlan && loan.paymentPlan.length > 0) {
-            // Sort to ensure we find the latest payment correctly
             const paidInstallments = loan.paymentPlan
                 .filter(p => p.status === 'PAID')
                 .sort((a, b) => a.paymentNumber - b.paymentNumber);
-                
             if (paidInstallments.length > 0) {
-                // The remaining balance after the last payment
-                const lastPayment = paidInstallments[paidInstallments.length - 1];
-                outstandingBalance = Number(lastPayment.remainingBalance);
+                outstandingBalance = Number(paidInstallments[paidInstallments.length - 1].remainingBalance);
             }
         }
-        
-        // Ensure we don't process negligble amounts or NaNs
-        // Loans are liabilities, so we pass them to processItem as 'PASIVO'
-        // Outstanding balance is typically positive in DB, but treated as liability magnitude
         if (!isNaN(outstandingBalance) && Math.abs(outstandingBalance) > 0.01) {
             processItem(outstandingBalance, loan.currency, `Préstamo: ${loan.lenderName}`, 'PASIVO', 'Préstamos Bancarios', loan.loanCode);
         }
@@ -170,36 +180,141 @@ const ReportsPage: React.FC = () => {
   // --- PROPERTY REPORT ---
   const calculatePropertyReport = () => {
       if (!selectedPropCode) return [];
-
       const months = Array.from({ length: 12 }, (_, i) => ({
           monthIndex: i,
           monthName: new Date(0, i).toLocaleDateString('es-ES', { month: 'long' }),
-          income: 0,
-          expense: 0,
-          net: 0,
-          transactions: [] as Transaction[]
+          income: 0, expense: 0, net: 0, transactions: [] as Transaction[]
       }));
 
       transactions.forEach(tx => {
           if (tx.propertyCode !== selectedPropCode) return;
-          
           const y = parseInt(tx.date.substring(0, 4));
           const m = parseInt(tx.date.substring(5, 7));
-          
           if (y !== selectedYear) return;
-
           const monthIdx = m - 1;
           if (monthIdx >= 0 && monthIdx < 12) {
               const amount = Number(tx.amount);
               if (tx.type === 'INGRESO') months[monthIdx].income += amount;
               else months[monthIdx].expense += amount;
-              
               months[monthIdx].transactions.push(tx);
           }
       });
-
       months.forEach(m => m.net = m.income - m.expense);
       return months;
+  };
+
+  // --- ACCOUNT REPORT ---
+  const calculateAccountReport = () => {
+      if (selectedAccountCodes.length === 0) return [];
+
+      const report: AccountMonthlyStats[] = [];
+
+      selectedAccountCodes.forEach(accCode => {
+          const acc = accounts.find(a => a.code === accCode);
+          if (!acc) return;
+
+          // 1. Calculate Movements WITHIN the month
+          const monthTx = transactions.filter(tx => {
+              const [y, m] = tx.date.split('-').map(Number);
+              return y === selectedYear && (m - 1) === selectedMonth && tx.accountCode === accCode;
+          });
+
+          // Also check transfers IN (where this account is destination)
+          // Assuming 'destinationAccountCode' exists on Transaction type now
+          // If not in type yet, we cast to any or check prop existence safely
+          const transferInTx = transactions.filter(tx => {
+              const [y, m] = tx.date.split('-').map(Number);
+              const destCode = (tx as any).destinationAccountCode; 
+              return y === selectedYear && (m - 1) === selectedMonth && destCode === accCode && tx.type === 'TRANSFERENCIA';
+          });
+
+          let income = 0;
+          let expense = 0;
+          let transfersOut = 0;
+          let transfersIn = 0;
+
+          monthTx.forEach(tx => {
+              const amt = Number(tx.amount);
+              if (tx.type === 'INGRESO') income += amt;
+              if (tx.type === 'GASTO') expense += amt;
+              if (tx.type === 'TRANSFERENCIA') transfersOut += amt; // Outgoing transfer is expense from this acc
+          });
+
+          // Logic for transfers IN depends on how we stored them.
+          // If we use the dual-transaction method (CAT-INC-007), they appear as INGRESO in monthTx above.
+          // If we use the single-transaction with destination field method (Fase 2 logic), we sum them here:
+          /* 
+             NOTE: With the latest TransactionService logic (Fase 2), transfers create TWO transactions:
+             1. GASTO (Out) from Source
+             2. INGRESO (In) to Destination
+             So standard filtering of 'monthTx' above ALREADY catches both sides as simple Income/Expense!
+             We don't need special transfer logic here if the service creates 2 records.
+             
+             HOWEVER, if you want to distinguish "Transfer" from "Income", we check category codes.
+          */
+          
+          let realIncome = 0;
+          let realExpense = 0;
+          
+          monthTx.forEach(tx => {
+              const amt = Number(tx.amount);
+              // Identify Transfers by Category Code logic we agreed on
+              if (tx.categoryCode === 'CAT-EXP-013') transfersOut += amt;
+              else if (tx.categoryCode === 'CAT-INC-007') transfersIn += amt;
+              else if (tx.type === 'INGRESO') realIncome += amt;
+              else if (tx.type === 'GASTO') realExpense += amt;
+          });
+
+          // 2. Calculate Initial Balance of the Month
+          // Current Balance (DB) is the balance RIGHT NOW.
+          // We need to reverse all transactions from NOW back to Start of Month.
+          
+          let calculatedInitial = acc.initialBalance; // Start with current balance
+          
+          // Filter ALL transactions that happened AFTER the start of selected month
+          const startOfSelectMonth = new Date(selectedYear, selectedMonth, 1);
+          const futureTx = transactions.filter(tx => {
+              const txDate = new Date(tx.date);
+              return txDate >= startOfSelectMonth && (tx.accountCode === accCode || (tx as any).destinationAccountCode === accCode);
+          });
+
+          // Reverse them to find initial
+          futureTx.forEach(tx => {
+              const amt = Number(tx.amount);
+              // If it ADDED to account, we SUBTRACT. If it REMOVED, we ADD.
+              
+              if (tx.accountCode === accCode) {
+                  // It was source/primary
+                  if (tx.type === 'INGRESO') calculatedInitial -= amt; // Reverse income
+                  if (tx.type === 'GASTO') calculatedInitial += amt; // Reverse expense
+                  // If it was transfer out (created as Gasto or Transfer type)
+                  if (tx.type === 'TRANSFERENCIA') calculatedInitial += amt; 
+              }
+              
+              // If dual transaction system is used, the above covers it all (as Ingreso/Gasto).
+              // If single transaction system is used:
+              // if ((tx as any).destinationAccountCode === accCode && tx.type === 'TRANSFERENCIA') {
+              //    calculatedInitial -= amt; // Reverse transfer in
+              // }
+          });
+
+          // 3. Final Balance of Month = Initial + Income - Expense
+          const finalBal = calculatedInitial + realIncome - realExpense - transfersOut + transfersIn;
+
+          report.push({
+              accountCode: accCode,
+              accountName: acc.name,
+              currency: acc.currency,
+              initialBalance: calculatedInitial,
+              income: realIncome,
+              expense: realExpense,
+              transfersIn,
+              transfersOut,
+              finalBalance: finalBal
+          });
+      });
+
+      return report;
   };
 
   if (loading) return <div className="flex justify-center items-center h-full"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600"></div></div>;
@@ -207,18 +322,27 @@ const ReportsPage: React.FC = () => {
   const balance = calculateConsolidatedBalance();
   const cashflow = calculateCashflow();
   const propertyReport = calculatePropertyReport();
+  const accountReport = calculateAccountReport();
+  
   const selectedPropName = properties.find(p => p.code === selectedPropCode)?.name || 'Seleccionar Propiedad';
-
   const liquidAssets = balance.assets.details.filter(d => d.category === 'Activos Líquidos');
   const realEstateAssets = balance.assets.details.filter(d => d.category === 'Bienes Inmuebles');
   const loansLiabilities = balance.liabilities.details.filter(d => d.category === 'Préstamos Bancarios');
   const otherLiabilities = balance.liabilities.details.filter(d => d.category !== 'Préstamos Bancarios');
-
   const totalLoansHNL = loansLiabilities.reduce((sum, item) => sum + item.amountHNL, 0);
+
+  // Totals for Account Report
+  const totalAccountReport = {
+      initial: accountReport.reduce((sum, r) => sum + (r.currency === 'USD' ? r.initialBalance * exchangeRate : r.initialBalance), 0),
+      income: accountReport.reduce((sum, r) => sum + (r.currency === 'USD' ? r.income * exchangeRate : r.income), 0),
+      expense: accountReport.reduce((sum, r) => sum + (r.currency === 'USD' ? r.expense * exchangeRate : r.expense), 0),
+      transfersIn: accountReport.reduce((sum, r) => sum + (r.currency === 'USD' ? r.transfersIn * exchangeRate : r.transfersIn), 0),
+      transfersOut: accountReport.reduce((sum, r) => sum + (r.currency === 'USD' ? r.transfersOut * exchangeRate : r.transfersOut), 0),
+      final: accountReport.reduce((sum, r) => sum + (r.currency === 'USD' ? r.finalBalance * exchangeRate : r.finalBalance), 0),
+  };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <h1 className="text-2xl font-bold text-slate-800">Reportes Financieros</h1>
         
@@ -226,24 +350,16 @@ const ReportsPage: React.FC = () => {
             {activeTab === 'BALANCE' && (
                 <div className="flex items-center bg-slate-800 text-white px-3 py-1.5 rounded-lg shadow-md border border-slate-600">
                     <span className="text-xs text-slate-300 mr-2 font-medium">Tasa Dólar:</span>
-                    <input 
-                        type="number" step="0.01"
-                        className="w-16 bg-transparent text-right font-mono font-bold outline-none border-b border-slate-500 focus:border-brand-400"
-                        value={exchangeRate} onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 0)}
-                    />
+                    <input type="number" step="0.01" className="w-16 bg-transparent text-right font-mono font-bold outline-none border-b border-slate-500 focus:border-brand-400"
+                        value={exchangeRate} onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 0)} />
                 </div>
             )}
 
             <div className="flex bg-white p-1 rounded-lg border border-slate-200 shadow-sm overflow-x-auto">
-                <button onClick={() => setActiveTab('BALANCE')} className={`whitespace-nowrap px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'BALANCE' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
-                    Balance General
-                </button>
-                <button onClick={() => setActiveTab('CASHFLOW')} className={`whitespace-nowrap px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'CASHFLOW' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
-                    Flujo Mensual
-                </button>
-                <button onClick={() => setActiveTab('BY_PROPERTY')} className={`whitespace-nowrap px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'BY_PROPERTY' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
-                    Por Propiedad
-                </button>
+                <button onClick={() => setActiveTab('BALANCE')} className={`whitespace-nowrap px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'BALANCE' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>Balance General</button>
+                <button onClick={() => setActiveTab('CASHFLOW')} className={`whitespace-nowrap px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'CASHFLOW' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>Flujo Mensual</button>
+                <button onClick={() => setActiveTab('BY_PROPERTY')} className={`whitespace-nowrap px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'BY_PROPERTY' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>Por Propiedad</button>
+                <button onClick={() => setActiveTab('BY_ACCOUNT')} className={`whitespace-nowrap px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'BY_ACCOUNT' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>Por Cuenta</button>
             </div>
         </div>
       </div>
@@ -253,88 +369,32 @@ const ReportsPage: React.FC = () => {
         <div className="bg-slate-900 rounded-2xl shadow-xl border border-slate-800 overflow-hidden text-slate-100 p-6">
             <h2 className="text-xl font-bold mb-6">Balance General (Consolidado en Lempiras)</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* LEFT COLUMN: ASSETS */}
                 <div className="space-y-6">
-                    <div className="flex justify-between items-center border-b border-indigo-500/50 pb-2">
-                        <h3 className="font-bold text-indigo-400 text-lg">Activos (lo que posees)</h3>
-                    </div>
+                    <div className="flex justify-between items-center border-b border-indigo-500/50 pb-2"><h3 className="font-bold text-indigo-400 text-lg">Activos</h3></div>
                     <div>
-                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Activos Líquidos / Cuentas</h4>
-                        <div className="space-y-2">
-                            {liquidAssets.map((item, i) => (
-                                <div key={i} className="flex justify-between text-sm hover:bg-slate-800/50 p-1 rounded transition-colors">
-                                    <span className="text-slate-300">[{item.code}] {item.name} {item.currency === 'USD' && <span className="text-xs text-emerald-500 ml-1">(USD)</span>}</span>
-                                    <span className="font-mono text-slate-100">{formatMoney(item.amountHNL)}</span>
-                                </div>
-                            ))}
-                        </div>
+                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Activos Líquidos</h4>
+                        <div className="space-y-2">{liquidAssets.map((item, i) => (<div key={i} className="flex justify-between text-sm hover:bg-slate-800/50 p-1 rounded transition-colors"><span className="text-slate-300">{item.name} {item.currency === 'USD' && <span className="text-xs text-emerald-500 ml-1">(USD)</span>}</span><span className="font-mono text-slate-100">{formatMoney(item.amountHNL)}</span></div>))}</div>
                     </div>
                     <div>
                         <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 mt-4">Bienes Inmuebles</h4>
-                        <div className="space-y-2">
-                            {realEstateAssets.map((item, i) => (
-                                <div key={i} className="flex justify-between text-sm hover:bg-slate-800/50 p-1 rounded transition-colors">
-                                    <span className="text-slate-300">[{item.code}] {item.name} {item.currency === 'USD' && <span className="text-xs text-emerald-500 ml-1">(USD)</span>}</span>
-                                    <span className="font-mono text-slate-100">{formatMoney(item.amountHNL)}</span>
-                                </div>
-                            ))}
-                        </div>
+                        <div className="space-y-2">{realEstateAssets.map((item, i) => (<div key={i} className="flex justify-between text-sm hover:bg-slate-800/50 p-1 rounded transition-colors"><span className="text-slate-300">{item.name} {item.currency === 'USD' && <span className="text-xs text-emerald-500 ml-1">(USD)</span>}</span><span className="font-mono text-slate-100">{formatMoney(item.amountHNL)}</span></div>))}</div>
                     </div>
-                    <div className="pt-4 border-t border-slate-700 flex justify-between items-end mt-4">
-                        <span className="text-slate-400 font-bold">TOTAL ACTIVOS</span>
-                        <span className="text-2xl font-bold text-emerald-400">{formatMoney(balance.assets.total)}</span>
-                    </div>
+                    <div className="pt-4 border-t border-slate-700 flex justify-between items-end mt-4"><span className="text-slate-400 font-bold">TOTAL ACTIVOS</span><span className="text-2xl font-bold text-emerald-400">{formatMoney(balance.assets.total)}</span></div>
                 </div>
-                {/* RIGHT COLUMN: LIABILITIES */}
                 <div className="space-y-6">
-                    <div className="flex justify-between items-center border-b border-rose-500/50 pb-2">
-                        <h3 className="font-bold text-rose-400 text-lg">Pasivos (lo que debes)</h3>
-                    </div>
+                    <div className="flex justify-between items-center border-b border-rose-500/50 pb-2"><h3 className="font-bold text-rose-400 text-lg">Pasivos</h3></div>
                      <div>
                         <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Préstamos Bancarios</h4>
-                        <div className="space-y-2">
-                            {loansLiabilities.map((item, i) => (
-                                <div key={i} className="flex justify-between text-sm hover:bg-slate-800/50 p-1 rounded transition-colors">
-                                    <span className="text-slate-300">{item.name} {item.currency === 'USD' && <span className="text-xs text-emerald-500 ml-1">(USD)</span>}</span>
-                                    <span className="font-mono text-slate-100">{formatMoney(item.amountHNL)}</span>
-                                </div>
-                            ))}
-                            {loansLiabilities.length > 0 && (
-                                <div className="flex justify-between text-sm pt-2 mt-2 border-t border-slate-800">
-                                    <span className="text-rose-400 font-bold italic">Subtotal Préstamos</span>
-                                    <span className="font-mono font-bold text-rose-400">{formatMoney(totalLoansHNL)}</span>
-                                </div>
-                            )}
-                            {loansLiabilities.length === 0 && <p className="text-slate-600 italic text-sm">Sin préstamos activos</p>}
+                        <div className="space-y-2">{loansLiabilities.map((item, i) => (<div key={i} className="flex justify-between text-sm hover:bg-slate-800/50 p-1 rounded transition-colors"><span className="text-slate-300">{item.name}</span><span className="font-mono text-slate-100">{formatMoney(item.amountHNL)}</span></div>))}
+                            {loansLiabilities.length > 0 && (<div className="flex justify-between text-sm pt-2 mt-2 border-t border-slate-800"><span className="text-rose-400 font-bold italic">Subtotal Préstamos</span><span className="font-mono font-bold text-rose-400">{formatMoney(totalLoansHNL)}</span></div>)}
                         </div>
                     </div>
                      <div>
-                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 mt-4">Otras Deudas (Tarjetas, etc.)</h4>
-                        <div className="space-y-2">
-                            {otherLiabilities.map((item, i) => (
-                                <div key={i} className="flex justify-between text-sm hover:bg-slate-800/50 p-1 rounded transition-colors">
-                                    <span className="text-slate-300">[{item.code}] {item.name} {item.currency === 'USD' && <span className="text-xs text-emerald-500 ml-1">(USD)</span>}</span>
-                                    <span className="font-mono text-slate-100">{formatMoney(item.amountHNL)}</span>
-                                </div>
-                            ))}
-                            {otherLiabilities.length === 0 && <p className="text-slate-600 italic text-sm">Sin otras deudas</p>}
-                        </div>
+                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 mt-4">Otras Deudas</h4>
+                        <div className="space-y-2">{otherLiabilities.map((item, i) => (<div key={i} className="flex justify-between text-sm hover:bg-slate-800/50 p-1 rounded transition-colors"><span className="text-slate-300">{item.name} {item.currency === 'USD' && <span className="text-xs text-emerald-500 ml-1">(USD)</span>}</span><span className="font-mono text-slate-100">{formatMoney(item.amountHNL)}</span></div>))}</div>
                     </div>
-                    <div className="pt-4 border-t border-slate-700 flex justify-between items-end mt-4">
-                        <span className="text-slate-400 font-bold">TOTAL PASIVOS</span>
-                        <span className="text-2xl font-bold text-rose-400">{formatMoney(balance.liabilities.total)}</span>
-                    </div>
-                    <div className="mt-12 bg-slate-800/50 p-6 rounded-xl border border-slate-700">
-                        <div className="flex justify-between items-center">
-                            <div>
-                                <p className="text-slate-400 text-sm uppercase tracking-wider font-bold">Patrimonio Neto</p>
-                                <p className="text-xs text-slate-500">(Activos - Pasivos)</p>
-                            </div>
-                            <div className="text-right">
-                                <p className="text-3xl font-bold text-white">{formatMoney(balance.equity)}</p>
-                            </div>
-                        </div>
-                    </div>
+                    <div className="pt-4 border-t border-slate-700 flex justify-between items-end mt-4"><span className="text-slate-400 font-bold">TOTAL PASIVOS</span><span className="text-2xl font-bold text-rose-400">{formatMoney(balance.liabilities.total)}</span></div>
+                    <div className="mt-12 bg-slate-800/50 p-6 rounded-xl border border-slate-700"><div className="flex justify-between items-center"><div><p className="text-slate-400 text-sm uppercase tracking-wider font-bold">Patrimonio Neto</p></div><div className="text-right"><p className="text-3xl font-bold text-white">{formatMoney(balance.equity)}</p></div></div></div>
                 </div>
             </div>
         </div>
@@ -344,84 +404,23 @@ const ReportsPage: React.FC = () => {
       {activeTab === 'CASHFLOW' && (
         <div className="space-y-6">
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap gap-4 items-center">
-                <div className="flex items-center gap-2 text-slate-600">
-                    <Calendar size={20} />
-                    <span className="font-medium text-sm">Periodo:</span>
-                </div>
-                <select 
-                    className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-sm"
-                    value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-                >
-                    {Array.from({length: 12}, (_, i) => (
-                        <option key={i} value={i}>{new Date(0, i).toLocaleDateString('es-ES', {month: 'long'}).toUpperCase()}</option>
-                    ))}
+                <div className="flex items-center gap-2 text-slate-600"><Calendar size={20} /><span className="font-medium text-sm">Periodo:</span></div>
+                <select className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-sm" value={selectedMonth} onChange={(e) => setSelectedMonth(parseInt(e.target.value))}>
+                    {Array.from({length: 12}, (_, i) => (<option key={i} value={i}>{new Date(0, i).toLocaleDateString('es-ES', {month: 'long'}).toUpperCase()}</option>))}
                 </select>
-                <select 
-                    className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-sm"
-                    value={selectedYear}
-                    onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-                >
+                <select className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-sm" value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))}>
                     {[2023, 2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
                 </select>
             </div>
-
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-emerald-50 p-5 rounded-xl border border-emerald-100">
-                    <p className="text-emerald-600 font-medium text-sm mb-1">Ingresos Totales</p>
-                    <p className="text-2xl font-bold text-emerald-800">{formatMoney(cashflow.totalIncome)}</p>
-                </div>
-                <div className="bg-rose-50 p-5 rounded-xl border border-rose-100">
-                    <p className="text-rose-600 font-medium text-sm mb-1">Gastos Totales</p>
-                    <p className="text-2xl font-bold text-rose-800">{formatMoney(cashflow.totalExpense)}</p>
-                </div>
-                <div className={`p-5 rounded-xl border ${cashflow.net >= 0 ? 'bg-blue-50 border-blue-100' : 'bg-orange-50 border-orange-100'}`}>
-                    <p className={`font-medium text-sm mb-1 ${cashflow.net >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>Flujo Neto</p>
-                    <p className={`text-2xl font-bold ${cashflow.net >= 0 ? 'text-blue-800' : 'text-orange-800'}`}>{formatMoney(cashflow.net)}</p>
-                </div>
+                <div className="bg-emerald-50 p-5 rounded-xl border border-emerald-100"><p className="text-emerald-600 font-medium text-sm mb-1">Ingresos</p><p className="text-2xl font-bold text-emerald-800">{formatMoney(cashflow.totalIncome)}</p></div>
+                <div className="bg-rose-50 p-5 rounded-xl border border-rose-100"><p className="text-rose-600 font-medium text-sm mb-1">Gastos</p><p className="text-2xl font-bold text-rose-800">{formatMoney(cashflow.totalExpense)}</p></div>
+                <div className={`p-5 rounded-xl border ${cashflow.net >= 0 ? 'bg-blue-50 border-blue-100' : 'bg-orange-50 border-orange-100'}`}><p className={`font-medium text-sm mb-1 ${cashflow.net >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>Neto</p><p className={`text-2xl font-bold ${cashflow.net >= 0 ? 'text-blue-800' : 'text-orange-800'}`}>{formatMoney(cashflow.net)}</p></div>
             </div>
-
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-100">
-                    <h3 className="font-bold text-slate-800">Detalle por Categoría</h3>
-                </div>
-                <table className="w-full text-sm text-left">
-                    <thead className="bg-slate-50 text-slate-500 font-medium">
-                        <tr>
-                            <th className="px-6 py-3">Categoría</th>
-                            <th className="px-6 py-3">Tipo</th>
-                            <th className="px-6 py-3 text-right">Monto</th>
-                            <th className="px-6 py-3 text-right">% del Total</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                        {cashflow.breakdown.map((cat, idx) => {
-                             const totalBase = cat.type === 'INGRESO' ? cashflow.totalIncome : cashflow.totalExpense;
-                             const percentage = totalBase > 0 ? (cat.amount / totalBase) * 100 : 0;
-                             return (
-                                <tr key={idx} className="hover:bg-slate-50">
-                                    <td className="px-6 py-3 font-medium text-slate-700">{cat.name}</td>
-                                    <td className="px-6 py-3">
-                                        <span className={`px-2 py-1 rounded text-xs font-bold ${cat.type === 'INGRESO' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                                            {cat.type}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-3 text-right font-bold text-slate-700">{formatMoney(cat.amount)}</td>
-                                    <td className="px-6 py-3 text-right text-slate-500">
-                                        <div className="flex items-center justify-end gap-2">
-                                            <span className="text-xs">{percentage.toFixed(1)}%</span>
-                                            <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                                <div className={`h-full ${cat.type === 'INGRESO' ? 'bg-emerald-500' : 'bg-rose-500'}`} style={{ width: `${percentage}%` }}></div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                </tr>
-                             );
-                        })}
-                        {cashflow.breakdown.length === 0 && (
-                            <tr><td colSpan={4} className="p-8 text-center text-slate-400">No hay movimientos en este periodo</td></tr>
-                        )}
-                    </tbody>
+                <div className="px-6 py-4 border-b border-slate-100"><h3 className="font-bold text-slate-800">Detalle</h3></div>
+                <table className="w-full text-sm text-left"><thead className="bg-slate-50 text-slate-500 font-medium"><tr><th className="px-6 py-3">Categoría</th><th className="px-6 py-3">Tipo</th><th className="px-6 py-3 text-right">Monto</th></tr></thead>
+                    <tbody className="divide-y divide-slate-100">{cashflow.breakdown.map((cat, idx) => (<tr key={idx} className="hover:bg-slate-50"><td className="px-6 py-3 font-medium text-slate-700">{cat.name}</td><td className="px-6 py-3"><span className={`px-2 py-1 rounded text-xs font-bold ${cat.type === 'INGRESO' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{cat.type}</span></td><td className="px-6 py-3 text-right font-bold text-slate-700">{formatMoney(cat.amount)}</td></tr>))}</tbody>
                 </table>
             </div>
         </div>
@@ -430,104 +429,114 @@ const ReportsPage: React.FC = () => {
       {/* --- PROPERTY REPORT TAB --- */}
       {activeTab === 'BY_PROPERTY' && (
         <div className="space-y-6">
-             {/* Filters */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap gap-4 items-center">
-                <div className="flex items-center gap-2 text-slate-600">
-                    <Building size={20} />
-                    <span className="font-medium text-sm">Propiedad:</span>
-                </div>
-                <select 
-                    className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-sm"
-                    value={selectedPropCode}
-                    onChange={(e) => setSelectedPropCode(e.target.value)}
-                >
-                    <option value="">Seleccionar...</option>
-                    {properties.map(p => (
-                        <option key={p.code} value={p.code}>{p.name}</option>
-                    ))}
+                <div className="flex items-center gap-2 text-slate-600"><Building size={20} /><span className="font-medium text-sm">Propiedad:</span></div>
+                <select className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-sm" value={selectedPropCode} onChange={(e) => setSelectedPropCode(e.target.value)}>
+                    <option value="">Seleccionar...</option>{properties.map(p => (<option key={p.code} value={p.code}>{p.name}</option>))}
                 </select>
-
-                <div className="flex items-center gap-2 text-slate-600 ml-4">
-                    <Calendar size={20} />
-                    <span className="font-medium text-sm">Año:</span>
-                </div>
-                <select 
-                    className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-sm"
-                    value={selectedYear}
-                    onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-                >
-                    {[2023, 2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
-                </select>
+                <div className="flex items-center gap-2 text-slate-600 ml-4"><Calendar size={20} /><span className="font-medium text-sm">Año:</span></div>
+                <select className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-sm" value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))}>{[2023, 2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}</select>
             </div>
-
-            {/* Results Table */}
             {selectedPropCode ? (
                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                    <div className="px-6 py-4 border-b border-slate-100 bg-indigo-50 flex justify-between">
-                        <h3 className="font-bold text-indigo-900">Reporte Anual: {selectedPropName}</h3>
-                        <span className="font-mono text-indigo-600 font-bold">{selectedYear}</span>
-                    </div>
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-slate-50 text-slate-500 font-medium">
-                            <tr>
-                                <th className="px-6 py-3">Mes</th>
-                                <th className="px-6 py-3 text-right text-emerald-600">Ingresos</th>
-                                <th className="px-6 py-3 text-right text-rose-600">Gastos</th>
-                                <th className="px-6 py-3 text-right text-blue-600">Neto</th>
-                                <th className="px-6 py-3 text-center">Detalle</th>
-                            </tr>
-                        </thead>
+                    <div className="px-6 py-4 border-b border-slate-100 bg-indigo-50 flex justify-between"><h3 className="font-bold text-indigo-900">Reporte Anual: {selectedPropName}</h3><span className="font-mono text-indigo-600 font-bold">{selectedYear}</span></div>
+                    <table className="w-full text-sm text-left"><thead className="bg-slate-50 text-slate-500 font-medium"><tr><th className="px-6 py-3">Mes</th><th className="px-6 py-3 text-right text-emerald-600">Ingresos</th><th className="px-6 py-3 text-right text-rose-600">Gastos</th><th className="px-6 py-3 text-right text-blue-600">Neto</th><th className="px-6 py-3 text-center">Detalle</th></tr></thead>
                         <tbody className="divide-y divide-slate-100">
-                            {propertyReport.map((m) => (
-                                <tr key={m.monthIndex} className="hover:bg-slate-50">
-                                    <td className="px-6 py-3 font-medium text-slate-700 capitalize">{m.monthName}</td>
-                                    <td className="px-6 py-3 text-right font-mono text-emerald-600">{m.income > 0 ? formatMoney(m.income) : '-'}</td>
-                                    <td className="px-6 py-3 text-right font-mono text-rose-600">{m.expense > 0 ? formatMoney(m.expense) : '-'}</td>
-                                    <td className="px-6 py-3 text-right font-bold font-mono text-slate-800">{formatMoney(m.net)}</td>
-                                    <td className="px-6 py-3 text-center">
-                                        <button 
-                                            onClick={() => setViewingMonthDetails(m)}
-                                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors disabled:opacity-20"
-                                            disabled={m.transactions.length === 0}
-                                            title="Ver Transacciones"
-                                        >
-                                            <Search size={16} />
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
-                            {/* Footer Totals */}
-                            <tr className="bg-slate-50 font-bold">
-                                <td className="px-6 py-3 text-slate-700">TOTAL ANUAL</td>
-                                <td className="px-6 py-3 text-right text-emerald-700">
-                                    {formatMoney(propertyReport.reduce((sum, m) => sum + m.income, 0))}
-                                </td>
-                                <td className="px-6 py-3 text-right text-rose-700">
-                                    {formatMoney(propertyReport.reduce((sum, m) => sum + m.expense, 0))}
-                                </td>
-                                <td className="px-6 py-3 text-right text-blue-800">
-                                    {formatMoney(propertyReport.reduce((sum, m) => sum + m.net, 0))}
-                                </td>
-                                <td></td>
-                            </tr>
+                            {propertyReport.map((m) => (<tr key={m.monthIndex} className="hover:bg-slate-50"><td className="px-6 py-3 font-medium text-slate-700 capitalize">{m.monthName}</td><td className="px-6 py-3 text-right font-mono text-emerald-600">{m.income > 0 ? formatMoney(m.income) : '-'}</td><td className="px-6 py-3 text-right font-mono text-rose-600">{m.expense > 0 ? formatMoney(m.expense) : '-'}</td><td className="px-6 py-3 text-right font-bold font-mono text-slate-800">{formatMoney(m.net)}</td><td className="px-6 py-3 text-center"><button onClick={() => setViewingMonthDetails(m)} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors disabled:opacity-20" disabled={m.transactions.length === 0} title="Ver Transacciones"><Search size={16} /></button></td></tr>))}
+                            <tr className="bg-slate-50 font-bold"><td className="px-6 py-3 text-slate-700">TOTAL ANUAL</td><td className="px-6 py-3 text-right text-emerald-700">{formatMoney(propertyReport.reduce((sum, m) => sum + m.income, 0))}</td><td className="px-6 py-3 text-right text-rose-700">{formatMoney(propertyReport.reduce((sum, m) => sum + m.expense, 0))}</td><td className="px-6 py-3 text-right text-blue-800">{formatMoney(propertyReport.reduce((sum, m) => sum + m.net, 0))}</td><td></td></tr>
                         </tbody>
                     </table>
                  </div>
+            ) : (<div className="text-center p-12 bg-slate-50 rounded-xl border border-slate-200 border-dashed"><Building size={48} className="text-slate-300 mx-auto mb-3" /><p className="text-slate-500">Selecciona una propiedad.</p></div>)}
+        </div>
+      )}
+
+      {/* --- ACCOUNT REPORT TAB --- */}
+      {activeTab === 'BY_ACCOUNT' && (
+        <div className="space-y-6">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <div className="flex flex-wrap gap-4 items-center mb-4">
+                    <div className="flex items-center gap-2 text-slate-600"><Calendar size={20} /><span className="font-medium text-sm">Periodo:</span></div>
+                    <select className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-sm" value={selectedMonth} onChange={(e) => setSelectedMonth(parseInt(e.target.value))}>
+                        {Array.from({length: 12}, (_, i) => (<option key={i} value={i}>{new Date(0, i).toLocaleDateString('es-ES', {month: 'long'}).toUpperCase()}</option>))}
+                    </select>
+                    <select className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-sm" value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))}>
+                        {[2023, 2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                </div>
+                <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-slate-600 mb-2"><Wallet size={20} /><span className="font-medium text-sm">Selecciona Cuentas:</span></div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-40 overflow-y-auto p-2 border rounded-lg bg-slate-50">
+                        {accounts.map(acc => (
+                            <button 
+                                key={acc.code} 
+                                onClick={() => toggleAccountSelection(acc.code)}
+                                className={`flex items-center gap-2 px-3 py-2 rounded-md text-xs text-left transition-colors border ${
+                                    selectedAccountCodes.includes(acc.code) 
+                                    ? 'bg-indigo-50 border-indigo-200 text-indigo-700' 
+                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-white'
+                                }`}
+                            >
+                                {selectedAccountCodes.includes(acc.code) ? <CheckSquare size={16} className="text-indigo-600"/> : <Square size={16} className="text-slate-300"/>}
+                                <span className="truncate">{acc.name} ({acc.currency})</span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            {selectedAccountCodes.length > 0 ? (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left">
+                            <thead className="bg-slate-50 text-slate-500 font-medium text-xs uppercase">
+                                <tr>
+                                    <th className="px-4 py-3">Cuenta</th>
+                                    <th className="px-4 py-3 text-right">Saldo Inicial</th>
+                                    <th className="px-4 py-3 text-right text-emerald-600">Ingresos</th>
+                                    <th className="px-4 py-3 text-right text-rose-600">Gastos</th>
+                                    <th className="px-4 py-3 text-center text-blue-600">Transferencias (Neto)</th>
+                                    <th className="px-4 py-3 text-right font-bold">Saldo Final</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {accountReport.map(row => (
+                                    <tr key={row.accountCode} className="hover:bg-slate-50">
+                                        <td className="px-4 py-3 font-medium text-slate-700">{row.accountName} <span className="text-xs text-slate-400 font-normal">({row.currency})</span></td>
+                                        <td className="px-4 py-3 text-right font-mono">{formatMoney(row.initialBalance, row.currency as any)}</td>
+                                        <td className="px-4 py-3 text-right font-mono text-emerald-600">{formatMoney(row.income, row.currency as any)}</td>
+                                        <td className="px-4 py-3 text-right font-mono text-rose-600">{formatMoney(row.expense, row.currency as any)}</td>
+                                        <td className="px-4 py-3 text-center font-mono text-blue-600">
+                                            {formatMoney(row.transfersIn - row.transfersOut, row.currency as any)}
+                                            <div className="text-[10px] text-slate-400">
+                                                (Ent: {formatMoney(row.transfersIn, row.currency as any)} / Sal: {formatMoney(row.transfersOut, row.currency as any)})
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-3 text-right font-mono font-bold bg-slate-50/50">{formatMoney(row.finalBalance, row.currency as any)}</td>
+                                    </tr>
+                                ))}
+                                <tr className="bg-slate-100 border-t-2 border-slate-200 font-bold text-slate-800">
+                                    <td className="px-4 py-3">TOTAL CONSOLIDADO (HNL)</td>
+                                    <td className="px-4 py-3 text-right">{formatMoney(totalAccountReport.initial)}</td>
+                                    <td className="px-4 py-3 text-right text-emerald-700">{formatMoney(totalAccountReport.income)}</td>
+                                    <td className="px-4 py-3 text-right text-rose-700">{formatMoney(totalAccountReport.expense)}</td>
+                                    <td className="px-4 py-3 text-center text-blue-800">{formatMoney(totalAccountReport.transfersIn - totalAccountReport.transfersOut)}</td>
+                                    <td className="px-4 py-3 text-right">{formatMoney(totalAccountReport.final)}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             ) : (
                 <div className="text-center p-12 bg-slate-50 rounded-xl border border-slate-200 border-dashed">
-                    <Building size={48} className="text-slate-300 mx-auto mb-3" />
-                    <p className="text-slate-500">Selecciona una propiedad para ver el reporte.</p>
+                    <Wallet size={48} className="text-slate-300 mx-auto mb-3" />
+                    <p className="text-slate-500">Selecciona una o más cuentas para ver su reporte.</p>
                 </div>
             )}
         </div>
       )}
       
-      <ReportDrilldownModal 
-        isOpen={!!viewingMonthDetails}
-        onClose={() => setViewingMonthDetails(null)}
-        title={viewingMonthDetails ? `Detalle: ${viewingMonthDetails.monthName} ${selectedYear} - ${selectedPropName}` : ''}
-        transactions={viewingMonthDetails?.transactions || []}
-      />
+      <ReportDrilldownModal isOpen={!!viewingMonthDetails} onClose={() => setViewingMonthDetails(null)} title={viewingMonthDetails ? `Detalle: ${viewingMonthDetails.monthName} ${selectedYear} - ${selectedPropName}` : ''} transactions={viewingMonthDetails?.transactions || []} />
     </div>
   );
 };
