@@ -151,12 +151,25 @@ const RealEstatePage: React.FC = () => {
       window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
-  // Excel Logic (Truncated for brevity, kept essential)
+  // --- Excel Logic ---
   const handleDownloadTemplate = async () => {
-    // ... Existing implementation remains
     const wb = XLSX.utils.book_new();
-    // ...
-    XLSX.writeFile(wb, `plantilla_datos.xlsx`);
+    
+    if (activeTab === 'SERVICES') {
+        const headers = ['Propiedad_Codigo', 'Nombre_Servicio', 'Costo_Estimado', 'Categoria_Gasto_Codigo', 'Cuenta_Pago_Codigo', 'Activo (SI/NO)'];
+        const example = ['AP-001', 'Agua Potable', 500, 'CAT-EXP-001', 'CTA-001', 'SI'];
+        const ws = XLSX.utils.aoa_to_sheet([headers, example]);
+        XLSX.utils.book_append_sheet(wb, ws, "Servicios");
+        XLSX.writeFile(wb, "plantilla_servicios.xlsx");
+        return;
+    }
+
+    // Default template for other tabs (Properties, Units, etc. can be added similarly)
+    const headers = ['Nombre', 'Valor', 'Moneda (HNL/USD)'];
+    const example = ['Edificio Central', 5000000, 'HNL'];
+    const ws = XLSX.utils.aoa_to_sheet([headers, example]);
+    XLSX.utils.book_append_sheet(wb, ws, "Propiedades");
+    XLSX.writeFile(wb, `plantilla_bienes_raices.xlsx`);
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -165,7 +178,60 @@ const RealEstatePage: React.FC = () => {
   };
 
   const processExcelFile = async (file: File) => {
-    // ... Existing implementation remains
+    setIsImporting(true);
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        try {
+            const data = e.target?.result;
+            const wb = XLSX.read(data, { type: 'binary' });
+            const json = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) as any[];
+            if (json.length === 0) { alert("Archivo vacío"); return; }
+
+            let success = 0, errors = 0;
+
+            if (activeTab === 'SERVICES') {
+                for (const row of json) {
+                    try {
+                        const propCode = row['Propiedad_Codigo'] || row['propiedad'];
+                        const name = row['Nombre_Servicio'] || row['nombre'];
+                        const amount = parseFloat(row['Costo_Estimado'] || row['costo']);
+                        const catCode = row['Categoria_Gasto_Codigo'] || row['categoria'];
+                        const accCode = row['Cuenta_Pago_Codigo'] || row['cuenta'];
+                        const activeStr = row['Activo (SI/NO)'] || 'SI';
+                        
+                        if (!propCode || !name) { errors++; continue; }
+
+                        await ServiceItemService.create({
+                            propertyCode: String(propCode),
+                            name: String(name),
+                            defaultAmount: amount || 0,
+                            defaultCategoryCode: catCode ? String(catCode) : undefined,
+                            defaultAccountCode: accCode ? String(accCode) : undefined,
+                            active: activeStr.toString().toUpperCase() === 'SI'
+                        });
+                        success++;
+                    } catch (err) { console.error(err); errors++; }
+                }
+            } else {
+                // Default Import Logic (Properties)
+                for (const row of json) {
+                    try {
+                        const name = row['Nombre'] || row['nombre'];
+                        const val = parseFloat(row['Valor'] || 0);
+                        const curr = row['Moneda (HNL/USD)'] || 'HNL';
+                        if (!name) continue;
+                        await PropertyService.create({ name: String(name), value: val, currency: curr as any, cadastralKey: '', annualTax: 0 });
+                        success++;
+                    } catch (err) { errors++; }
+                }
+            }
+
+            await loadAll();
+            alert(`Importación: ${success} exitosos, ${errors} fallidos.`);
+        } catch (err) { console.error(err); alert("Error al leer archivo."); }
+        finally { setIsImporting(false); }
+    };
+    reader.readAsBinaryString(file);
   };
 
   const formatMoney = (n: number) => n.toLocaleString('es-HN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
