@@ -272,14 +272,17 @@ const RealEstatePage: React.FC = () => {
   const filteredServices = services.filter(s => s.name.toLowerCase().includes(lowerSearch) || s.code.toLowerCase().includes(lowerSearch));
 
   // --- SMART CHECK LOGIC ---
-  // Verifica si realmente existe un pago para el contrato en la fecha dada
   const checkIfPaidInPeriod = (c: Contract, checkDate: Date): boolean => {
       const dueMonth = checkDate.getMonth();
       const dueYear = checkDate.getFullYear();
 
       // Fix for potential undefined apartment or propertyCode
       const apt = apartments.find(a => a.code === c.apartmentCode);
+      const ten = tenants.find(t => t.code === c.tenantCode);
       const derivedPropertyCode = c.propertyCode || apt?.propertyCode;
+      
+      const tenantName = ten?.fullName.toLowerCase() || '';
+      const unitName = apt?.name.toLowerCase() || '';
 
       return transactions.some(t => {
           if (t.type !== 'INGRESO') return false;
@@ -292,8 +295,15 @@ const RealEstatePage: React.FC = () => {
           // 1. Coincidencia por Contrato
           if (t.contractCode === c.code) return true;
           
-          // 2. Coincidencia por Propiedad (Fallback si no se linkeó el contrato)
+          // 2. Coincidencia por Propiedad (Fallback)
           if (derivedPropertyCode && t.propertyCode === derivedPropertyCode) return true;
+
+          // 3. Coincidencia por Descripción (Smart Match)
+          // Si el nombre del inquilino o el apartamento están en la descripción, asumimos pago
+          const desc = t.description.toLowerCase();
+          // Use stricter length check to avoid false positives on short names
+          if (tenantName.length > 2 && desc.includes(tenantName)) return true;
+          if (unitName.length > 2 && desc.includes(unitName)) return true;
 
           return false;
       });
@@ -322,20 +332,26 @@ const RealEstatePage: React.FC = () => {
       const ten = tenants.find(t => t.code === c.tenantCode);
       const apt = apartments.find(a => a.code === c.apartmentCode);
       
-      // FIX: Ensure safe access to properties
       const tenName = ten?.fullName.toLowerCase() || '';
       const aptName = apt?.name.toLowerCase() || '';
       
       return tenName.includes(lowerSearch) || aptName.includes(lowerSearch);
   });
 
-  const getPayingContractLabel = () => {
-      const c = viewingContract || payingContract;
-      if(!c) return '';
+  // Helpers for Payment History Modal Props
+  const getContractDetails = () => {
+      const c = viewingContract;
+      if(!c) return { label: '', tenName: '', unitName: '' };
       const apt = apartments.find(a => a.code === c.apartmentCode);
       const ten = tenants.find(t => t.code === c.tenantCode);
-      return `${ten?.fullName || 'Inquilino'} - ${apt?.name || 'Unidad'}`;
+      return {
+          label: `${ten?.fullName || 'Inquilino'} - ${apt?.name || 'Unidad'}`,
+          tenName: ten?.fullName || '',
+          unitName: apt?.name || ''
+      };
   };
+  
+  const { label: contractLabel, tenName, unitName } = getContractDetails();
 
   return (
     <div className="space-y-6">
@@ -653,10 +669,18 @@ const RealEstatePage: React.FC = () => {
       <TenantModal isOpen={isTenantModalOpen} onClose={() => setIsTenantModalOpen(false)} onSubmit={editingTenant ? handleUpdateTenant : handleCreateTenant} editingTenant={editingTenant} isSubmitting={isSubmitting} />
       <ContractModal isOpen={isContractModalOpen} onClose={() => setIsContractModalOpen(false)} onSubmit={editingContract ? handleUpdateContract : handleCreateContract} editingContract={editingContract} isSubmitting={isSubmitting} />
       
-      <PaymentHistoryModal isOpen={isHistoryModalOpen} onClose={() => setIsHistoryModalOpen(false)} contract={viewingContract} contractLabel={getPayingContractLabel()} onRegisterPayment={handleInitiatePayment} />
-      <PaymentModal isOpen={isPaymentModalOpen} onClose={() => setIsPaymentModalOpen(false)} onSubmit={handleRegisterPayment} contract={payingContract} contractLabel={getPayingContractLabel()} initialDescription={paymentDescription} isSubmitting={isSubmitting} />
-      <BulkPaymentModal isOpen={isBulkModalOpen} onClose={() => setIsBulkModalOpen(false)} onSubmit={handleBulkPayment} contract={viewingContract} contractLabel={getPayingContractLabel()} isSubmitting={isSubmitting} />
-      <ContractPriceHistoryModal isOpen={isPriceHistoryModalOpen} onClose={() => setIsPriceHistoryModalOpen(false)} contract={viewingContract} contractLabel={getPayingContractLabel()} />
+      <PaymentHistoryModal 
+        isOpen={isHistoryModalOpen} 
+        onClose={() => setIsHistoryModalOpen(false)} 
+        contract={viewingContract} 
+        contractLabel={contractLabel} 
+        tenantName={tenName}
+        unitName={unitName}
+        onRegisterPayment={handleInitiatePayment} 
+      />
+      <PaymentModal isOpen={isPaymentModalOpen} onClose={() => setIsPaymentModalOpen(false)} onSubmit={handleRegisterPayment} contract={payingContract} contractLabel={contractLabel} initialDescription={paymentDescription} isSubmitting={isSubmitting} />
+      <BulkPaymentModal isOpen={isBulkModalOpen} onClose={() => setIsBulkModalOpen(false)} onSubmit={handleBulkPayment} contract={viewingContract} contractLabel={contractLabel} isSubmitting={isSubmitting} />
+      <ContractPriceHistoryModal isOpen={isPriceHistoryModalOpen} onClose={() => setIsPriceHistoryModalOpen(false)} contract={viewingContract} contractLabel={contractLabel} />
       
       <ServiceItemModal isOpen={isServiceModalOpen} onClose={() => setIsServiceModalOpen(false)} onSubmit={editingService ? handleUpdateService : handleCreateService} editingItem={editingService} isSubmitting={isSubmitting} />
       <ServicePaymentModal isOpen={isServicePaymentModalOpen} onClose={() => setIsServicePaymentModalOpen(false)} onSubmit={handleRegisterServicePayment} serviceItem={payingService} isSubmitting={isSubmitting} />

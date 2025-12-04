@@ -9,6 +9,8 @@ interface PaymentHistoryModalProps {
   onClose: () => void;
   contract: Contract | null;
   contractLabel: string;
+  tenantName?: string;
+  unitName?: string;
   onRegisterPayment: (monthDate: Date) => void;
 }
 
@@ -17,6 +19,8 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
   onClose,
   contract,
   contractLabel,
+  tenantName,
+  unitName,
   onRegisterPayment
 }) => {
   const [year, setYear] = useState(new Date().getFullYear());
@@ -34,17 +38,28 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
     setLoading(true);
     try {
         const all = await TransactionService.getAll();
-        // Filtramos transacciones relevantes (Ingresos de este contrato o propiedad)
+        
+        // Clean names for loose matching
+        const tName = tenantName ? tenantName.toLowerCase() : '';
+        const uName = unitName ? unitName.toLowerCase() : '';
+
+        // Filter relevant transactions (Income for this contract/property)
         const filtered = all.filter(t => {
             if (t.type !== 'INGRESO') return false;
             
-            // 1. Coincidencia Exacta por Código de Contrato
+            // 1. Exact Match by Contract Code
             if (t.contractCode === contract.code) return true;
             
-            // 2. Coincidencia por Propiedad (Fallback importante)
+            // 2. Exact Match by Property Code (Important Fallback)
             if (contract.propertyCode && t.propertyCode === contract.propertyCode) return true;
 
-            // 3. Coincidencia laxa por descripción (último recurso)
+            // 3. Loose Match by Description (Tenant Name or Unit Name)
+            // Use strict length check to avoid false positives with short names
+            const desc = t.description.toLowerCase();
+            if (tName.length > 2 && desc.includes(tName)) return true;
+            if (uName.length > 2 && desc.includes(uName)) return true;
+            
+            // 4. Fallback to contract label
             if (t.description.toLowerCase().includes(contractLabel.toLowerCase())) return true;
             
             return false;
@@ -70,57 +85,49 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
   const today = new Date(); 
   const months = Array.from({ length: 12 }, (_, i) => i);
 
-  // Lógica de búsqueda "Inteligente"
   const findTransactionForMonth = (monthIndex: number, currentYear: number) => {
-      // Prioridad 1: Coincidencia de Fecha (Año y Mes) estricta
-      // Buscamos cualquier transacción que caiga en este mes y año asociados al contrato/propiedad
+      // Find transaction matching Month and Year
       const found = transactions.find(t => {
           const [tYStr, tMStr] = t.date.split('-');
           const tYear = parseInt(tYStr);
           const tMonth = parseInt(tMStr) - 1;
 
-          if (tYear === currentYear && tMonth === monthIndex) {
-              return true;
-          }
-          return false;
+          return tYear === currentYear && tMonth === monthIndex;
       });
 
       return found;
   };
 
   const getMonthStatus = (monthIndex: number, hasPayment: boolean) => {
-    // Si encontramos una transacción real, ESTÁ PAGADO, sin importar qué diga el contrato.
+    // If we found a real transaction, it is PAID regardless of contract dates
     if (hasPayment) return 'PAID';
 
     const cellVal = year * 100 + monthIndex;
     const startVal = startDate.getFullYear() * 100 + startDate.getMonth();
     
-    // Ignorar meses anteriores al inicio del contrato
+    // Ignore months before contract start
     if (cellVal < startVal) return 'NA'; 
 
     const npDate = parseDate(contract.nextPaymentDate);
     const nextPayVal = npDate.getFullYear() * 100 + npDate.getMonth();
     const todayVal = today.getFullYear() * 100 + today.getMonth();
 
-    // Si el mes consultado es ANTERIOR a la fecha de "Próximo Pago" guardada en BD,
-    // y no encontramos transacción, igual asumimos pagado (histórico antiguo).
+    // Historical assumption: If month is before Next Payment Date, assume paid
     if (cellVal < nextPayVal) return 'PAID';
 
     const paymentDay = contract.paymentDay || 1;
     
     if (cellVal === nextPayVal) {
-        // Es el mes que toca pagar según la BD
+        // Current due month
         const isPastDueDay = today.getDate() > paymentDay;
         
-        // Si estamos en este mes, pero ya pasó el día...
-        if (todayVal === cellVal && isPastDueDay) return 'OVERDUE_NOW';
-        // Si ya pasó el mes (todayVal > cellVal), es mora
-        if (todayVal > cellVal) return 'OVERDUE_NOW';
+        // If it's this month but day passed, or month passed
+        if ((todayVal === cellVal && isPastDueDay) || todayVal > cellVal) return 'OVERDUE_NOW';
         
         return 'DUE_NOW';
     }
     
-    // Si la fecha de contrato se quedó atrás (cellVal < todayVal) y no hay pago => Mora
+    // If contract date fell behind (cellVal < todayVal) and no payment found => Arrears
     if (cellVal < todayVal) return 'OVERDUE_FUTURE'; 
     
     return 'FUTURE';
@@ -218,7 +225,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                                         <div className="flex flex-col gap-1">
                                            <div className="text-[10px] text-slate-500 font-medium">Vence: {formattedDueDate}</div>
                                            
-                                           {/* MOSTRAR DATOS REALES DE PAGO */}
+                                           {/* SHOW PAYMENT DETAILS IF TRANSACTION FOUND */}
                                            {status === 'PAID' && transaction ? (
                                                <div className="mt-2 bg-white/80 p-2 rounded-lg border border-emerald-100 shadow-sm">
                                                    <div className="flex items-center gap-1.5 mb-0.5">
