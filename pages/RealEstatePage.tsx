@@ -261,7 +261,9 @@ const RealEstatePage: React.FC = () => {
           // Weak Match: Fuzzy Description
           const tObj = tenants.find(te => te.code === contract.tenantCode);
           const aObj = apartments.find(ap => ap.code === contract.apartmentCode);
-          const desc = t.description.toLowerCase();
+          
+          // Safer access to description
+          const desc = (t.description || '').toLowerCase();
           
           if (tObj && tObj.fullName && desc.includes(tObj.fullName.toLowerCase())) return true;
           if (aObj && aObj.name && desc.includes(aObj.name.toLowerCase())) return true;

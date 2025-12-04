@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { X, ChevronLeft, ChevronRight, CheckCircle, AlertCircle, Clock, DollarSign, CalendarCheck, Trash2, AlertTriangle, Loader } from 'lucide-react';
 import { Contract, Transaction } from '../types';
@@ -55,10 +54,10 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
             if (t.contractCode === contract.code) return true;
             if (contract.propertyCode && t.propertyCode === contract.propertyCode) return true;
 
-            const desc = t.description.toLowerCase();
+            const desc = (t.description || '').toLowerCase();
             if (tName.length > 2 && desc.includes(tName)) return true;
             if (uName.length > 2 && desc.includes(uName)) return true;
-            if (t.description.toLowerCase().includes(contractLabel.toLowerCase())) return true;
+            if (contractLabel && desc.includes(contractLabel.toLowerCase())) return true;
             
             return false;
         });
