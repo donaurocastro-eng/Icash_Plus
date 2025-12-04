@@ -255,11 +255,11 @@ const RealEstatePage: React.FC = () => {
 
   const filteredServices = services.filter(s => s.name.toLowerCase().includes(lowerSearch) || s.code.toLowerCase().includes(lowerSearch));
 
-  // --- DELINQUENTS FILTER (FIXED LOGIC) ---
+  // --- DELINQUENTS FILTER (STRICT DATE LOGIC) ---
   const delinquentContracts = contracts.filter(c => {
       if (c.status !== 'ACTIVE') return false;
       
-      // FIX: Use strictly LOCAL date components to construct YYYY-MM-DD for today.
+      // Use strictly LOCAL date components to construct YYYY-MM-DD for today.
       const now = new Date();
       const year = now.getFullYear();
       const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -270,9 +270,9 @@ const RealEstatePage: React.FC = () => {
       const nextDateStr = c.nextPaymentDate ? c.nextPaymentDate.split('T')[0] : c.startDate.split('T')[0];
       
       // STRICT COMPARISON:
-      // If Today is strictly greater than Due Date, it is overdue.
-      // E.g. Today: 2024-05-25, Due: 2024-05-24 => Overdue
-      // E.g. Today: 2024-05-25, Due: 2024-05-25 => Due Today (Not Overdue yet)
+      // Overdue ONLY if today > nextDate
+      // (e.g. today is 7th, due is 6th -> TRUE)
+      // (e.g. today is 6th, due is 6th -> FALSE)
       const isOverdue = todayStr > nextDateStr;
       
       if (!isOverdue) return false;

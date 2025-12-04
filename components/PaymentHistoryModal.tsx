@@ -38,9 +38,10 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
         // Filter transactions related to this contract
         const filtered = all.filter(t => {
             // 1. Exact match by contract code (Best)
-            if (t.contractCode === contract.code) return true;
+            if (t.contractCode && t.contractCode === contract.code) return true;
             
             // 2. Fallback: Match by Property and Type 'INGRESO'
+            // Only if contract has a propertyCode associated
             if (contract.propertyCode && t.propertyCode === contract.propertyCode && t.type === 'INGRESO') {
                 return true;
             }
@@ -70,30 +71,33 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
   const months = Array.from({ length: 12 }, (_, i) => i);
 
   // Helper to find actual payment date for a specific month/year
-  const getPaymentDate = (monthIndex: number, currentYear: number) => {
-      const monthName = new Date(currentYear, monthIndex, 1).toLocaleDateString('es-ES', { month: 'long' }).toLowerCase();
+  const findTransactionForMonth = (monthIndex: number, currentYear: number) => {
+      const monthDate = new Date(currentYear, monthIndex, 1);
+      const monthName = monthDate.toLocaleDateString('es-ES', { month: 'long' }).toLowerCase();
       
       const found = transactions.find(t => {
-          const desc = t.description.toLowerCase();
-          const tDate = new Date(t.date);
-          const tYear = tDate.getFullYear();
-          const tMonth = tDate.getMonth();
+          const tDate = new Date(t.date); // This is UTC midnight from ISO string
+          // We need to parse YYYY, MM from the ISO string to be safe
+          const [tYStr, tMStr] = t.date.split('-');
+          const tYear = parseInt(tYStr);
+          const tMonth = parseInt(tMStr) - 1; // 0-indexed
 
-          // 1. If contract code matches (strong link), check if transaction date falls in this month/year window
-          // or description matches. 
+          // 1. If contract code matches (strong link), trust the date
           if (t.contractCode === contract.code) {
-               // Simple check: is transaction in the same month/year?
-               // Usually payments are made in the same month or slightly before/after.
-               // Let's rely on description for accuracy of "which month was paid".
+               // Logic A: Transaction Date is in the target month/year
+               if (tYear === currentYear && tMonth === monthIndex) return true;
+
+               // Logic B: Description explicit match (fallback if date is off, e.g. paid early)
+               const desc = t.description.toLowerCase();
                if (desc.includes(monthName) && (desc.includes(currentYear.toString()) || tYear === currentYear)) return true;
-               
-               // Fallback: If description is generic "Abono", check date proximity (same month)
-               if (!desc.includes('alquiler') && tYear === currentYear && tMonth === monthIndex) return true;
           }
 
-          // 2. Legacy check by description text only
+          // 2. Weak link (legacy or missing contract code)
+          // Must match property/unit AND description
+          const desc = t.description.toLowerCase();
           if (desc.includes(monthName)) {
              if (!desc.includes(currentYear.toString())) {
+                 // If year is not in desc, assume transaction year match is required
                  if (tYear !== currentYear) return false;
              }
              return true;
@@ -101,16 +105,13 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
           return false;
       });
 
-      if (found) {
-           // Format transaction date: YYYY-MM-DD -> DD/MM/YYYY
-           const parts = found.date.split('-');
-           if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-           return new Date(found.date).toLocaleDateString();
-      }
-      return null;
+      return found;
   };
 
-  const getMonthStatus = (monthIndex: number) => {
+  const getMonthStatus = (monthIndex: number, hasPayment: boolean) => {
+    // Priority: If payment found, it is PAID.
+    if (hasPayment) return 'PAID';
+
     const paymentDay = contract.paymentDay || 1;
     
     // Create comparable integers YYYYMM
@@ -120,21 +121,29 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
     const todayVal = today.getFullYear() * 100 + today.getMonth();
 
     if (cellVal < startVal) return 'NA'; 
-    if (cellVal < nextPayVal) return 'PAID'; // If current month is before next payment month, it's paid
+    
+    // If it's before the "Next Payment Date" recorded in contract, assume it was paid (legacy logic)
+    // BUT checking hasPayment above is safer. We'll keep this as fallback for migrated data without txs.
+    if (cellVal < nextPayVal) return 'PAID'; 
     
     if (cellVal === nextPayVal) {
         // This is the month pending payment
         const isPastDueDay = today.getDate() > paymentDay;
         
-        // If we are in the same month, check day. If we are in a later month, it's definitely overdue.
-        if (todayVal > cellVal) return 'OVERDUE_NOW';
-        if (todayVal === cellVal && isPastDueDay) return 'OVERDUE_NOW';
+        if (todayVal > cellVal) return 'OVERDUE_NOW'; // We are in a future month relative to this cell
+        if (todayVal === cellVal && isPastDueDay) return 'OVERDUE_NOW'; // Same month, day passed
         return 'DUE_NOW';
     }
     
     // Future months relative to next payment date
-    if (cellVal < todayVal) return 'OVERDUE_FUTURE'; // Should have been paid but wasn't (gap in logic or dates)
+    if (cellVal < todayVal) return 'OVERDUE_FUTURE'; 
     return 'FUTURE';
+  };
+
+  const formatDate = (dateStr: string) => {
+      const parts = dateStr.split('-'); // YYYY-MM-DD
+      if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+      return dateStr;
   };
 
   return (
@@ -161,29 +170,31 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
             ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                     {months.map(monthIndex => {
-                        const status = getMonthStatus(monthIndex);
+                        const transaction = findTransactionForMonth(monthIndex, year);
+                        const status = getMonthStatus(monthIndex, !!transaction);
+                        
                         const monthName = new Date(year, monthIndex, 1).toLocaleDateString('es-ES', { month: 'long' });
                         const dueDate = new Date(year, monthIndex, contract.paymentDay);
                         const formattedDueDate = dueDate.toLocaleDateString();
-                        const paymentDate = getPaymentDate(monthIndex, year);
+                        const paymentDateStr = transaction ? formatDate(transaction.date) : null;
 
                         let cardClass = "border-slate-200 bg-white opacity-60", icon = <Clock size={20} className="text-slate-300" />, label = "Futuro", labelColor = "text-slate-400", action = null;
 
                         if (status === 'PAID') { 
-                            cardClass = "border-emerald-200 bg-emerald-50 ring-1 ring-emerald-100"; 
+                            cardClass = "border-emerald-200 bg-emerald-50 ring-1 ring-emerald-100 opacity-100"; 
                             icon = <CheckCircle size={24} className="text-emerald-500"/>; 
                             label = "PAGADO"; 
                             labelColor = "text-emerald-600"; 
                         }
                         else if (status === 'DUE_NOW') { 
-                            cardClass = "border-blue-400 bg-white ring-4 ring-blue-100 shadow-xl transform scale-105 z-10"; 
+                            cardClass = "border-blue-400 bg-white ring-4 ring-blue-100 shadow-xl transform scale-105 z-10 opacity-100"; 
                             icon = <DollarSign size={24} className="text-blue-600"/>; 
                             label = "PAGAR AHORA"; 
                             labelColor = "text-blue-600"; 
                             action = () => onRegisterPayment(dueDate); 
                         }
                         else if (status === 'OVERDUE_NOW' || status === 'OVERDUE_FUTURE') { 
-                            cardClass = "border-rose-200 bg-rose-50 shadow-sm"; 
+                            cardClass = "border-rose-200 bg-rose-50 shadow-sm opacity-100"; 
                             icon = <AlertCircle size={24} className="text-rose-500"/>; 
                             label = "VENCIDO"; 
                             labelColor = "text-rose-600"; 
@@ -197,7 +208,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                         }
 
                         return (
-                            <div key={monthIndex} className={`relative rounded-xl border p-4 flex flex-col justify-between h-36 transition-all duration-200 ${cardClass}`}>
+                            <div key={monthIndex} className={`relative rounded-xl border p-4 flex flex-col justify-between h-40 transition-all duration-200 ${cardClass}`}>
                                 <div>
                                     <div className="flex justify-between items-start mb-2">
                                         <span className="capitalize font-bold text-lg text-slate-700">{monthName}</span>
@@ -210,10 +221,10 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                                            
                                            {/* PAYMENT DATE DISPLAY */}
                                            {status === 'PAID' && (
-                                               <div className="flex items-start gap-1 mt-1 bg-white/60 p-1 rounded">
-                                                   <CalendarCheck size={10} className="text-emerald-600 mt-0.5"/>
-                                                   <div className="text-[10px] text-emerald-700 font-bold">
-                                                       {paymentDate ? `Pagado: ${paymentDate}` : 'Pagado'}
+                                               <div className="mt-2 flex items-center gap-1.5 bg-white/80 px-2 py-1.5 rounded border border-emerald-200 shadow-sm">
+                                                   <CalendarCheck size={14} className="text-emerald-600"/>
+                                                   <div className="text-xs text-emerald-800 font-bold">
+                                                       {paymentDateStr ? `Pagado: ${paymentDateStr}` : 'Pagado'}
                                                    </div>
                                                </div>
                                            )}
