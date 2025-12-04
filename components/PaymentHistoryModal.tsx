@@ -27,24 +27,26 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
     if (isOpen && contract) {
       loadTransactions();
     }
-  }, [isOpen, contract]);
+  }, [isOpen, contract, year]);
 
   const loadTransactions = async () => {
     if (!contract) return;
     setLoading(true);
     try {
         const all = await TransactionService.getAll();
-        
-        // Filter transactions related to this contract
+        // Filtramos transacciones relevantes (Ingresos de este contrato o propiedad)
         const filtered = all.filter(t => {
-            // 1. Exact match by contract code (Best)
-            if (t.contractCode && t.contractCode === contract.code) return true;
+            if (t.type !== 'INGRESO') return false;
             
-            // 2. Fallback: Match by Property and Type 'INGRESO'
-            // Only if contract has a propertyCode associated
-            if (contract.propertyCode && t.propertyCode === contract.propertyCode && t.type === 'INGRESO') {
-                return true;
-            }
+            // 1. Coincidencia Exacta por Código de Contrato
+            if (t.contractCode === contract.code) return true;
+            
+            // 2. Coincidencia por Propiedad (Fallback importante)
+            if (contract.propertyCode && t.propertyCode === contract.propertyCode) return true;
+
+            // 3. Coincidencia laxa por descripción (último recurso)
+            if (t.description.toLowerCase().includes(contractLabel.toLowerCase())) return true;
+            
             return false;
         });
         setTransactions(filtered);
@@ -61,43 +63,24 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
       if (!d) return new Date();
       const dateObj = new Date(d);
       if (isNaN(dateObj.getTime())) return new Date();
-      // Adjust for timezone offset to treat YYYY-MM-DD as local
       return new Date(dateObj.valueOf() + dateObj.getTimezoneOffset() * 60000);
   };
 
   const startDate = parseDate(contract.startDate);
-  // We use the transactions to determine truth, nextPaymentDate is secondary for history view
   const today = new Date(); 
   const months = Array.from({ length: 12 }, (_, i) => i);
 
-  // Helper to find actual payment date for a specific month/year
+  // Lógica de búsqueda "Inteligente"
   const findTransactionForMonth = (monthIndex: number, currentYear: number) => {
-      const monthDate = new Date(currentYear, monthIndex, 1);
-      const monthName = monthDate.toLocaleDateString('es-ES', { month: 'long' }).toLowerCase();
-      
+      // Prioridad 1: Coincidencia de Fecha (Año y Mes) estricta
+      // Buscamos cualquier transacción que caiga en este mes y año asociados al contrato/propiedad
       const found = transactions.find(t => {
-          // We need to parse YYYY, MM from the ISO string to be safe
           const [tYStr, tMStr] = t.date.split('-');
           const tYear = parseInt(tYStr);
-          const tMonth = parseInt(tMStr) - 1; // 0-indexed
+          const tMonth = parseInt(tMStr) - 1;
 
-          // 1. If contract code matches (strong link), check date OR description
-          if (t.contractCode === contract.code) {
-               // Logic A: Transaction Date matches target month/year
-               if (tYear === currentYear && tMonth === monthIndex) return true;
-
-               // Logic B: Description matches (e.g. "Alquiler Diciembre" paid in November)
-               const desc = t.description.toLowerCase();
-               if (desc.includes(monthName) && (desc.includes(currentYear.toString()) || tYear === currentYear)) return true;
-          }
-
-          // 2. Weak link (legacy or missing contract code)
-          const desc = t.description.toLowerCase();
-          if (desc.includes(monthName)) {
-             if (!desc.includes(currentYear.toString())) {
-                 if (tYear !== currentYear) return false;
-             }
-             return true;
+          if (tYear === currentYear && tMonth === monthIndex) {
+              return true;
           }
           return false;
       });
@@ -106,48 +89,58 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
   };
 
   const getMonthStatus = (monthIndex: number, hasPayment: boolean) => {
+    // Si encontramos una transacción real, ESTÁ PAGADO, sin importar qué diga el contrato.
     if (hasPayment) return 'PAID';
 
     const cellVal = year * 100 + monthIndex;
     const startVal = startDate.getFullYear() * 100 + startDate.getMonth();
     
-    // Calculate Next Payment Value based on Contract Data
+    // Ignorar meses anteriores al inicio del contrato
+    if (cellVal < startVal) return 'NA'; 
+
     const npDate = parseDate(contract.nextPaymentDate);
     const nextPayVal = npDate.getFullYear() * 100 + npDate.getMonth();
     const todayVal = today.getFullYear() * 100 + today.getMonth();
 
-    if (cellVal < startVal) return 'NA'; 
-
-    // If no payment found, but it is before the recorded next payment date, 
-    // it implies it was paid (maybe manually or legacy).
+    // Si el mes consultado es ANTERIOR a la fecha de "Próximo Pago" guardada en BD,
+    // y no encontramos transacción, igual asumimos pagado (histórico antiguo).
     if (cellVal < nextPayVal) return 'PAID';
 
     const paymentDay = contract.paymentDay || 1;
     
-    // If this is the specific month pending
     if (cellVal === nextPayVal) {
+        // Es el mes que toca pagar según la BD
         const isPastDueDay = today.getDate() > paymentDay;
-        // If current real month is later than this cell, it's definitely overdue
-        if (todayVal > cellVal) return 'OVERDUE_NOW'; 
-        // If same month but day passed
-        if (todayVal === cellVal && isPastDueDay) return 'OVERDUE_NOW'; 
+        
+        // Si estamos en este mes, pero ya pasó el día...
+        if (todayVal === cellVal && isPastDueDay) return 'OVERDUE_NOW';
+        // Si ya pasó el mes (todayVal > cellVal), es mora
+        if (todayVal > cellVal) return 'OVERDUE_NOW';
+        
         return 'DUE_NOW';
     }
     
-    if (cellVal < todayVal) return 'OVERDUE_FUTURE'; // Actually overdue from past
+    // Si la fecha de contrato se quedó atrás (cellVal < todayVal) y no hay pago => Mora
+    if (cellVal < todayVal) return 'OVERDUE_FUTURE'; 
+    
     return 'FUTURE';
   };
 
   const formatDate = (dateStr: string) => {
-      const parts = dateStr.split('-'); // YYYY-MM-DD
+      if (!dateStr) return '';
+      const parts = dateStr.split('-');
       if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
       return dateStr;
+  };
+
+  const formatMoney = (amount: number) => {
+      return amount.toLocaleString('es-HN', { style: 'currency', currency: 'HNL' });
   };
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[90vh] transform transition-all scale-100 border border-slate-200">
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-6xl overflow-hidden flex flex-col max-h-[90vh] transform transition-all scale-100 border border-slate-200">
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
             <div>
                 <h3 className="text-xl font-bold text-slate-800">Historial de Pagos</h3>
@@ -155,11 +148,13 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
             </div>
             <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-500"><X size={24}/></button>
         </div>
+        
         <div className="flex items-center justify-center py-4 gap-6 border-b border-slate-100 bg-white shadow-sm z-10">
             <button onClick={() => setYear(year - 1)} className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-600"><ChevronLeft/></button>
             <span className="text-2xl font-bold text-slate-800 w-32 text-center">{year}</span>
             <button onClick={() => setYear(year + 1)} className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-600"><ChevronRight/></button>
         </div>
+
         <div className="p-6 overflow-y-auto bg-slate-50/50 flex-1">
             {loading ? (
                  <div className="flex justify-center py-12">
@@ -174,9 +169,15 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                         const monthName = new Date(year, monthIndex, 1).toLocaleDateString('es-ES', { month: 'long' });
                         const dueDate = new Date(year, monthIndex, contract.paymentDay);
                         const formattedDueDate = dueDate.toLocaleDateString();
+                        
                         const paymentDateStr = transaction ? formatDate(transaction.date) : null;
+                        const paymentAmountStr = transaction ? formatMoney(transaction.amount) : null;
 
-                        let cardClass = "border-slate-200 bg-white opacity-60", icon = <Clock size={20} className="text-slate-300" />, label = "Futuro", labelColor = "text-slate-400", action = null;
+                        let cardClass = "border-slate-200 bg-white opacity-60";
+                        let icon = <Clock size={20} className="text-slate-300" />;
+                        let label = "Futuro";
+                        let labelColor = "text-slate-400";
+                        let action = null;
 
                         if (status === 'PAID') { 
                             cardClass = "border-emerald-200 bg-emerald-50 ring-1 ring-emerald-100 opacity-100"; 
@@ -196,7 +197,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                             icon = <AlertCircle size={24} className="text-rose-500"/>; 
                             label = "VENCIDO"; 
                             labelColor = "text-rose-600"; 
-                            if(status === 'OVERDUE_NOW') action = () => onRegisterPayment(dueDate); 
+                            if(status === 'OVERDUE_NOW' || status === 'OVERDUE_FUTURE') action = () => onRegisterPayment(dueDate); 
                         }
                         else if (status === 'NA') { 
                             cardClass = "border-slate-100 bg-slate-100 opacity-40"; 
@@ -206,7 +207,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                         }
 
                         return (
-                            <div key={monthIndex} className={`relative rounded-xl border p-4 flex flex-col justify-between h-40 transition-all duration-200 ${cardClass}`}>
+                            <div key={monthIndex} className={`relative rounded-xl border p-4 flex flex-col justify-between min-h-[140px] transition-all duration-200 ${cardClass}`}>
                                 <div>
                                     <div className="flex justify-between items-start mb-2">
                                         <span className="capitalize font-bold text-lg text-slate-700">{monthName}</span>
@@ -217,19 +218,27 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                                         <div className="flex flex-col gap-1">
                                            <div className="text-[10px] text-slate-500 font-medium">Vence: {formattedDueDate}</div>
                                            
-                                           {/* PAYMENT DATE DISPLAY (REQUESTED FEATURE) */}
-                                           {status === 'PAID' && (
-                                               <div className="mt-2 flex items-center gap-1.5 bg-white/80 px-2 py-1.5 rounded border border-emerald-200 shadow-sm">
-                                                   <CalendarCheck size={14} className="text-emerald-600"/>
-                                                   <div className="text-xs text-emerald-800 font-bold">
-                                                       {paymentDateStr ? `Pagado: ${paymentDateStr}` : 'Pagado'}
+                                           {/* MOSTRAR DATOS REALES DE PAGO */}
+                                           {status === 'PAID' && transaction ? (
+                                               <div className="mt-2 bg-white/80 p-2 rounded-lg border border-emerald-100 shadow-sm">
+                                                   <div className="flex items-center gap-1.5 mb-0.5">
+                                                       <CalendarCheck size={12} className="text-emerald-600"/>
+                                                       <span className="text-xs text-emerald-800 font-bold">Pagado: {paymentDateStr}</span>
+                                                   </div>
+                                                   <div className="flex items-center gap-1.5">
+                                                        <DollarSign size={12} className="text-emerald-600"/>
+                                                        <span className="text-xs text-emerald-800 font-bold">{paymentAmountStr}</span>
                                                    </div>
                                                </div>
-                                           )}
+                                           ) : null}
                                         </div>
                                     )}
                                 </div>
-                                <div className={`font-extrabold text-sm mt-1 text-right ${labelColor}`}>{label}</div>
+                                
+                                {status !== 'PAID' && (
+                                    <div className={`font-extrabold text-sm mt-2 text-right ${labelColor}`}>{label}</div>
+                                )}
+                                
                                 {action && <button onClick={action} className="absolute inset-0 w-full h-full cursor-pointer focus:outline-none rounded-xl" title="Click para pagar" />}
                             </div>
                         );

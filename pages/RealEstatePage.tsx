@@ -149,6 +149,18 @@ const RealEstatePage: React.FC = () => {
       } catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
   };
 
+  const handleOpenHistory = (c: Contract) => {
+      // Inyectamos el propertyCode al abrir el historial para asegurar que la búsqueda
+      // "smart" funcione incluso si el contrato no tiene el código guardado.
+      const apt = apartments.find(a => a.code === c.apartmentCode);
+      const contractWithProp = {
+          ...c,
+          propertyCode: c.propertyCode || apt?.propertyCode
+      };
+      setViewingContract(contractWithProp);
+      setIsHistoryModalOpen(true);
+  };
+
   const openWhatsApp = (tenant: Tenant, contract: Contract, aptName: string, daysLate: number) => {
       if (!tenant.phone) return;
       const cleanPhone = tenant.phone.replace(/[^0-9]/g, '');
@@ -259,40 +271,62 @@ const RealEstatePage: React.FC = () => {
 
   const filteredServices = services.filter(s => s.name.toLowerCase().includes(lowerSearch) || s.code.toLowerCase().includes(lowerSearch));
 
-  // --- DELINQUENTS FILTER (STRICT DATE LOGIC) ---
+  // --- SMART CHECK LOGIC ---
+  // Verifica si realmente existe un pago para el contrato en la fecha dada
+  const checkIfPaidInPeriod = (c: Contract, checkDate: Date): boolean => {
+      const dueMonth = checkDate.getMonth();
+      const dueYear = checkDate.getFullYear();
+
+      // Fix for potential undefined apartment or propertyCode
+      const apt = apartments.find(a => a.code === c.apartmentCode);
+      const derivedPropertyCode = c.propertyCode || apt?.propertyCode;
+
+      return transactions.some(t => {
+          if (t.type !== 'INGRESO') return false;
+
+          const tDate = new Date(t.date);
+          const tDateObj = new Date(tDate.valueOf() + tDate.getTimezoneOffset() * 60000);
+          
+          if (tDateObj.getFullYear() !== dueYear || tDateObj.getMonth() !== dueMonth) return false;
+
+          // 1. Coincidencia por Contrato
+          if (t.contractCode === c.code) return true;
+          
+          // 2. Coincidencia por Propiedad (Fallback si no se linkeó el contrato)
+          if (derivedPropertyCode && t.propertyCode === derivedPropertyCode) return true;
+
+          return false;
+      });
+  };
+
+  // --- DELINQUENTS FILTER (SMART CHECK) ---
   const delinquentContracts = contracts.filter(c => {
       if (c.status !== 'ACTIVE') return false;
       
       const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const day = String(now.getDate()).padStart(2, '0');
-      const todayStr = `${year}-${month}-${day}`;
+      const todayStr = now.toISOString().split('T')[0];
       
-      const nextDateStr = c.nextPaymentDate ? c.nextPaymentDate.split('T')[0] : c.startDate.split('T')[0];
+      const nextDateRaw = c.nextPaymentDate || c.startDate;
+      const nextDateObj = new Date(nextDateRaw);
+      const nextDateStr = new Date(nextDateObj.valueOf() + nextDateObj.getTimezoneOffset() * 60000).toISOString().split('T')[0];
       
-      const isOverdue = todayStr > nextDateStr;
-      
-      if (!isOverdue) return false;
+      // Si la fecha es futura o es hoy, NO está en mora técnica
+      if (nextDateStr >= todayStr) return false;
 
-      // Smart Check: Ensure it's not actually paid (via transaction check)
-      // This handles cases where user registered payment but Contract Date wasn't updated
-      const dueDate = new Date(nextDateStr);
-      const wasPaidInPeriod = transactions.some(t => {
-          if (t.contractCode === c.code) {
-              const tDate = new Date(t.date);
-              // Matches same month/year
-              return tDate.getMonth() === dueDate.getMonth() && tDate.getFullYear() === dueDate.getFullYear();
-          }
-          return false;
-      });
-
-      if (wasPaidInPeriod) return false;
+      // Si la fecha ya pasó, usamos el SMART CHECK: ¿Existe un pago real?
+      const isActuallyPaid = checkIfPaidInPeriod(c, nextDateObj);
+      
+      if (isActuallyPaid) return false; // Si encontró el dinero, NO es moroso
 
       // Apply Search Filter
       const ten = tenants.find(t => t.code === c.tenantCode);
       const apt = apartments.find(a => a.code === c.apartmentCode);
-      return ten?.fullName.toLowerCase().includes(lowerSearch) || apt?.name.toLowerCase().includes(lowerSearch);
+      
+      // FIX: Ensure safe access to properties
+      const tenName = ten?.fullName.toLowerCase() || '';
+      const aptName = apt?.name.toLowerCase() || '';
+      
+      return tenName.includes(lowerSearch) || aptName.includes(lowerSearch);
   });
 
   const getPayingContractLabel = () => {
@@ -498,13 +532,20 @@ const RealEstatePage: React.FC = () => {
                                 const ten = tenants.find(t => t.code === c.tenantCode);
                                 
                                 const now = new Date();
-                                const year = now.getFullYear();
-                                const month = String(now.getMonth() + 1).padStart(2, '0');
-                                const day = String(now.getDate()).padStart(2, '0');
-                                const todayStr = `${year}-${month}-${day}`;
+                                const todayStr = now.toISOString().split('T')[0];
+                                const nextDateRaw = c.nextPaymentDate || c.startDate;
+                                const nextDateObj = new Date(nextDateRaw);
+                                const nextDateStr = new Date(nextDateObj.valueOf() + nextDateObj.getTimezoneOffset() * 60000).toISOString().split('T')[0];
                                 
-                                const nextDateStr = c.nextPaymentDate ? c.nextPaymentDate.split('T')[0] : c.startDate.split('T')[0];
-                                const isOverdue = todayStr > nextDateStr;
+                                let isOverdue = todayStr > nextDateStr;
+                                
+                                // SMART CHECK para visualizar en tabla también
+                                // Si "está vencido" en teoría, revisamos si pagó. Si pagó, NO está vencido.
+                                if (isOverdue) {
+                                    if (checkIfPaidInPeriod(c, nextDateObj)) {
+                                        isOverdue = false;
+                                    }
+                                }
 
                                 return (
                                     <tr key={c.code} className="border-t border-slate-100 hover:bg-slate-50">
@@ -513,7 +554,7 @@ const RealEstatePage: React.FC = () => {
                                         <td className="p-4 text-right font-mono">{new Date(c.nextPaymentDate).toLocaleDateString()}</td>
                                         <td className="p-4 text-right font-bold text-slate-700">{formatMoney(c.amount)}</td>
                                         <td className="p-4 text-center flex justify-center gap-2">
-                                            <button onClick={() => { setViewingContract(c); setIsHistoryModalOpen(true); }} className="px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm text-xs font-bold">HISTORIAL</button>
+                                            <button onClick={() => handleOpenHistory(c)} className="px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm text-xs font-bold">HISTORIAL</button>
                                             <button onClick={() => { setViewingContract(c); setIsBulkModalOpen(true); }} className="px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 shadow-sm text-xs font-bold flex items-center gap-1"><Layers size={14}/> MASIVO</button>
                                         </td>
                                     </tr>
@@ -556,14 +597,11 @@ const RealEstatePage: React.FC = () => {
                                     const apt = apartments.find(a => a.code === c.apartmentCode);
                                     const ten = tenants.find(t => t.code === c.tenantCode);
                                     
-                                    // Use same LOCAL logic as filter for days calculation
                                     const now = new Date();
-                                    const year = now.getFullYear();
-                                    const month = String(now.getMonth() + 1).padStart(2, '0');
-                                    const day = String(now.getDate()).padStart(2, '0');
-                                    const todayStr = `${year}-${month}-${day}`;
-                                    
-                                    const nextDateStr = c.nextPaymentDate ? c.nextPaymentDate.split('T')[0] : c.startDate.split('T')[0];
+                                    const todayStr = now.toISOString().split('T')[0];
+                                    const nextDateRaw = c.nextPaymentDate || c.startDate;
+                                    const nextDateObj = new Date(nextDateRaw);
+                                    const nextDateStr = new Date(nextDateObj.valueOf() + nextDateObj.getTimezoneOffset() * 60000).toISOString().split('T')[0];
                                     
                                     const diffTime = Math.abs(new Date(todayStr).getTime() - new Date(nextDateStr).getTime());
                                     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
@@ -592,7 +630,7 @@ const RealEstatePage: React.FC = () => {
                                                     </button>
                                                 )}
                                                 <button 
-                                                    onClick={() => { setViewingContract(c); setIsHistoryModalOpen(true); }}
+                                                    onClick={() => handleOpenHistory(c)}
                                                     className="px-3 py-2 bg-white border border-slate-300 text-slate-600 rounded-lg hover:bg-slate-50 shadow-sm text-xs font-bold"
                                                 >
                                                     Pagar
