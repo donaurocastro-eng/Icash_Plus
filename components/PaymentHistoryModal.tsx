@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, ChevronLeft, ChevronRight, CheckCircle, AlertCircle, Clock, DollarSign, CalendarCheck, Trash2 } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, CheckCircle, AlertCircle, Clock, DollarSign, CalendarCheck, Trash2, AlertTriangle, Loader } from 'lucide-react';
 import { Contract, Transaction } from '../types';
 import { TransactionService } from '../services/transactionService';
 
@@ -28,10 +28,15 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
   const [year, setYear] = useState(new Date().getFullYear());
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(false);
+  
+  // Delete UI States
+  const [confirmDeleteTxId, setConfirmDeleteTxId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     if (isOpen && contract) {
       loadTransactions();
+      setConfirmDeleteTxId(null);
     }
   }, [isOpen, contract, year]);
 
@@ -41,27 +46,18 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
     try {
         const all = await TransactionService.getAll();
         
-        // Clean names for loose matching
         const tName = tenantName ? tenantName.toLowerCase() : '';
         const uName = unitName ? unitName.toLowerCase() : '';
 
-        // Filter relevant transactions (Income for this contract/property)
         const filtered = all.filter(t => {
             if (t.type !== 'INGRESO') return false;
             
-            // 1. Exact Match by Contract Code
             if (t.contractCode === contract.code) return true;
-            
-            // 2. Exact Match by Property Code (Important Fallback)
             if (contract.propertyCode && t.propertyCode === contract.propertyCode) return true;
 
-            // 3. Loose Match by Description (Tenant Name or Unit Name)
-            // Use strict length check to avoid false positives with short names
             const desc = t.description.toLowerCase();
             if (tName.length > 2 && desc.includes(tName)) return true;
             if (uName.length > 2 && desc.includes(uName)) return true;
-            
-            // 4. Fallback to contract label
             if (t.description.toLowerCase().includes(contractLabel.toLowerCase())) return true;
             
             return false;
@@ -74,19 +70,26 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
     }
   };
 
-  const handleDelete = async (txCode: string) => {
-      if (!confirm("¿Estás seguro de eliminar este pago? Esta acción revertirá el saldo de la cuenta y dejará el mes como pendiente.")) return;
+  const handleRequestDelete = (txId: string) => {
+      setConfirmDeleteTxId(txId);
+  };
+
+  const handleCancelDelete = () => {
+      setConfirmDeleteTxId(null);
+  };
+
+  const handleConfirmDelete = async (txId: string) => {
+      if (!onDeleteTransaction) return;
       
-      if (onDeleteTransaction) {
-          setLoading(true);
-          try {
-              await onDeleteTransaction(txCode);
-              await loadTransactions(); // Refresh modal data
-          } catch (e) {
-              console.error(e);
-          } finally {
-              setLoading(false);
-          }
+      setIsDeleting(true);
+      try {
+          await onDeleteTransaction(txId);
+          await loadTransactions();
+          setConfirmDeleteTxId(null);
+      } catch (e) {
+          console.error(e);
+      } finally {
+          setIsDeleting(false);
       }
   };
 
@@ -104,48 +107,37 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
   const months = Array.from({ length: 12 }, (_, i) => i);
 
   const findTransactionForMonth = (monthIndex: number, currentYear: number) => {
-      // Find transaction matching Month and Year
       const found = transactions.find(t => {
           const [tYStr, tMStr] = t.date.split('-');
           const tYear = parseInt(tYStr);
           const tMonth = parseInt(tMStr) - 1;
-
           return tYear === currentYear && tMonth === monthIndex;
       });
-
       return found;
   };
 
   const getMonthStatus = (monthIndex: number, hasPayment: boolean) => {
-    // If we found a real transaction, it is PAID regardless of contract dates
     if (hasPayment) return 'PAID';
 
     const cellVal = year * 100 + monthIndex;
     const startVal = startDate.getFullYear() * 100 + startDate.getMonth();
     
-    // Ignore months before contract start
     if (cellVal < startVal) return 'NA'; 
 
     const npDate = parseDate(contract.nextPaymentDate);
     const nextPayVal = npDate.getFullYear() * 100 + npDate.getMonth();
     const todayVal = today.getFullYear() * 100 + today.getMonth();
 
-    // Historical assumption: If month is before Next Payment Date, assume paid
     if (cellVal < nextPayVal) return 'PAID';
 
     const paymentDay = contract.paymentDay || 1;
     
     if (cellVal === nextPayVal) {
-        // Current due month
         const isPastDueDay = today.getDate() > paymentDay;
-        
-        // If it's this month but day passed, or month passed
         if ((todayVal === cellVal && isPastDueDay) || todayVal > cellVal) return 'OVERDUE_NOW';
-        
         return 'DUE_NOW';
     }
     
-    // If contract date fell behind (cellVal < todayVal) and no payment found => Arrears
     if (cellVal < todayVal) return 'OVERDUE_FUTURE'; 
     
     return 'FUTURE';
@@ -181,7 +173,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
         </div>
 
         <div className="p-6 overflow-y-auto bg-slate-50/50 flex-1">
-            {loading ? (
+            {loading && !isDeleting ? (
                  <div className="flex justify-center py-12">
                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
                  </div>
@@ -197,6 +189,8 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                         
                         const paymentDateStr = transaction ? formatDate(transaction.date) : null;
                         const paymentAmountStr = transaction ? formatMoney(transaction.amount) : null;
+
+                        const isConfirming = transaction && confirmDeleteTxId === transaction.code;
 
                         let cardClass = "border-slate-200 bg-white opacity-60";
                         let icon = <Clock size={20} className="text-slate-300" />;
@@ -233,17 +227,50 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
 
                         return (
                             <div key={monthIndex} className={`relative rounded-xl border p-4 flex flex-col justify-between min-h-[140px] transition-all duration-200 ${cardClass}`}>
+                                
+                                {/* DELETE CONFIRMATION OVERLAY */}
+                                {isConfirming && (
+                                    <div className="absolute inset-0 z-20 bg-white/95 backdrop-blur-sm rounded-xl p-4 flex flex-col items-center justify-center text-center animate-fadeIn border-2 border-red-100">
+                                        {isDeleting ? (
+                                            <div className="flex flex-col items-center gap-2">
+                                                <Loader className="animate-spin text-red-500" size={24} />
+                                                <span className="text-xs font-bold text-red-600">Eliminando...</span>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <div className="mb-2 text-red-100 bg-red-600 p-2 rounded-full"><Trash2 size={16}/></div>
+                                                <p className="text-xs font-bold text-slate-800 mb-1">¿Eliminar Pago?</p>
+                                                <p className="text-[10px] text-slate-500 mb-3 leading-tight">Se revertirá el saldo de la cuenta.</p>
+                                                <div className="flex gap-2 w-full">
+                                                    <button 
+                                                        onClick={(e) => { e.stopPropagation(); handleCancelDelete(); }}
+                                                        className="flex-1 py-1.5 bg-slate-100 text-slate-600 text-xs rounded-lg font-bold hover:bg-slate-200 transition-colors"
+                                                    >
+                                                        Cancelar
+                                                    </button>
+                                                    <button 
+                                                        onClick={(e) => { e.stopPropagation(); handleConfirmDelete(transaction!.code); }}
+                                                        className="flex-1 py-1.5 bg-red-600 text-white text-xs rounded-lg font-bold hover:bg-red-700 shadow-sm transition-colors"
+                                                    >
+                                                        Confirmar
+                                                    </button>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+
                                 <div>
                                     <div className="flex justify-between items-start mb-2">
                                         <span className="capitalize font-bold text-lg text-slate-700">{monthName}</span>
                                         <div className="flex items-center gap-2">
                                             {status === 'PAID' && transaction && onDeleteTransaction && (
                                                 <button 
-                                                    onClick={(e) => { e.stopPropagation(); handleDelete(transaction.code); }}
-                                                    className="p-1 text-emerald-600 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors z-20"
-                                                    title="Eliminar Pago"
+                                                    onClick={(e) => { e.stopPropagation(); handleRequestDelete(transaction.code); }}
+                                                    className="p-1.5 bg-white border border-emerald-200 text-slate-400 hover:text-red-500 hover:border-red-200 hover:bg-red-50 rounded-lg transition-all shadow-sm z-10"
+                                                    title="Eliminar este pago"
                                                 >
-                                                    <Trash2 size={18}/>
+                                                    <Trash2 size={14}/>
                                                 </button>
                                             )}
                                             {icon}
@@ -254,7 +281,6 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                                         <div className="flex flex-col gap-1">
                                            <div className="text-[10px] text-slate-500 font-medium">Vence: {formattedDueDate}</div>
                                            
-                                           {/* SHOW PAYMENT DETAILS IF TRANSACTION FOUND */}
                                            {status === 'PAID' && transaction ? (
                                                <div className="mt-2 bg-white/80 p-2 rounded-lg border border-emerald-100 shadow-sm">
                                                    <div className="flex items-center gap-1.5 mb-0.5">

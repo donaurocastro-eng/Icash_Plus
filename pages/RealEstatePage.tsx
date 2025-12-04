@@ -1,703 +1,530 @@
+import React, { useEffect, useState } from 'react';
+import { 
+  Plus, 
+  Search, 
+  Edit2, 
+  Trash2, 
+  Home, 
+  Users, 
+  FileText, 
+  Zap, 
+  DollarSign, 
+  Clock, 
+  History, 
+  MoreHorizontal, 
+  Layers, 
+  CheckCircle, 
+  XCircle,
+  TrendingUp,
+  CreditCard
+} from 'lucide-react';
+import { 
+  Property, Apartment, Tenant, Contract, PropertyServiceItem,
+  PropertyFormData, ApartmentFormData, TenantFormData, ContractFormData,
+  PaymentFormData, BulkPaymentFormData, PropertyServiceItemFormData, ServicePaymentFormData
+} from '../types';
 
-import React, { useEffect, useState, useRef } from 'react';
-import { Plus, Search, Edit2, Trash2, Building, Users, FileText, MapPin, Upload, FileSpreadsheet, Home, DollarSign, Calendar as CalendarIcon, Filter, Layers, TrendingUp, Zap, AlertTriangle, MessageCircle, Phone } from 'lucide-react';
-import { Property, Tenant, Contract, Apartment, PropertyFormData, TenantFormData, ContractFormData, ApartmentFormData, PaymentFormData, BulkPaymentFormData, PropertyServiceItem, PropertyServiceItemFormData, ServicePaymentFormData, Transaction } from '../types';
 import { PropertyService } from '../services/propertyService';
+import { ApartmentService } from '../services/apartmentService';
 import { TenantService } from '../services/tenantService';
 import { ContractService } from '../services/contractService';
-import { ApartmentService } from '../services/apartmentService';
 import { ServiceItemService } from '../services/serviceItemService';
 import { TransactionService } from '../services/transactionService';
+
 import PropertyModal from '../components/PropertyModal';
+import ApartmentModal from '../components/ApartmentModal';
 import TenantModal from '../components/TenantModal';
 import ContractModal from '../components/ContractModal';
-import ApartmentModal from '../components/ApartmentModal';
 import PaymentModal from '../components/PaymentModal';
 import PaymentHistoryModal from '../components/PaymentHistoryModal';
 import BulkPaymentModal from '../components/BulkPaymentModal';
 import ContractPriceHistoryModal from '../components/ContractPriceHistoryModal';
 import ServiceItemModal from '../components/ServiceItemModal';
 import ServicePaymentModal from '../components/ServicePaymentModal';
-import * as XLSX from 'xlsx';
 
-type Tab = 'PROPERTIES' | 'UNITS' | 'TENANTS' | 'CONTRACTS' | 'PAYMENTS' | 'SERVICES' | 'DELINQUENTS';
+type TabType = 'PROPERTIES' | 'UNITS' | 'TENANTS' | 'CONTRACTS' | 'SERVICES';
 
 const RealEstatePage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<Tab>('PROPERTIES');
+  const [activeTab, setActiveTab] = useState<TabType>('CONTRACTS');
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  
-  // Data
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Data State
   const [properties, setProperties] = useState<Property[]>([]);
   const [apartments, setApartments] = useState<Apartment[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [services, setServices] = useState<PropertyServiceItem[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
 
-  // Modal States
-  const [isPropModalOpen, setIsPropModalOpen] = useState(false);
-  const [editingProp, setEditingProp] = useState<Property | null>(null);
+  // Modals State
+  const [showPropertyModal, setShowPropertyModal] = useState(false);
+  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
+
+  const [showApartmentModal, setShowApartmentModal] = useState(false);
+  const [selectedApartment, setSelectedApartment] = useState<Apartment | null>(null);
+
+  const [showTenantModal, setShowTenantModal] = useState(false);
+  const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
+
+  const [showContractModal, setShowContractModal] = useState(false);
+  const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
+
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [showPriceHistoryModal, setShowPriceHistoryModal] = useState(false);
   
-  const [isAptModalOpen, setIsAptModalOpen] = useState(false);
-  const [editingApt, setEditingApt] = useState<Apartment | null>(null);
+  const [showServiceModal, setShowServiceModal] = useState(false);
+  const [selectedService, setSelectedService] = useState<PropertyServiceItem | null>(null);
+  const [showServicePaymentModal, setShowServicePaymentModal] = useState(false);
 
-  const [isTenantModalOpen, setIsTenantModalOpen] = useState(false);
-  const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
-
-  const [isContractModalOpen, setIsContractModalOpen] = useState(false);
-  const [editingContract, setEditingContract] = useState<Contract | null>(null);
-
-  const [isServiceModalOpen, setIsServiceModalOpen] = useState(false);
-  const [editingService, setEditingService] = useState<PropertyServiceItem | null>(null);
-  const [isServicePaymentModalOpen, setIsServicePaymentModalOpen] = useState(false);
-  const [payingService, setPayingService] = useState<PropertyServiceItem | null>(null);
-
-  // Payment Modals
-  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
-  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
-  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false); 
-  const [isPriceHistoryModalOpen, setIsPriceHistoryModalOpen] = useState(false);
-  
-  const [viewingContract, setViewingContract] = useState<Contract | null>(null);
-  const [payingContract, setPayingContract] = useState<Contract | null>(null);
-  const [paymentDescription, setPaymentDescription] = useState('');
-
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
-  
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
+  // --- DATA LOADING ---
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [p, t, a, c, s, tx] = await Promise.all([
-          PropertyService.getAll().catch(e => []),
-          TenantService.getAll().catch(e => []),
-          ApartmentService.getAll().catch(e => []),
-          ContractService.getAll().catch(e => []),
-          ServiceItemService.getAll().catch(e => []),
-          TransactionService.getAll().catch(e => [])
+      const [p, a, t, c, s] = await Promise.all([
+        PropertyService.getAll(),
+        ApartmentService.getAll(),
+        TenantService.getAll(),
+        ContractService.getAll(),
+        ServiceItemService.getAll()
       ]);
       setProperties(p);
-      setTenants(t);
       setApartments(a);
+      setTenants(t);
       setContracts(c);
       setServices(s);
-      setTransactions(tx);
-    } catch (e) { console.error(e); } finally { setLoading(false); }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => {
+    loadAll();
+  }, []);
 
-  // --- Handlers ---
-  const handleCreateProp = async (d: PropertyFormData) => { setIsSubmitting(true); await PropertyService.create(d); await loadAll(); setIsPropModalOpen(false); setIsSubmitting(false); };
-  const handleUpdateProp = async (d: PropertyFormData) => { if(!editingProp) return; setIsSubmitting(true); await PropertyService.update(editingProp.code, d); await loadAll(); setIsPropModalOpen(false); setIsSubmitting(false); };
-  const handleDeleteProp = async (c: string) => { if(confirm('¿Borrar?')) { await PropertyService.delete(c); await loadAll(); } };
-
-  const handleCreateTenant = async (d: TenantFormData) => { setIsSubmitting(true); await TenantService.create(d); await loadAll(); setIsTenantModalOpen(false); setIsSubmitting(false); };
-  const handleUpdateTenant = async (d: TenantFormData) => { if(!editingTenant) return; setIsSubmitting(true); await TenantService.update(editingTenant.code, d); await loadAll(); setIsTenantModalOpen(false); setIsSubmitting(false); };
-  const handleDeleteTenant = async (c: string) => { if(confirm('¿Borrar?')) { await TenantService.delete(c); await loadAll(); } };
-
-  const handleCreateApt = async (d: ApartmentFormData) => { setIsSubmitting(true); await ApartmentService.create(d); await loadAll(); setIsAptModalOpen(false); setIsSubmitting(false); };
-  const handleUpdateApt = async (d: ApartmentFormData) => { if(!editingApt) return; setIsSubmitting(true); await ApartmentService.update(editingApt.code, d); await loadAll(); setIsAptModalOpen(false); setIsSubmitting(false); };
-  const handleDeleteApt = async (c: string) => { if(confirm('¿Borrar Unidad?')) { await ApartmentService.delete(c); await loadAll(); } };
-
-  const handleCreateContract = async (d: ContractFormData) => { setIsSubmitting(true); await ContractService.create(d); await loadAll(); setIsContractModalOpen(false); setIsSubmitting(false); };
-  const handleUpdateContract = async (d: ContractFormData) => { if(!editingContract) return; setIsSubmitting(true); await ContractService.update(editingContract.code, d); await loadAll(); setIsContractModalOpen(false); setIsSubmitting(false); };
-  const handleDeleteContract = async (c: string) => { if(confirm('¿Borrar?')) { await ContractService.delete(c); await loadAll(); } };
-
-  const handleCreateService = async (d: PropertyServiceItemFormData) => { setIsSubmitting(true); await ServiceItemService.create(d); await loadAll(); setIsServiceModalOpen(false); setIsSubmitting(false); };
-  const handleUpdateService = async (d: PropertyServiceItemFormData) => { if(!editingService) return; setIsSubmitting(true); await ServiceItemService.update(editingService.code, d); await loadAll(); setIsServiceModalOpen(false); setIsSubmitting(false); };
-  const handleDeleteService = async (c: string) => { if(confirm('¿Borrar servicio?')) { await ServiceItemService.delete(c); await loadAll(); } };
-  
-  const handleRegisterServicePayment = async (d: ServicePaymentFormData) => {
-      setIsSubmitting(true);
-      try {
-          await ServiceItemService.registerPayment(d);
-          await loadAll();
-          setIsServicePaymentModalOpen(false);
-          alert("¡Pago de servicio registrado con éxito!");
-      } catch(e: any) { alert(e.message); } finally { setIsSubmitting(false); }
+  // --- HANDLERS: PROPERTY ---
+  const handlePropertySubmit = async (data: PropertyFormData) => {
+    setIsSubmitting(true);
+    try {
+      if (selectedProperty) await PropertyService.update(selectedProperty.code, data);
+      else await PropertyService.create(data);
+      await loadAll();
+    } finally { setIsSubmitting(false); }
+  };
+  const handleDeleteProperty = async (code: string) => {
+    if(!confirm("¿Eliminar propiedad?")) return;
+    await PropertyService.delete(code);
+    loadAll();
   };
 
-  const handleInitiatePayment = (dateToPay: Date) => {
-      const monthName = dateToPay.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
-      setPaymentDescription(`Alquiler ${monthName.charAt(0).toUpperCase() + monthName.slice(1)}`);
-      setPayingContract(viewingContract); 
-      setIsHistoryModalOpen(false);
-      setIsPaymentModalOpen(true); 
+  // --- HANDLERS: APARTMENT ---
+  const handleApartmentSubmit = async (data: ApartmentFormData) => {
+    setIsSubmitting(true);
+    try {
+      if (selectedApartment) await ApartmentService.update(selectedApartment.code, data);
+      else await ApartmentService.create(data);
+      await loadAll();
+    } finally { setIsSubmitting(false); }
+  };
+  const handleDeleteApartment = async (code: string) => {
+    if(!confirm("¿Eliminar unidad?")) return;
+    await ApartmentService.delete(code);
+    loadAll();
   };
 
-  const handleRegisterPayment = async (d: PaymentFormData) => {
-      setIsSubmitting(true);
-      try {
-          await ContractService.registerPayment(d);
-          await loadAll();
-          setIsPaymentModalOpen(false);
-          alert("¡Pago registrado con éxito!");
-      } catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
+  // --- HANDLERS: TENANT ---
+  const handleTenantSubmit = async (data: TenantFormData) => {
+    setIsSubmitting(true);
+    try {
+      if (selectedTenant) await TenantService.update(selectedTenant.code, data);
+      else await TenantService.create(data);
+      await loadAll();
+    } finally { setIsSubmitting(false); }
+  };
+  const handleDeleteTenant = async (code: string) => {
+    if(!confirm("¿Eliminar inquilino?")) return;
+    await TenantService.delete(code);
+    loadAll();
   };
 
-  const handleBulkPayment = async (d: BulkPaymentFormData) => {
-      setIsSubmitting(true);
-      try {
-          await ContractService.processBulkPayment(d);
-          await loadAll();
-          setIsBulkModalOpen(false);
-          alert("¡Pagos masivos registrados con éxito!");
-      } catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
+  // --- HANDLERS: CONTRACT ---
+  const handleContractSubmit = async (data: ContractFormData) => {
+    setIsSubmitting(true);
+    try {
+      if (selectedContract) await ContractService.update(selectedContract.code, data);
+      else await ContractService.create(data);
+      await loadAll();
+    } finally { setIsSubmitting(false); }
+  };
+  const handleDeleteContract = async (code: string) => {
+    if(!confirm("¿Eliminar contrato? Se perderá el historial.")) return;
+    await ContractService.delete(code);
+    loadAll();
+  };
+
+  // --- HANDLERS: PAYMENTS ---
+  const handleRegisterPayment = async (data: PaymentFormData) => {
+    setIsSubmitting(true);
+    try {
+      await ContractService.registerPayment(data);
+      await loadAll();
+      setShowPaymentModal(false);
+      // If history modal is open, it will refresh itself via useEffect dependency or we could force it
+    } finally { setIsSubmitting(false); }
+  };
+
+  const handleBulkPayment = async (data: BulkPaymentFormData) => {
+    setIsSubmitting(true);
+    try {
+      await ContractService.processBulkPayment(data);
+      await loadAll();
+      setShowBulkModal(false);
+    } finally { setIsSubmitting(false); }
   };
 
   const handleDeletePaymentHistory = async (code: string) => {
       try {
           await TransactionService.delete(code);
           await loadAll(); // Refresh global data
+          alert("El pago se ha eliminado correctamente. El saldo ha sido revertido.");
       } catch (e: any) {
           alert(e.message);
           throw e; // Modal will handle spinner stop
       }
   };
 
-  const handleOpenHistory = (c: Contract) => {
-      // Inyectamos el propertyCode al abrir el historial para asegurar que la búsqueda
-      // "smart" funcione incluso si el contrato no tiene el código guardado.
-      const apt = apartments.find(a => a.code === c.apartmentCode);
-      const contractWithProp = {
-          ...c,
-          propertyCode: c.propertyCode || apt?.propertyCode
-      };
-      setViewingContract(contractWithProp);
-      setIsHistoryModalOpen(true);
+  // --- HANDLERS: SERVICE ---
+  const handleServiceSubmit = async (data: PropertyServiceItemFormData) => {
+    setIsSubmitting(true);
+    try {
+      if (selectedService) await ServiceItemService.update(selectedService.code, data);
+      else await ServiceItemService.create(data);
+      await loadAll();
+    } finally { setIsSubmitting(false); }
+  };
+  const handleDeleteService = async (code: string) => {
+    if(!confirm("¿Eliminar servicio?")) return;
+    await ServiceItemService.delete(code);
+    loadAll();
+  };
+  const handleServicePayment = async (data: ServicePaymentFormData) => {
+    setIsSubmitting(true);
+    try {
+      await ServiceItemService.registerPayment(data);
+      await loadAll();
+      setShowServicePaymentModal(false);
+    } finally { setIsSubmitting(false); }
   };
 
-  const openWhatsApp = (tenant: Tenant, contract: Contract, aptName: string, daysLate: number) => {
-      if (!tenant.phone) return;
-      const cleanPhone = tenant.phone.replace(/[^0-9]/g, '');
-      const message = `Hola ${tenant.fullName}, le saludamos para recordarle que el alquiler de ${aptName} venció el ${new Date(contract.nextPaymentDate).toLocaleDateString()}. Tiene ${daysLate} días de atraso. Agradecemos su pago.`;
-      window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
+  // --- HELPERS ---
+  const getContractLabel = (c: Contract) => {
+      const t = tenants.find(x => x.code === c.tenantCode);
+      const a = apartments.find(x => x.code === c.apartmentCode);
+      return `${t?.fullName || c.tenantCode} - ${a?.name || c.apartmentCode}`;
   };
 
-  // --- Excel Logic ---
-  const handleDownloadTemplate = async () => {
-    const wb = XLSX.utils.book_new();
-    
-    if (activeTab === 'SERVICES') {
-        const headers = ['Propiedad_Codigo', 'Nombre_Servicio', 'Costo_Estimado', 'Categoria_Gasto_Codigo', 'Cuenta_Pago_Codigo', 'Activo (SI/NO)'];
-        const example = ['AP-001', 'Agua Potable', 500, 'CAT-EXP-001', 'CTA-001', 'SI'];
-        const ws = XLSX.utils.aoa_to_sheet([headers, example]);
-        XLSX.utils.book_append_sheet(wb, ws, "Servicios");
-        XLSX.writeFile(wb, "plantilla_servicios.xlsx");
-        return;
-    }
-
-    const headers = ['Nombre', 'Valor', 'Moneda (HNL/USD)'];
-    const example = ['Edificio Central', 5000000, 'HNL'];
-    const ws = XLSX.utils.aoa_to_sheet([headers, example]);
-    XLSX.utils.book_append_sheet(wb, ws, "Propiedades");
-    XLSX.writeFile(wb, `plantilla_bienes_raices.xlsx`);
+  const openPaymentForDate = (date: Date) => {
+     // This is called from History Modal to "Pay" a specific past/future date
+     // We can reuse the standard Payment Modal but pre-fill the date
+     // Ideally PaymentModal needs to accept an initialDate. 
+     // For now, we just close history and open Payment.
+     // In a real app, we'd pass the date to PaymentModal state.
+     setShowHistoryModal(false);
+     setShowPaymentModal(true);
+     // NOTE: PaymentModal currently defaults to today. 
+     // To support specific date, PaymentModal needs 'initialDate' prop.
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) processExcelFile(e.target.files[0]);
-    e.target.value = '';
-  };
+  if (loading) return <div className="flex justify-center items-center h-full"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600"></div></div>;
 
-  const processExcelFile = async (file: File) => {
-    setIsImporting(true);
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        try {
-            const data = e.target?.result;
-            const wb = XLSX.read(data, { type: 'binary' });
-            const json = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) as any[];
-            if (json.length === 0) { alert("Archivo vacío"); return; }
-
-            let success = 0, errors = 0;
-
-            if (activeTab === 'SERVICES') {
-                for (const row of json) {
-                    try {
-                        const propCode = row['Propiedad_Codigo'] || row['propiedad'];
-                        const name = row['Nombre_Servicio'] || row['nombre'];
-                        const amount = parseFloat(row['Costo_Estimado'] || row['costo']);
-                        const catCode = row['Categoria_Gasto_Codigo'] || row['categoria'];
-                        const accCode = row['Cuenta_Pago_Codigo'] || row['cuenta'];
-                        const activeStr = row['Activo (SI/NO)'] || 'SI';
-                        
-                        if (!propCode || !name) { errors++; continue; }
-
-                        await ServiceItemService.create({
-                            propertyCode: String(propCode),
-                            name: String(name),
-                            defaultAmount: amount || 0,
-                            defaultCategoryCode: catCode ? String(catCode) : undefined,
-                            defaultAccountCode: accCode ? String(accCode) : undefined,
-                            active: activeStr.toString().toUpperCase() === 'SI'
-                        });
-                        success++;
-                    } catch (err) { console.error(err); errors++; }
-                }
-            } else {
-                for (const row of json) {
-                    try {
-                        const name = row['Nombre'] || row['nombre'];
-                        const val = parseFloat(row['Valor'] || 0);
-                        const curr = row['Moneda (HNL/USD)'] || 'HNL';
-                        if (!name) continue;
-                        await PropertyService.create({ name: String(name), value: val, currency: curr as any, cadastralKey: '', annualTax: 0 });
-                        success++;
-                    } catch (err) { errors++; }
-                }
-            }
-
-            await loadAll();
-            alert(`Importación: ${success} exitosos, ${errors} fallidos.`);
-        } catch (err) { console.error(err); alert("Error al leer archivo."); }
-        finally { setIsImporting(false); }
-    };
-    reader.readAsBinaryString(file);
-  };
-
-  const formatMoney = (n: number) => n.toLocaleString('es-HN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-  // Filtering logic
-  const lowerSearch = searchTerm.toLowerCase();
-
-  const filteredProperties = properties.filter(p => p.name.toLowerCase().includes(lowerSearch) || p.code.toLowerCase().includes(lowerSearch));
-  
-  const filteredUnits = apartments.filter(a => {
-      const parent = properties.find(p => p.code === a.propertyCode);
-      return a.name.toLowerCase().includes(lowerSearch) || a.code.toLowerCase().includes(lowerSearch) || parent?.name.toLowerCase().includes(lowerSearch);
-  });
-
-  const filteredTenants = tenants.filter(t => t.fullName.toLowerCase().includes(lowerSearch) || t.phone?.includes(lowerSearch));
-
-  const filteredContracts = contracts.filter(c => {
-      const ten = tenants.find(t => t.code === c.tenantCode);
-      const apt = apartments.find(a => a.code === c.apartmentCode);
-      return c.code.toLowerCase().includes(lowerSearch) || ten?.fullName.toLowerCase().includes(lowerSearch) || apt?.name.toLowerCase().includes(lowerSearch);
-  });
-
-  const filteredServices = services.filter(s => s.name.toLowerCase().includes(lowerSearch) || s.code.toLowerCase().includes(lowerSearch));
-
-  // --- SMART CHECK LOGIC ---
-  const checkIfPaidInPeriod = (c: Contract, checkDate: Date): boolean => {
-      const dueMonth = checkDate.getMonth();
-      const dueYear = checkDate.getFullYear();
-
-      // Fix for potential undefined apartment or propertyCode
-      const apt = apartments.find(a => a.code === c.apartmentCode);
-      const ten = tenants.find(t => t.code === c.tenantCode);
-      const derivedPropertyCode = c.propertyCode || apt?.propertyCode;
-      
-      const tenantName = ten?.fullName.toLowerCase() || '';
-      const unitName = apt?.name.toLowerCase() || '';
-      const contractLabel = `${ten?.fullName || ''} - ${apt?.name || ''}`.toLowerCase();
-
-      return transactions.some(t => {
-          if (t.type !== 'INGRESO') return false;
-
-          const tDate = new Date(t.date);
-          const tDateObj = new Date(tDate.valueOf() + tDate.getTimezoneOffset() * 60000);
-          
-          if (tDateObj.getFullYear() !== dueYear || tDateObj.getMonth() !== dueMonth) return false;
-
-          const desc = t.description.toLowerCase();
-
-          // 1. Coincidencia por Contrato
-          if (t.contractCode === c.code) return true;
-          
-          // 2. Coincidencia por Propiedad (Fallback)
-          if (derivedPropertyCode && t.propertyCode === derivedPropertyCode) return true;
-
-          // 3. Coincidencia por Descripción (Smart Match)
-          if (tenantName.length > 2 && desc.includes(tenantName)) return true;
-          if (unitName.length > 2 && desc.includes(unitName)) return true;
-          
-          // 4. Coincidencia por Label (Full Match like History)
-          if (contractLabel.length > 5 && desc.includes(contractLabel)) return true;
-
-          return false;
-      });
-  };
-
-  // --- DELINQUENTS FILTER (SMART CHECK) ---
-  const delinquentContracts = contracts.filter(c => {
-      if (c.status !== 'ACTIVE') return false;
-      
-      const now = new Date();
-      const todayStr = now.toISOString().split('T')[0];
-      
-      const nextDateRaw = c.nextPaymentDate || c.startDate;
-      const nextDateObj = new Date(nextDateRaw);
-      const nextDateStr = new Date(nextDateObj.valueOf() + nextDateObj.getTimezoneOffset() * 60000).toISOString().split('T')[0];
-      
-      // Si la fecha es futura o es hoy, NO está en mora técnica
-      if (nextDateStr >= todayStr) return false;
-
-      // Si la fecha ya pasó, usamos el SMART CHECK: ¿Existe un pago real?
-      const isActuallyPaid = checkIfPaidInPeriod(c, nextDateObj);
-      
-      if (isActuallyPaid) return false; // Si encontró el dinero, NO es moroso
-
-      // Apply Search Filter
-      const ten = tenants.find(t => t.code === c.tenantCode);
-      const apt = apartments.find(a => a.code === c.apartmentCode);
-      
-      const tenName = ten?.fullName.toLowerCase() || '';
-      const aptName = apt?.name.toLowerCase() || '';
-      
-      return tenName.includes(lowerSearch) || aptName.includes(lowerSearch);
-  });
-
-  // Helpers for Payment History Modal Props
-  const getContractDetails = () => {
-      const c = viewingContract;
-      if(!c) return { label: '', tenName: '', unitName: '' };
-      const apt = apartments.find(a => a.code === c.apartmentCode);
-      const ten = tenants.find(t => t.code === c.tenantCode);
-      return {
-          label: `${ten?.fullName || 'Inquilino'} - ${apt?.name || 'Unidad'}`,
-          tenName: ten?.fullName || '',
-          unitName: apt?.name || ''
-      };
-  };
-  
-  const { label: contractLabel, tenName, unitName } = getContractDetails();
+  const TabButton = ({ id, label, icon: Icon }: { id: TabType, label: string, icon: any }) => (
+    <button
+      onClick={() => { setActiveTab(id); setSearchTerm(''); }}
+      className={`flex items-center space-x-2 px-4 py-2.5 rounded-lg font-bold transition-all ${
+        activeTab === id 
+          ? 'bg-slate-800 text-white shadow-md' 
+          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+      }`}
+    >
+      <Icon size={18} />
+      <span className="hidden sm:inline">{label}</span>
+    </button>
+  );
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col lg:flex-row justify-between gap-4">
-        <h1 className="text-2xl font-bold text-slate-800 flex gap-2"><Building className="text-brand-600"/> Bienes Raíces</h1>
-        <div className="flex flex-wrap items-center gap-3">
-            {activeTab !== 'PAYMENTS' && activeTab !== 'DELINQUENTS' && (
-                <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
-                <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept=".xlsx, .xls" className="hidden" />
-                <button onClick={handleDownloadTemplate} className="px-3 py-2 text-slate-600 hover:bg-slate-50 text-sm font-medium border-r border-slate-100" title="Descargar Plantilla"><FileSpreadsheet size={16}/></button>
-                <button onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-emerald-600 text-sm font-medium disabled:opacity-50" title="Importar">
-                    {isImporting ? <div className="animate-spin h-4 w-4 border-2 border-emerald-600 border-t-transparent rounded-full"/> : <Upload size={16} />}
-                </button>
-                </div>
-            )}
-            <div className="w-px h-8 bg-slate-200 mx-1 hidden sm:block"></div>
-            {activeTab !== 'PAYMENTS' && activeTab !== 'DELINQUENTS' && (
-            <button onClick={() => {
-                    if(activeTab === 'PROPERTIES') { setEditingProp(null); setIsPropModalOpen(true); }
-                    if(activeTab === 'UNITS') { setEditingApt(null); setIsAptModalOpen(true); }
-                    if(activeTab === 'TENANTS') { setEditingTenant(null); setIsTenantModalOpen(true); }
-                    if(activeTab === 'CONTRACTS') { setEditingContract(null); setIsContractModalOpen(true); }
-                    if(activeTab === 'SERVICES') { setEditingService(null); setIsServiceModalOpen(true); }
-                }} 
-                className="px-4 py-2 bg-brand-600 text-white rounded-md text-sm font-medium hover:bg-brand-700 flex gap-2 items-center shadow-sm">
-                <Plus size={16}/> <span className="hidden sm:inline">Nuevo</span>
-            </button>
-            )}
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Gestión Inmobiliaria</h1>
+          <p className="text-slate-500">Administra propiedades, contratos y cobros.</p>
+        </div>
+        <div className="flex flex-wrap gap-2 bg-white p-1.5 rounded-xl border border-slate-200 shadow-sm">
+          <TabButton id="CONTRACTS" label="Contratos" icon={FileText} />
+          <TabButton id="PROPERTIES" label="Propiedades" icon={Home} />
+          <TabButton id="UNITS" label="Unidades" icon={Layers} />
+          <TabButton id="TENANTS" label="Inquilinos" icon={Users} />
+          <TabButton id="SERVICES" label="Servicios" icon={Zap} />
         </div>
       </div>
 
-      <div className="bg-white p-1 rounded-2xl border border-slate-200 shadow-sm">
-        <div className="p-3 border-b border-slate-100 flex gap-3">
-            <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                <input type="text" placeholder="Buscar..." className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white outline-none text-sm"
-                    value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+      {/* SEARCH & ADD ACTION */}
+      <div className="flex justify-between items-center gap-4">
+        <div className="relative max-w-sm w-full">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+          <input 
+            type="text" 
+            placeholder="Buscar..." 
+            className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none text-sm"
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+          />
+        </div>
+        <div>
+          {activeTab === 'PROPERTIES' && (
+            <button onClick={() => { setSelectedProperty(null); setShowPropertyModal(true); }} className="btn-primary flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 font-bold"><Plus size={18}/> Propiedad</button>
+          )}
+          {activeTab === 'UNITS' && (
+            <button onClick={() => { setSelectedApartment(null); setShowApartmentModal(true); }} className="btn-primary flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 font-bold"><Plus size={18}/> Unidad</button>
+          )}
+          {activeTab === 'TENANTS' && (
+            <button onClick={() => { setSelectedTenant(null); setShowTenantModal(true); }} className="btn-primary flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 font-bold"><Plus size={18}/> Inquilino</button>
+          )}
+          {activeTab === 'CONTRACTS' && (
+            <button onClick={() => { setSelectedContract(null); setShowContractModal(true); }} className="btn-primary flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 font-bold"><Plus size={18}/> Contrato</button>
+          )}
+          {activeTab === 'SERVICES' && (
+            <button onClick={() => { setSelectedService(null); setShowServiceModal(true); }} className="btn-primary flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 font-bold"><Plus size={18}/> Servicio</button>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden min-h-[400px]">
+        {/* VIEW: CONTRACTS */}
+        {activeTab === 'CONTRACTS' && (
+            <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-slate-500 font-medium">
+                        <tr>
+                            <th className="px-6 py-3">Inquilino / Unidad</th>
+                            <th className="px-6 py-3">Vigencia</th>
+                            <th className="px-6 py-3 text-right">Monto</th>
+                            <th className="px-6 py-3 text-center">Estado</th>
+                            <th className="px-6 py-3 text-center">Próx. Pago</th>
+                            <th className="px-6 py-3 text-right">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {contracts.filter(c => getContractLabel(c).toLowerCase().includes(searchTerm.toLowerCase())).map(contract => {
+                            const t = tenants.find(x => x.code === contract.tenantCode);
+                            const a = apartments.find(x => x.code === contract.apartmentCode);
+                            return (
+                                <tr key={contract.code} className="hover:bg-slate-50 group">
+                                    <td className="px-6 py-3">
+                                        <div className="font-bold text-slate-800">{t?.fullName || contract.tenantCode}</div>
+                                        <div className="text-xs text-slate-500">{a?.name || contract.apartmentCode}</div>
+                                    </td>
+                                    <td className="px-6 py-3 text-xs text-slate-500">
+                                        <div>Inicio: {contract.startDate}</div>
+                                        <div>Fin: {contract.endDate || 'Indefinido'}</div>
+                                    </td>
+                                    <td className="px-6 py-3 text-right font-mono font-bold text-slate-700">
+                                        {contract.amount.toLocaleString('es-HN', {style:'currency', currency: 'HNL'})}
+                                    </td>
+                                    <td className="px-6 py-3 text-center">
+                                        <span className={`px-2 py-1 rounded text-[10px] font-bold ${contract.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                                            {contract.status === 'ACTIVE' ? 'ACTIVO' : 'INACTIVO'}
+                                        </span>
+                                    </td>
+                                    <td className="px-6 py-3 text-center">
+                                        <span className={`text-xs font-bold ${new Date(contract.nextPaymentDate || '') < new Date() ? 'text-red-500' : 'text-slate-600'}`}>
+                                            {contract.nextPaymentDate}
+                                        </span>
+                                    </td>
+                                    <td className="px-6 py-3 text-right">
+                                        <div className="flex justify-end gap-1">
+                                            <button onClick={() => { setSelectedContract(contract); setShowPaymentModal(true); }} className="p-1.5 text-emerald-600 bg-emerald-50 hover:bg-emerald-100 rounded" title="Registrar Pago"><DollarSign size={16}/></button>
+                                            <button onClick={() => { setSelectedContract(contract); setShowHistoryModal(true); }} className="p-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded" title="Historial"><History size={16}/></button>
+                                            <button onClick={() => { setSelectedContract(contract); setShowBulkModal(true); }} className="p-1.5 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded" title="Cobro Masivo"><Layers size={16}/></button>
+                                            <button onClick={() => { setSelectedContract(contract); setShowPriceHistoryModal(true); }} className="p-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 rounded" title="Ajuste Precio"><TrendingUp size={16}/></button>
+                                            <button onClick={() => { setSelectedContract(contract); setShowContractModal(true); }} className="p-1.5 text-slate-400 hover:text-slate-600 rounded" title="Editar"><Edit2 size={16}/></button>
+                                            <button onClick={() => handleDeleteContract(contract.code)} className="p-1.5 text-slate-400 hover:text-red-500 rounded" title="Eliminar"><Trash2 size={16}/></button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
             </div>
-        </div>
-        <div className="px-3 pt-2">
-            <nav className="flex space-x-6 overflow-x-auto">
-            {[
-                { id: 'PROPERTIES', label: 'Edificios', icon: MapPin },
-                { id: 'UNITS', label: 'Unidades', icon: Home },
-                { id: 'TENANTS', label: 'Inquilinos', icon: Users },
-                { id: 'CONTRACTS', label: 'Contratos', icon: FileText },
-                { id: 'SERVICES', label: 'Servicios', icon: Zap },
-                { id: 'PAYMENTS', label: 'Control Pagos', icon: DollarSign },
-                { id: 'DELINQUENTS', label: 'En Mora', icon: AlertTriangle },
-            ].map((tab) => (
-                <button key={tab.id} onClick={() => setActiveTab(tab.id as Tab)} className={`pb-3 flex items-center gap-2 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === tab.id ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-                <tab.icon size={16} /> {tab.label}
-                </button>
-            ))}
-            </nav>
-        </div>
-      </div>
+        )}
 
-      {loading ? <div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600"></div></div> : (
-        <>
-            {activeTab === 'PROPERTIES' && (
-                <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-slate-50 font-medium"><tr><th className="p-4">Nombre</th><th className="p-4">Valor</th><th className="p-4 text-right">Acciones</th></tr></thead>
-                        <tbody>{filteredProperties.map(p => (<tr key={p.code} className="border-t border-slate-100 hover:bg-slate-50"><td className="p-4">{p.name}</td><td className="p-4">{formatMoney(p.value)} {p.currency}</td><td className="p-4 text-right"><button onClick={() => handleDeleteProp(p.code)}><Trash2 size={16}/></button></td></tr>))}</tbody>
-                    </table>
-                </div>
-            )}
-            
-            {activeTab === 'UNITS' && (
-               <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-               <table className="w-full text-sm text-left">
-                   <thead className="bg-slate-50 font-medium"><tr><th className="p-4">Unidad</th><th className="p-4">Edificio</th><th className="p-4">Estado</th><th className="p-4 text-right">Acciones</th></tr></thead>
-                   <tbody>
-                       {filteredUnits.map(a => {
-                           const parent = properties.find(p => p.code === a.propertyCode);
-                           return (
-                           <tr key={a.code} className="border-t border-slate-100 hover:bg-slate-50">
-                               <td className="p-4"><div className="font-bold">{a.name}</div><div className="text-xs text-slate-400">{a.code}</div></td>
-                               <td className="p-4 text-slate-600">{parent?.name || a.propertyCode}</td>
-                               <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-bold ${a.status === 'AVAILABLE' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{a.status}</span></td>
-                               <td className="p-4 text-right">
-                                   <button onClick={() => { setEditingApt(a); setIsAptModalOpen(true); }} className="mr-2 text-slate-400 hover:text-brand-600"><Edit2 size={16}/></button>
-                                   <button onClick={() => handleDeleteApt(a.code)} className="text-slate-400 hover:text-red-600"><Trash2 size={16}/></button>
-                               </td>
-                           </tr>
-                       )})}
-                   </tbody>
-               </table>
-           </div>
-            )}
+        {/* VIEW: PROPERTIES */}
+        {activeTab === 'PROPERTIES' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
+                {properties.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(p => (
+                    <div key={p.code} className="border border-slate-200 rounded-xl p-4 hover:shadow-md transition-shadow">
+                        <div className="flex justify-between items-start mb-2">
+                            <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600"><Home size={20}/></div>
+                            <div className="flex gap-1">
+                                <button onClick={() => { setSelectedProperty(p); setShowPropertyModal(true); }} className="p-1.5 text-slate-400 hover:text-indigo-600 rounded"><Edit2 size={16}/></button>
+                                <button onClick={() => handleDeleteProperty(p.code)} className="p-1.5 text-slate-400 hover:text-red-500 rounded"><Trash2 size={16}/></button>
+                            </div>
+                        </div>
+                        <h3 className="font-bold text-slate-800">{p.name}</h3>
+                        <p className="text-xs text-slate-500 mb-3">{p.code}</p>
+                        <div className="flex justify-between text-xs border-t border-slate-100 pt-2">
+                            <span className="text-slate-500">Valor:</span>
+                            <span className="font-bold text-slate-700">{p.value.toLocaleString()} {p.currency}</span>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        )}
 
-            {activeTab === 'TENANTS' && (
-                <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                <table className="w-full text-sm text-left">
-                    <thead className="bg-slate-50 font-medium"><tr><th className="p-4">Nombre</th><th className="p-4">Contacto</th><th className="p-4">Estado</th><th className="p-4 text-right">Acciones</th></tr></thead>
-                    <tbody>
-                        {filteredTenants.map(t => (
-                            <tr key={t.code} className="border-t border-slate-100 hover:bg-slate-50">
-                                <td className="p-4"><div className="font-bold">{t.fullName}</div><div className="text-xs text-slate-400">{t.code}</div></td>
-                                <td className="p-4 text-slate-600"><div className="text-xs">{t.phone}</div><div className="text-xs">{t.email}</div></td>
-                                <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-bold ${t.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{t.status === 'ACTIVE' ? 'ACTIVO' : 'INACTIVO'}</span></td>
-                                <td className="p-4 text-right">
-                                    <button onClick={() => { setEditingTenant(t); setIsTenantModalOpen(true); }} className="mr-2 text-slate-400 hover:text-brand-600"><Edit2 size={16}/></button>
-                                    <button onClick={() => handleDeleteTenant(t.code)} className="text-slate-400 hover:text-red-600"><Trash2 size={16}/></button>
+        {/* VIEW: UNITS */}
+        {activeTab === 'UNITS' && (
+            <div className="overflow-x-auto">
+                 <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-slate-500 font-medium"><tr><th className="px-6 py-3">Unidad</th><th className="px-6 py-3">Edificio</th><th className="px-6 py-3 text-center">Estado</th><th className="px-6 py-3 text-right">Acciones</th></tr></thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {apartments.filter(a => a.name.toLowerCase().includes(searchTerm.toLowerCase())).map(a => {
+                            const p = properties.find(x => x.code === a.propertyCode);
+                            return (
+                                <tr key={a.code} className="hover:bg-slate-50">
+                                    <td className="px-6 py-3 font-bold text-slate-700">{a.name}</td>
+                                    <td className="px-6 py-3 text-slate-500">{p?.name || a.propertyCode}</td>
+                                    <td className="px-6 py-3 text-center">
+                                        <span className={`px-2 py-1 rounded text-[10px] font-bold ${a.status === 'AVAILABLE' ? 'bg-emerald-100 text-emerald-700' : a.status === 'RENTED' ? 'bg-indigo-100 text-indigo-700' : 'bg-orange-100 text-orange-700'}`}>
+                                            {a.status === 'AVAILABLE' ? 'DISPONIBLE' : a.status === 'RENTED' ? 'ALQUILADO' : 'MANTENIMIENTO'}
+                                        </span>
+                                    </td>
+                                    <td className="px-6 py-3 text-right">
+                                         <div className="flex justify-end gap-1">
+                                            <button onClick={() => { setSelectedApartment(a); setShowApartmentModal(true); }} className="p-1.5 text-slate-400 hover:text-indigo-600 rounded"><Edit2 size={16}/></button>
+                                            <button onClick={() => handleDeleteApartment(a.code)} className="p-1.5 text-slate-400 hover:text-red-500 rounded"><Trash2 size={16}/></button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            )
+                        })}
+                    </tbody>
+                 </table>
+            </div>
+        )}
+
+        {/* VIEW: TENANTS */}
+        {activeTab === 'TENANTS' && (
+            <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-slate-500 font-medium"><tr><th className="px-6 py-3">Nombre</th><th className="px-6 py-3">Contacto</th><th className="px-6 py-3 text-center">Estado</th><th className="px-6 py-3 text-right">Acciones</th></tr></thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {tenants.filter(t => t.fullName.toLowerCase().includes(searchTerm.toLowerCase())).map(t => (
+                             <tr key={t.code} className="hover:bg-slate-50">
+                                <td className="px-6 py-3 font-bold text-slate-700">{t.fullName}</td>
+                                <td className="px-6 py-3 text-slate-500 text-xs">
+                                    {t.phone && <div>Tel: {t.phone}</div>}
+                                    {t.email && <div>Email: {t.email}</div>}
                                 </td>
-                            </tr>
+                                <td className="px-6 py-3 text-center">
+                                     <span className={`px-2 py-1 rounded text-[10px] font-bold ${t.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                                        {t.status === 'ACTIVE' ? 'ACTIVO' : 'INACTIVO'}
+                                    </span>
+                                </td>
+                                <td className="px-6 py-3 text-right">
+                                    <div className="flex justify-end gap-1">
+                                        <button onClick={() => { setSelectedTenant(t); setShowTenantModal(true); }} className="p-1.5 text-slate-400 hover:text-indigo-600 rounded"><Edit2 size={16}/></button>
+                                        <button onClick={() => handleDeleteTenant(t.code)} className="p-1.5 text-slate-400 hover:text-red-500 rounded"><Trash2 size={16}/></button>
+                                    </div>
+                                </td>
+                             </tr>
                         ))}
                     </tbody>
                 </table>
             </div>
-            )}
+        )}
 
-            {activeTab === 'CONTRACTS' && (
-                <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                <table className="w-full text-sm text-left">
-                    <thead className="bg-slate-50 font-medium">
-                        <tr>
-                            <th className="p-4">Inquilino / Unidad</th>
-                            <th className="p-4">Vigencia</th>
-                            <th className="p-4 text-center">Día Pago</th>
-                            <th className="p-4">Próx. Pago</th>
-                            <th className="p-4">Monto</th>
-                            <th className="p-4 text-right">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {filteredContracts.map(c => {
-                            const apt = apartments.find(a => a.code === c.apartmentCode);
-                            const ten = tenants.find(t => t.code === c.tenantCode);
+        {/* VIEW: SERVICES */}
+        {activeTab === 'SERVICES' && (
+            <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-slate-500 font-medium"><tr><th className="px-6 py-3">Servicio</th><th className="px-6 py-3">Propiedad</th><th className="px-6 py-3 text-right">Costo Est.</th><th className="px-6 py-3 text-center">Estado</th><th className="px-6 py-3 text-right">Acciones</th></tr></thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {services.filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase())).map(s => {
+                            const p = properties.find(x => x.code === s.propertyCode);
                             return (
-                            <tr key={c.code} className="border-t border-slate-100 hover:bg-slate-50">
-                                <td className="p-4">
-                                    <div className="font-bold text-slate-800">{ten?.fullName || 'Desconocido'}</div>
-                                    <div className="text-xs text-slate-500">{apt?.name || c.apartmentCode}</div>
-                                </td>
-                                <td className="p-4 text-xs text-slate-500">{c.startDate} - {c.endDate}</td>
-                                <td className="p-4 text-center">
-                                    <span className="bg-indigo-50 text-indigo-700 px-2 py-1 rounded text-xs font-bold border border-indigo-100">Día {c.paymentDay}</span>
-                                </td>
-                                <td className="p-4 font-mono text-slate-600 text-sm font-bold">
-                                    {new Date(c.nextPaymentDate).toLocaleDateString()}
-                                </td>
-                                <td className="p-4">
-                                    <div className="font-bold text-slate-700">{formatMoney(c.amount)}</div>
-                                </td>
-                                <td className="p-4 text-right flex justify-end gap-2">
-                                    <button onClick={() => { setViewingContract(c); setIsPriceHistoryModalOpen(true); }} className="p-1.5 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 transition-colors" title="Historial"><TrendingUp size={16}/></button>
-                                    <button onClick={() => { setEditingContract(c); setIsContractModalOpen(true); }} className="p-1.5 text-slate-400 hover:text-brand-600"><Edit2 size={16}/></button>
-                                    <button onClick={() => handleDeleteContract(c.code)} className="p-1.5 text-slate-400 hover:text-red-600"><Trash2 size={16}/></button>
-                                </td>
-                            </tr>
-                        )})}
+                                <tr key={s.code} className="hover:bg-slate-50">
+                                    <td className="px-6 py-3 font-bold text-slate-700">{s.name}</td>
+                                    <td className="px-6 py-3 text-slate-500">{p?.name || s.propertyCode}</td>
+                                    <td className="px-6 py-3 text-right font-mono">{s.defaultAmount}</td>
+                                    <td className="px-6 py-3 text-center">
+                                        {s.active ? <CheckCircle size={16} className="text-emerald-500 mx-auto"/> : <XCircle size={16} className="text-slate-300 mx-auto"/>}
+                                    </td>
+                                    <td className="px-6 py-3 text-right">
+                                        <div className="flex justify-end gap-1">
+                                            <button onClick={() => { setSelectedService(s); setShowServicePaymentModal(true); }} className="p-1.5 text-rose-600 bg-rose-50 hover:bg-rose-100 rounded" title="Pagar"><CreditCard size={16}/></button>
+                                            <button onClick={() => { setSelectedService(s); setShowServiceModal(true); }} className="p-1.5 text-slate-400 hover:text-indigo-600 rounded"><Edit2 size={16}/></button>
+                                            <button onClick={() => handleDeleteService(s.code)} className="p-1.5 text-slate-400 hover:text-red-500 rounded"><Trash2 size={16}/></button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            );
+                        })}
                     </tbody>
                 </table>
             </div>
-            )}
+        )}
+      </div>
 
-            {activeTab === 'SERVICES' && (
-                <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-slate-50 font-medium"><tr><th className="p-4">Servicio</th><th className="p-4">Propiedad</th><th className="p-4 text-right">Costo</th><th className="p-4 text-center">Acciones</th></tr></thead>
-                        <tbody>
-                            {filteredServices.map(s => {
-                                const prop = properties.find(p => p.code === s.propertyCode);
-                                return (
-                                <tr key={s.code} className="border-t border-slate-100 hover:bg-slate-50">
-                                    <td className="p-4 font-bold text-slate-700">{s.name}</td>
-                                    <td className="p-4 text-slate-600">{prop?.name}</td>
-                                    <td className="p-4 text-right font-mono">{formatMoney(s.defaultAmount)}</td>
-                                    <td className="p-4 text-right flex justify-end gap-2">
-                                        <button onClick={() => { setPayingService(s); setIsServicePaymentModalOpen(true); }} className="px-2 py-1 bg-rose-50 text-rose-600 rounded hover:bg-rose-100 text-xs font-bold flex items-center gap-1"><DollarSign size={12}/> PAGAR</button>
-                                        <button onClick={() => { setEditingService(s); setIsServiceModalOpen(true); }} className="mr-2 text-slate-400 hover:text-brand-600"><Edit2 size={16}/></button>
-                                        <button onClick={() => handleDeleteService(s.code)} className="text-slate-400 hover:text-red-600"><Trash2 size={16}/></button>
-                                    </td>
-                                </tr>
-                            )})}
-                        </tbody>
-                    </table>
-                </div>
-            )}
-
-            {activeTab === 'PAYMENTS' && (
-                <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                    <div className="p-4 bg-indigo-50 border-b border-indigo-100 flex justify-between items-center">
-                        <div className="flex items-center gap-2 text-indigo-800 font-bold"><CalendarIcon size={20} /> Calendario de Pagos</div>
-                        <div className="text-xs text-indigo-600">Hoy: {new Date().toLocaleDateString()}</div>
-                    </div>
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-slate-50 font-medium text-slate-500"><tr><th className="p-4">Estado</th><th className="p-4">Inquilino / Unidad</th><th className="p-4 text-right">Próximo Pago</th><th className="p-4 text-right">Monto</th><th className="p-4 text-center">Acción</th></tr></thead>
-                        <tbody>
-                            {filteredContracts.map(c => {
-                                const apt = apartments.find(a => a.code === c.apartmentCode);
-                                const ten = tenants.find(t => t.code === c.tenantCode);
-                                
-                                const now = new Date();
-                                const todayStr = now.toISOString().split('T')[0];
-                                const nextDateRaw = c.nextPaymentDate || c.startDate;
-                                const nextDateObj = new Date(nextDateRaw);
-                                const nextDateStr = new Date(nextDateObj.valueOf() + nextDateObj.getTimezoneOffset() * 60000).toISOString().split('T')[0];
-                                
-                                let isOverdue = todayStr > nextDateStr;
-                                
-                                // SMART CHECK para visualizar en tabla también
-                                // Si "está vencido" en teoría, revisamos si pagó. Si pagó, NO está vencido.
-                                if (isOverdue) {
-                                    if (checkIfPaidInPeriod(c, nextDateObj)) {
-                                        isOverdue = false;
-                                    }
-                                }
-
-                                return (
-                                    <tr key={c.code} className="border-t border-slate-100 hover:bg-slate-50">
-                                        <td className="p-4"><span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${isOverdue ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>{isOverdue ? 'MORA' : 'AL DÍA'}</span></td>
-                                        <td className="p-4"><div className="font-bold text-slate-800">{ten?.fullName}</div><div className="text-xs text-slate-500">{apt?.name}</div></td>
-                                        <td className="p-4 text-right font-mono">{new Date(c.nextPaymentDate).toLocaleDateString()}</td>
-                                        <td className="p-4 text-right font-bold text-slate-700">{formatMoney(c.amount)}</td>
-                                        <td className="p-4 text-center flex justify-center gap-2">
-                                            <button onClick={() => handleOpenHistory(c)} className="px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm text-xs font-bold">HISTORIAL</button>
-                                            <button onClick={() => { setViewingContract(c); setIsBulkModalOpen(true); }} className="px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 shadow-sm text-xs font-bold flex items-center gap-1"><Layers size={14}/> MASIVO</button>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-            )}
-
-            {activeTab === 'DELINQUENTS' && (
-                <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                    <div className="p-4 bg-rose-50 border-b border-rose-100 flex items-center gap-3">
-                        <AlertTriangle className="text-rose-600" size={24}/>
-                        <div>
-                            <h3 className="font-bold text-rose-800 text-lg">Reporte de Morosidad</h3>
-                            <p className="text-xs text-rose-600">Inquilinos con pagos vencidos</p>
-                        </div>
-                    </div>
-                    {delinquentContracts.length === 0 ? (
-                        <div className="p-12 text-center text-emerald-600 flex flex-col items-center">
-                            <Zap size={48} className="mb-2 opacity-50"/>
-                            <p className="font-bold">¡Excelente! No hay inquilinos en mora.</p>
-                        </div>
-                    ) : (
-                        <table className="w-full text-sm text-left">
-                            <thead className="bg-slate-50 font-medium text-slate-500">
-                                <tr>
-                                    <th className="p-4">Inquilino</th>
-                                    <th className="p-4">Contacto</th>
-                                    <th className="p-4">Unidad</th>
-                                    <th className="p-4 text-right">Vencimiento</th>
-                                    <th className="p-4 text-right">Días Atraso</th>
-                                    <th className="p-4 text-right">Monto</th>
-                                    <th className="p-4 text-center">Gestión</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {delinquentContracts.map(c => {
-                                    const apt = apartments.find(a => a.code === c.apartmentCode);
-                                    const ten = tenants.find(t => t.code === c.tenantCode);
-                                    
-                                    const now = new Date();
-                                    const todayStr = now.toISOString().split('T')[0];
-                                    const nextDateRaw = c.nextPaymentDate || c.startDate;
-                                    const nextDateObj = new Date(nextDateRaw);
-                                    const nextDateStr = new Date(nextDateObj.valueOf() + nextDateObj.getTimezoneOffset() * 60000).toISOString().split('T')[0];
-                                    
-                                    const diffTime = Math.abs(new Date(todayStr).getTime() - new Date(nextDateStr).getTime());
-                                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-
-                                    return (
-                                        <tr key={c.code} className="hover:bg-rose-50/10 transition-colors">
-                                            <td className="p-4 font-bold text-slate-800">{ten?.fullName}</td>
-                                            <td className="p-4 text-xs text-slate-500 flex flex-col gap-1">
-                                                {ten?.phone && <span className="flex items-center gap-1"><Phone size={12}/> {ten.phone}</span>}
-                                                {ten?.email && <span>{ten.email}</span>}
-                                            </td>
-                                            <td className="p-4 text-slate-600">{apt?.name}</td>
-                                            <td className="p-4 text-right font-mono text-rose-600 font-bold">{nextDateStr}</td>
-                                            <td className="p-4 text-right">
-                                                <span className="bg-rose-100 text-rose-700 px-2 py-1 rounded-full text-xs font-bold">{diffDays} días</span>
-                                            </td>
-                                            <td className="p-4 text-right font-bold text-slate-700">{formatMoney(c.amount)}</td>
-                                            <td className="p-4 text-center flex justify-center gap-2">
-                                                {ten?.phone && (
-                                                    <button 
-                                                        onClick={() => openWhatsApp(ten, c, apt?.name || '', diffDays)}
-                                                        className="px-3 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 shadow-sm flex items-center gap-2 text-xs font-bold transition-transform active:scale-95"
-                                                        title="Enviar recordatorio por WhatsApp"
-                                                    >
-                                                        <MessageCircle size={16}/> Cobrar
-                                                    </button>
-                                                )}
-                                                <button 
-                                                    onClick={() => handleOpenHistory(c)}
-                                                    className="px-3 py-2 bg-white border border-slate-300 text-slate-600 rounded-lg hover:bg-slate-50 shadow-sm text-xs font-bold"
-                                                >
-                                                    Pagar
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    )}
-                </div>
-            )}
-        </>
-      )}
-
-      {/* Modals */}
-      <PropertyModal isOpen={isPropModalOpen} onClose={() => setIsPropModalOpen(false)} onSubmit={editingProp ? handleUpdateProp : handleCreateProp} editingProperty={editingProp} isSubmitting={isSubmitting} />
-      <ApartmentModal isOpen={isAptModalOpen} onClose={() => setIsAptModalOpen(false)} onSubmit={editingApt ? handleUpdateApt : handleCreateApt} editingApartment={editingApt} isSubmitting={isSubmitting} />
-      <TenantModal isOpen={isTenantModalOpen} onClose={() => setIsTenantModalOpen(false)} onSubmit={editingTenant ? handleUpdateTenant : handleCreateTenant} editingTenant={editingTenant} isSubmitting={isSubmitting} />
-      <ContractModal isOpen={isContractModalOpen} onClose={() => setIsContractModalOpen(false)} onSubmit={editingContract ? handleUpdateContract : handleCreateContract} editingContract={editingContract} isSubmitting={isSubmitting} />
+      {/* MODALS */}
+      <PropertyModal isOpen={showPropertyModal} onClose={() => setShowPropertyModal(false)} onSubmit={handlePropertySubmit} editingProperty={selectedProperty} isSubmitting={isSubmitting}/>
+      <ApartmentModal isOpen={showApartmentModal} onClose={() => setShowApartmentModal(false)} onSubmit={handleApartmentSubmit} editingApartment={selectedApartment} isSubmitting={isSubmitting}/>
+      <TenantModal isOpen={showTenantModal} onClose={() => setShowTenantModal(false)} onSubmit={handleTenantSubmit} editingTenant={selectedTenant} isSubmitting={isSubmitting}/>
+      <ContractModal isOpen={showContractModal} onClose={() => setShowContractModal(false)} onSubmit={handleContractSubmit} editingContract={selectedContract} isSubmitting={isSubmitting}/>
       
+      <PaymentModal 
+        isOpen={showPaymentModal} 
+        onClose={() => setShowPaymentModal(false)} 
+        onSubmit={handleRegisterPayment} 
+        contract={selectedContract} 
+        contractLabel={selectedContract ? getContractLabel(selectedContract) : ''}
+        initialDescription={`Pago Alquiler - ${selectedContract ? getContractLabel(selectedContract) : ''}`}
+        isSubmitting={isSubmitting}
+      />
+
       <PaymentHistoryModal 
-        isOpen={isHistoryModalOpen} 
-        onClose={() => setIsHistoryModalOpen(false)} 
-        contract={viewingContract} 
-        contractLabel={contractLabel} 
-        tenantName={tenName}
-        unitName={unitName}
-        onRegisterPayment={handleInitiatePayment}
+        isOpen={showHistoryModal}
+        onClose={() => setShowHistoryModal(false)}
+        contract={selectedContract}
+        contractLabel={selectedContract ? getContractLabel(selectedContract) : ''}
+        tenantName={tenants.find(t => t.code === selectedContract?.tenantCode)?.fullName}
+        unitName={apartments.find(a => a.code === selectedContract?.apartmentCode)?.name}
+        onRegisterPayment={openPaymentForDate}
         onDeleteTransaction={handleDeletePaymentHistory}
       />
-      <PaymentModal isOpen={isPaymentModalOpen} onClose={() => setIsPaymentModalOpen(false)} onSubmit={handleRegisterPayment} contract={payingContract} contractLabel={contractLabel} initialDescription={paymentDescription} isSubmitting={isSubmitting} />
-      <BulkPaymentModal isOpen={isBulkModalOpen} onClose={() => setIsBulkModalOpen(false)} onSubmit={handleBulkPayment} contract={viewingContract} contractLabel={contractLabel} isSubmitting={isSubmitting} />
-      <ContractPriceHistoryModal isOpen={isPriceHistoryModalOpen} onClose={() => setIsPriceHistoryModalOpen(false)} contract={viewingContract} contractLabel={contractLabel} />
-      
-      <ServiceItemModal isOpen={isServiceModalOpen} onClose={() => setIsServiceModalOpen(false)} onSubmit={editingService ? handleUpdateService : handleCreateService} editingItem={editingService} isSubmitting={isSubmitting} />
-      <ServicePaymentModal isOpen={isServicePaymentModalOpen} onClose={() => setIsServicePaymentModalOpen(false)} onSubmit={handleRegisterServicePayment} serviceItem={payingService} isSubmitting={isSubmitting} />
+
+      <BulkPaymentModal
+        isOpen={showBulkModal}
+        onClose={() => setShowBulkModal(false)}
+        onSubmit={handleBulkPayment}
+        contract={selectedContract}
+        contractLabel={selectedContract ? getContractLabel(selectedContract) : ''}
+        isSubmitting={isSubmitting}
+      />
+
+      <ContractPriceHistoryModal
+        isOpen={showPriceHistoryModal}
+        onClose={() => setShowPriceHistoryModal(false)}
+        contract={selectedContract}
+        contractLabel={selectedContract ? getContractLabel(selectedContract) : ''}
+      />
+
+      <ServiceItemModal isOpen={showServiceModal} onClose={() => setShowServiceModal(false)} onSubmit={handleServiceSubmit} editingItem={selectedService} isSubmitting={isSubmitting}/>
+      <ServicePaymentModal isOpen={showServicePaymentModal} onClose={() => setShowServicePaymentModal(false)} onSubmit={handleServicePayment} serviceItem={selectedService} isSubmitting={isSubmitting}/>
+
     </div>
   );
 };
