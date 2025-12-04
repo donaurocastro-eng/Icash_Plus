@@ -164,7 +164,6 @@ const RealEstatePage: React.FC = () => {
         return;
     }
 
-    // Default template for other tabs (Properties, Units, etc. can be added similarly)
     const headers = ['Nombre', 'Valor', 'Moneda (HNL/USD)'];
     const example = ['Edificio Central', 5000000, 'HNL'];
     const ws = XLSX.utils.aoa_to_sheet([headers, example]);
@@ -213,7 +212,6 @@ const RealEstatePage: React.FC = () => {
                     } catch (err) { console.error(err); errors++; }
                 }
             } else {
-                // Default Import Logic (Properties)
                 for (const row of json) {
                     try {
                         const name = row['Nombre'] || row['nombre'];
@@ -256,15 +254,18 @@ const RealEstatePage: React.FC = () => {
 
   const filteredServices = services.filter(s => s.name.toLowerCase().includes(lowerSearch) || s.code.toLowerCase().includes(lowerSearch));
 
-  // --- DELINQUENTS FILTER ---
+  // --- DELINQUENTS FILTER (FIXED LOGIC) ---
   const delinquentContracts = contracts.filter(c => {
       if (c.status !== 'ACTIVE') return false;
-      const today = new Date(); today.setHours(0,0,0,0);
-      const nextDate = new Date(c.nextPaymentDate || c.startDate);
-      // Adjust timezone issue
-      const nextDateAdj = new Date(nextDate.valueOf() + nextDate.getTimezoneOffset() * 60000);
       
-      const isOverdue = today.getTime() > nextDateAdj.getTime();
+      // Strict String Comparison to avoid Timezone Issues
+      // Format: YYYY-MM-DD
+      const todayStr = new Date().toISOString().split('T')[0];
+      const nextDateStr = c.nextPaymentDate ? c.nextPaymentDate.split('T')[0] : c.startDate.split('T')[0];
+      
+      // If today is GREATER than nextDate, it's overdue.
+      // Example: Today "2023-10-09" > Next "2023-10-08" -> TRUE (Overdue)
+      const isOverdue = todayStr > nextDateStr;
       
       if (!isOverdue) return false;
 
@@ -513,11 +514,13 @@ const RealEstatePage: React.FC = () => {
                                 {delinquentContracts.map(c => {
                                     const apt = apartments.find(a => a.code === c.apartmentCode);
                                     const ten = tenants.find(t => t.code === c.tenantCode);
-                                    const today = new Date(); today.setHours(0,0,0,0);
-                                    const nextDate = new Date(c.nextPaymentDate || c.startDate);
-                                    const nextDateAdj = new Date(nextDate.valueOf() + nextDate.getTimezoneOffset() * 60000);
                                     
-                                    const diffTime = Math.abs(today.getTime() - nextDateAdj.getTime());
+                                    const today = new Date(); 
+                                    // Use same logic as filter for days calculation
+                                    const todayStr = today.toISOString().split('T')[0];
+                                    const nextDateStr = c.nextPaymentDate ? c.nextPaymentDate.split('T')[0] : c.startDate.split('T')[0];
+                                    
+                                    const diffTime = Math.abs(new Date(todayStr).getTime() - new Date(nextDateStr).getTime());
                                     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
 
                                     return (
@@ -528,7 +531,7 @@ const RealEstatePage: React.FC = () => {
                                                 {ten?.email && <span>{ten.email}</span>}
                                             </td>
                                             <td className="p-4 text-slate-600">{apt?.name}</td>
-                                            <td className="p-4 text-right font-mono text-rose-600 font-bold">{nextDateAdj.toLocaleDateString()}</td>
+                                            <td className="p-4 text-right font-mono text-rose-600 font-bold">{nextDateStr}</td>
                                             <td className="p-4 text-right">
                                                 <span className="bg-rose-100 text-rose-700 px-2 py-1 rounded-full text-xs font-bold">{diffDays} días</span>
                                             </td>
