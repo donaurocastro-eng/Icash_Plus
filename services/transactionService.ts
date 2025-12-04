@@ -1,3 +1,4 @@
+
 import { Transaction, TransactionFormData, Account } from '../types';
 import { AccountService } from './accountService';
 import { CategoryService } from './categoryService';
@@ -67,21 +68,50 @@ const updateLocalAccountBalance = async (accountCode: string, amount: number, ty
 export const TransactionService = {
   getAll: async (): Promise<Transaction[]> => {
     if (db.isConfigured()) {
-      const rows = await db.query(`
-        SELECT 
-          code, date, description, amount, type,
-          category_code as "categoryCode", category_name as "categoryName",
-          account_code as "accountCode", account_name as "accountName",
-          property_code as "propertyCode", property_name as "propertyName",
-          created_at as "createdAt"
-        FROM transactions
-        ORDER BY date DESC, created_at DESC
-      `);
-      return rows.map(r => ({ 
-        ...r, 
-        amount: Number(r.amount),
-        date: toDateString(r.date)
-      }));
+      try {
+        const rows = await db.query(`
+          SELECT 
+            code, date, description, amount, type,
+            category_code as "categoryCode", category_name as "categoryName",
+            account_code as "accountCode", account_name as "accountName",
+            property_code as "propertyCode", property_name as "propertyName",
+            contract_code as "contractCode",
+            destination_account_code as "destinationAccountCode",
+            destination_account_name as "destinationAccountName",
+            loan_id as "loanId", loan_code as "loanCode", payment_number as "paymentNumber",
+            created_at as "createdAt"
+          FROM transactions
+          ORDER BY date DESC, created_at DESC
+        `);
+        return rows.map(r => ({ 
+          ...r, 
+          amount: Number(r.amount),
+          date: toDateString(r.date)
+        }));
+      } catch (error: any) {
+        // Fallback for missing columns (Schema Mismatch)
+        if (error.message && (error.message.includes('does not exist') || error.message.includes('undefined'))) {
+           console.warn("DB Schema mismatch detected. Using fallback query.");
+           const rows = await db.query(`
+            SELECT 
+              code, date, description, amount, type,
+              category_code as "categoryCode", category_name as "categoryName",
+              account_code as "accountCode", account_name as "accountName",
+              property_code as "propertyCode", property_name as "propertyName",
+              created_at as "createdAt"
+            FROM transactions
+            ORDER BY date DESC, created_at DESC
+          `);
+          return rows.map(r => ({ 
+            ...r, 
+            amount: Number(r.amount),
+            date: toDateString(r.date),
+            contractCode: undefined, // Explicitly undefined
+            destinationAccountCode: undefined
+          }));
+        }
+        throw error;
+      }
     } else {
       await delay(300);
       const data = localStorage.getItem(STORAGE_KEY);
@@ -96,7 +126,6 @@ export const TransactionService = {
         if (data.accountCode === data.destinationAccountCode) throw new Error("Origen y destino deben ser diferentes.");
 
         // 1. Create OUT Transaction (Gasto / Salida)
-        // Uses CAT-EXP-013 "Transferencia Saliente"
         await TransactionService.create({
             ...data,
             type: 'GASTO',
@@ -105,8 +134,6 @@ export const TransactionService = {
         });
 
         // 2. Create IN Transaction (Ingreso / Entrada)
-        // Uses CAT-INC-007 "Transferencia Entrante"
-        // This transaction is returned to the UI as confirmation of the process
         const inTx = await TransactionService.create({
             ...data,
             type: 'INGRESO',
@@ -118,7 +145,7 @@ export const TransactionService = {
         return inTx; 
     }
 
-    // --- STANDARD LOGIC (For Normal Transactions and individual parts of transfers) ---
+    // --- STANDARD LOGIC ---
     const accounts = await AccountService.getAll();
     const cleanAccCode = data.accountCode.trim();
     const account = accounts.find(a => a.code === cleanAccCode);
@@ -128,30 +155,62 @@ export const TransactionService = {
     const cleanCatCode = data.categoryCode.trim();
     const category = categories.find(c => c.code === cleanCatCode);
     
-    // Fallback if category doesn't exist (e.g., first run)
     const categoryName = category ? category.name : 'General'; 
     const finalCatCode = category ? category.code : cleanCatCode;
+
+    let destAccountName = null;
+    if (data.destinationAccountCode) {
+        const destAccount = accounts.find(a => a.code === data.destinationAccountCode);
+        if (destAccount) destAccountName = destAccount.name;
+    }
 
     if (db.isConfigured()) {
       const rows = await db.query('SELECT code FROM transactions');
       const existing = rows.map(r => ({ code: r.code } as Transaction));
       const newCode = generateNextCode(existing);
 
-      await db.query(`
-        INSERT INTO transactions (
-          code, date, description, amount, type,
-          category_code, category_name,
-          account_code, account_name,
-          property_code, property_name,
-          loan_id, loan_code, payment_number
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-      `, [
-        newCode, data.date, data.description, data.amount, data.type,
-        finalCatCode, categoryName,
-        account.code, account.name,
-        data.propertyCode, data.propertyName,
-        data.loanId || null, data.loanCode || null, data.paymentNumber || null
-      ]);
+      // We wrap insert in try/catch to handle missing column gracefully by ignoring new fields
+      try {
+          await db.query(`
+            INSERT INTO transactions (
+              code, date, description, amount, type,
+              category_code, category_name,
+              account_code, account_name,
+              property_code, property_name,
+              contract_code,
+              destination_account_code, destination_account_name,
+              loan_id, loan_code, payment_number
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+          `, [
+            newCode, data.date, data.description, data.amount, data.type,
+            finalCatCode, categoryName,
+            account.code, account.name,
+            data.propertyCode, data.propertyName,
+            data.contractCode || null,
+            data.destinationAccountCode, destAccountName,
+            data.loanId || null, data.loanCode || null, data.paymentNumber || null
+          ]);
+      } catch (e: any) {
+          if (e.message && e.message.includes('does not exist')) {
+             console.warn("DB Schema mismatch on INSERT. Falling back to legacy insert.");
+             // Fallback INSERT without new columns
+             await db.query(`
+                INSERT INTO transactions (
+                  code, date, description, amount, type,
+                  category_code, category_name,
+                  account_code, account_name,
+                  property_code, property_name
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+              `, [
+                newCode, data.date, data.description, data.amount, data.type,
+                finalCatCode, categoryName,
+                account.code, account.name,
+                data.propertyCode, data.propertyName
+              ]);
+          } else {
+              throw e;
+          }
+      }
 
       // Update Balance in DB
       let adjustment = data.amount;
@@ -163,6 +222,7 @@ export const TransactionService = {
         ...data,
         categoryName: categoryName,
         accountName: account.name,
+        destinationAccountName: destAccountName || undefined,
         createdAt: new Date().toISOString()
       } as Transaction;
 
@@ -183,6 +243,9 @@ export const TransactionService = {
         accountName: account.name,
         propertyCode: data.propertyCode || '',
         propertyName: data.propertyName || '',
+        contractCode: data.contractCode,
+        destinationAccountCode: data.destinationAccountCode,
+        destinationAccountName: destAccountName || undefined,
         createdAt: new Date().toISOString()
       };
       const updatedList = [newTransaction, ...existing];

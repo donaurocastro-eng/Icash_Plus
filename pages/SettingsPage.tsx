@@ -29,7 +29,7 @@ const SettingsPage: React.FC = () => {
   const handleInitializeStepByStep = async () => {
     const currentStoredUrl = db.getUrl();
     if (!currentStoredUrl) return;
-    if (!window.confirm("Se actualizará la estructura de la base de datos (Incluyendo soporte para Transferencias). ¿Continuar?")) return;
+    if (!window.confirm("Se actualizará la estructura de la base de datos (Incluyendo soporte para Contratos y Pagos). ¿Continuar?")) return;
     
     setInitLoading(true);
     setInitLogs(["🚀 INICIANDO ACTUALIZACIÓN..."]); 
@@ -66,6 +66,7 @@ const SettingsPage: React.FC = () => {
         await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS loan_id uuid NULL;`);
         await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS loan_code text NULL;`);
         await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS payment_number integer NULL;`);
+        await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS contract_code text NULL;`);
         
         // NEW COLUMNS FOR TRANSFERS
         await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS destination_account_code text NULL;`);

@@ -1,3 +1,4 @@
+
 export type AccountType = 'ACTIVO' | 'PASIVO';
 export type CategoryType = 'GASTO' | 'INGRESO' | 'TRANSFERENCIA';
 export type Currency = 'HNL' | 'USD';
@@ -49,7 +50,11 @@ export interface Transaction {
   accountName: string;
   
   propertyCode?: string;  
-  propertyName?: string;  
+  propertyName?: string;
+  contractCode?: string; // Linked contract
+
+  destinationAccountCode?: string;
+  destinationAccountName?: string;
   
   loanId?: string;
   loanCode?: string;
@@ -65,16 +70,14 @@ export interface TransactionFormData {
   type: CategoryType;
   categoryCode: string; 
   accountCode: string;
-  destinationAccountCode?: string; // New: For UI Logic only
+  destinationAccountCode?: string; 
   propertyCode?: string;
   propertyName?: string;
+  contractCode?: string;
   loanId?: string;
   loanCode?: string;
   paymentNumber?: number;
 }
-
-// ... Rest of types remain unchanged ...
-// (Real Estate, Loans, etc.)
 
 export interface Property {
   code: string;         

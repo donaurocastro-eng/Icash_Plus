@@ -258,13 +258,19 @@ const RealEstatePage: React.FC = () => {
   const delinquentContracts = contracts.filter(c => {
       if (c.status !== 'ACTIVE') return false;
       
-      // Strict String Comparison to avoid Timezone Issues
-      // Format: YYYY-MM-DD
-      const todayStr = new Date().toISOString().split('T')[0];
+      // FIX: Use strictly LOCAL date components to construct YYYY-MM-DD
+      // This avoids timezone offsets causing the date to shift to tomorrow/yesterday
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const todayStr = `${year}-${month}-${day}`;
+      
       const nextDateStr = c.nextPaymentDate ? c.nextPaymentDate.split('T')[0] : c.startDate.split('T')[0];
       
-      // If today is GREATER than nextDate, it's overdue.
-      // Example: Today "2023-10-09" > Next "2023-10-08" -> TRUE (Overdue)
+      // If today is STRICTLY GREATER than nextDate, it's overdue.
+      // e.g. Today 23rd, Due 22nd -> True.
+      // e.g. Today 22nd, Due 22nd -> False.
       const isOverdue = todayStr > nextDateStr;
       
       if (!isOverdue) return false;
@@ -398,7 +404,16 @@ const RealEstatePage: React.FC = () => {
             {activeTab === 'CONTRACTS' && (
                 <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
                 <table className="w-full text-sm text-left">
-                    <thead className="bg-slate-50 font-medium"><tr><th className="p-4">Inquilino / Unidad</th><th className="p-4">Vigencia</th><th className="p-4">Monto</th><th className="p-4 text-right">Acciones</th></tr></thead>
+                    <thead className="bg-slate-50 font-medium">
+                        <tr>
+                            <th className="p-4">Inquilino / Unidad</th>
+                            <th className="p-4">Vigencia</th>
+                            <th className="p-4 text-center">Día Pago</th>
+                            <th className="p-4">Fecha Próx. Pago</th>
+                            <th className="p-4">Monto</th>
+                            <th className="p-4 text-right">Acciones</th>
+                        </tr>
+                    </thead>
                     <tbody>
                         {filteredContracts.map(c => {
                             const apt = apartments.find(a => a.code === c.apartmentCode);
@@ -410,9 +425,14 @@ const RealEstatePage: React.FC = () => {
                                     <div className="text-xs text-slate-500">{apt?.name || c.apartmentCode}</div>
                                 </td>
                                 <td className="p-4 text-xs text-slate-500">{c.startDate} - {c.endDate}</td>
+                                <td className="p-4 text-center">
+                                    <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold">Día {c.paymentDay}</span>
+                                </td>
+                                <td className="p-4 font-mono text-slate-600 text-sm font-bold">
+                                    {new Date(c.nextPaymentDate).toLocaleDateString()}
+                                </td>
                                 <td className="p-4">
                                     <div className="font-bold text-slate-700">{formatMoney(c.amount)}</div>
-                                    <div className="text-xs text-slate-400">Día {c.paymentDay}</div>
                                 </td>
                                 <td className="p-4 text-right flex justify-end gap-2">
                                     <button onClick={() => { setViewingContract(c); setIsPriceHistoryModalOpen(true); }} className="p-1.5 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 transition-colors" title="Historial"><TrendingUp size={16}/></button>
@@ -462,9 +482,18 @@ const RealEstatePage: React.FC = () => {
                             {filteredContracts.map(c => {
                                 const apt = apartments.find(a => a.code === c.apartmentCode);
                                 const ten = tenants.find(t => t.code === c.tenantCode);
-                                const today = new Date(); today.setHours(0,0,0,0);
-                                const nextDate = new Date(c.nextPaymentDate || c.startDate);
-                                const isOverdue = today.getTime() > nextDate.getTime();
+                                
+                                // FIX: Use strictly LOCAL date
+                                const now = new Date();
+                                const year = now.getFullYear();
+                                const month = String(now.getMonth() + 1).padStart(2, '0');
+                                const day = String(now.getDate()).padStart(2, '0');
+                                const todayStr = `${year}-${month}-${day}`;
+                                
+                                const nextDateStr = c.nextPaymentDate ? c.nextPaymentDate.split('T')[0] : c.startDate.split('T')[0];
+                                
+                                const isOverdue = todayStr > nextDateStr;
+
                                 return (
                                     <tr key={c.code} className="border-t border-slate-100 hover:bg-slate-50">
                                         <td className="p-4"><span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${isOverdue ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>{isOverdue ? 'MORA' : 'AL DÍA'}</span></td>
@@ -515,9 +544,13 @@ const RealEstatePage: React.FC = () => {
                                     const apt = apartments.find(a => a.code === c.apartmentCode);
                                     const ten = tenants.find(t => t.code === c.tenantCode);
                                     
-                                    const today = new Date(); 
-                                    // Use same logic as filter for days calculation
-                                    const todayStr = today.toISOString().split('T')[0];
+                                    // Use same LOCAL logic as filter for days calculation
+                                    const now = new Date();
+                                    const year = now.getFullYear();
+                                    const month = String(now.getMonth() + 1).padStart(2, '0');
+                                    const day = String(now.getDate()).padStart(2, '0');
+                                    const todayStr = `${year}-${month}-${day}`;
+                                    
                                     const nextDateStr = c.nextPaymentDate ? c.nextPaymentDate.split('T')[0] : c.startDate.split('T')[0];
                                     
                                     const diffTime = Math.abs(new Date(todayStr).getTime() - new Date(nextDateStr).getTime());

@@ -1,3 +1,4 @@
+
 import { Contract, ContractFormData, PaymentFormData, BulkPaymentFormData, ContractPrice } from '../types';
 import { db } from './db';
 import { ApartmentService } from './apartmentService';
@@ -269,12 +270,15 @@ export const ContractService = {
        categoryCode: cat.code,
        accountCode: data.accountCode,
        propertyCode: propertyCode,
-       propertyName: propertyName
+       propertyName: propertyName,
+       contractCode: contract.code // Link transaction to contract
     });
 
     let nextDate = new Date(contract.nextPaymentDate || contract.startDate);
-    if (isNaN(nextDate.getTime())) nextDate = new Date();
+    // Adjust for timezone to ensure we are operating on the date part
+    nextDate = new Date(nextDate.valueOf() + nextDate.getTimezoneOffset() * 60000);
     
+    // Add 1 Month safely
     nextDate.setMonth(nextDate.getMonth() + 1);
     const nextDateStr = nextDate.toISOString().split('T')[0];
 
@@ -302,7 +306,7 @@ export const ContractService = {
               contractCode: data.contractCode,
               accountCode: data.accountCode,
               amount: finalAmount, 
-              date: item.date, 
+              date: item.date, // This date is the "Payment Date" for the record
               description: item.description
           });
       }
