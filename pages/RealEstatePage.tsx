@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useRef } from 'react';
 import { Plus, Search, Edit2, Trash2, Building, Users, FileText, MapPin, Upload, FileSpreadsheet, Home, DollarSign, Calendar as CalendarIcon, Filter, Layers, TrendingUp, Zap, AlertTriangle, MessageCircle, Phone } from 'lucide-react';
 import { Property, Tenant, Contract, Apartment, PropertyFormData, TenantFormData, ContractFormData, ApartmentFormData, PaymentFormData, BulkPaymentFormData, PropertyServiceItem, PropertyServiceItemFormData, ServicePaymentFormData } from '../types';
@@ -258,19 +259,20 @@ const RealEstatePage: React.FC = () => {
   const delinquentContracts = contracts.filter(c => {
       if (c.status !== 'ACTIVE') return false;
       
-      // FIX: Use strictly LOCAL date components to construct YYYY-MM-DD
-      // This avoids timezone offsets causing the date to shift to tomorrow/yesterday
+      // FIX: Use strictly LOCAL date components to construct YYYY-MM-DD for today.
       const now = new Date();
       const year = now.getFullYear();
       const month = String(now.getMonth() + 1).padStart(2, '0');
       const day = String(now.getDate()).padStart(2, '0');
       const todayStr = `${year}-${month}-${day}`;
       
+      // Treat nextPaymentDate as just a date string YYYY-MM-DD
       const nextDateStr = c.nextPaymentDate ? c.nextPaymentDate.split('T')[0] : c.startDate.split('T')[0];
       
-      // If today is STRICTLY GREATER than nextDate, it's overdue.
-      // e.g. Today 23rd, Due 22nd -> True.
-      // e.g. Today 22nd, Due 22nd -> False.
+      // STRICT COMPARISON:
+      // If Today is strictly greater than Due Date, it is overdue.
+      // E.g. Today: 2024-05-25, Due: 2024-05-24 => Overdue
+      // E.g. Today: 2024-05-25, Due: 2024-05-25 => Due Today (Not Overdue yet)
       const isOverdue = todayStr > nextDateStr;
       
       if (!isOverdue) return false;
@@ -409,7 +411,7 @@ const RealEstatePage: React.FC = () => {
                             <th className="p-4">Inquilino / Unidad</th>
                             <th className="p-4">Vigencia</th>
                             <th className="p-4 text-center">Día Pago</th>
-                            <th className="p-4">Fecha Próx. Pago</th>
+                            <th className="p-4">Próx. Pago</th>
                             <th className="p-4">Monto</th>
                             <th className="p-4 text-right">Acciones</th>
                         </tr>
@@ -426,7 +428,7 @@ const RealEstatePage: React.FC = () => {
                                 </td>
                                 <td className="p-4 text-xs text-slate-500">{c.startDate} - {c.endDate}</td>
                                 <td className="p-4 text-center">
-                                    <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold">Día {c.paymentDay}</span>
+                                    <span className="bg-indigo-50 text-indigo-700 px-2 py-1 rounded text-xs font-bold border border-indigo-100">Día {c.paymentDay}</span>
                                 </td>
                                 <td className="p-4 font-mono text-slate-600 text-sm font-bold">
                                     {new Date(c.nextPaymentDate).toLocaleDateString()}
@@ -483,7 +485,6 @@ const RealEstatePage: React.FC = () => {
                                 const apt = apartments.find(a => a.code === c.apartmentCode);
                                 const ten = tenants.find(t => t.code === c.tenantCode);
                                 
-                                // FIX: Use strictly LOCAL date
                                 const now = new Date();
                                 const year = now.getFullYear();
                                 const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -491,7 +492,6 @@ const RealEstatePage: React.FC = () => {
                                 const todayStr = `${year}-${month}-${day}`;
                                 
                                 const nextDateStr = c.nextPaymentDate ? c.nextPaymentDate.split('T')[0] : c.startDate.split('T')[0];
-                                
                                 const isOverdue = todayStr > nextDateStr;
 
                                 return (

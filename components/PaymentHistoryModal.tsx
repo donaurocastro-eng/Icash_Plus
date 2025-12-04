@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, ChevronLeft, ChevronRight, CheckCircle, AlertCircle, Clock, DollarSign } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, CheckCircle, AlertCircle, Clock, DollarSign, CalendarCheck } from 'lucide-react';
 import { Contract, Transaction } from '../types';
 import { TransactionService } from '../services/transactionService';
 
@@ -33,16 +33,17 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
     if (!contract) return;
     setLoading(true);
     try {
-        // Fetch all transactions and filter in memory
-        // Ideally we should filter by contract_code in DB, but this supports legacy data via heuristic
         const all = await TransactionService.getAll();
         
-        // Filter rules:
-        // 1. Contract Code matches (Best)
-        // 2. Property Code matches AND Type is Ingreso AND Description contains "Alquiler"
+        // Filter transactions related to this contract
         const filtered = all.filter(t => {
+            // 1. Exact match by contract code (Best)
             if (t.contractCode === contract.code) return true;
-            if (contract.propertyCode && t.propertyCode === contract.propertyCode && t.type === 'INGRESO') return true;
+            
+            // 2. Fallback: Match by Property and Type 'INGRESO'
+            if (contract.propertyCode && t.propertyCode === contract.propertyCode && t.type === 'INGRESO') {
+                return true;
+            }
             return false;
         });
         setTransactions(filtered);
@@ -59,6 +60,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
       if (!d) return new Date();
       const dateObj = new Date(d);
       if (isNaN(dateObj.getTime())) return new Date();
+      // Adjust for timezone offset to treat YYYY-MM-DD as local
       return new Date(dateObj.valueOf() + dateObj.getTimezoneOffset() * 60000);
   };
 
@@ -71,53 +73,74 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
   const getPaymentDate = (monthIndex: number, currentYear: number) => {
       const monthName = new Date(currentYear, monthIndex, 1).toLocaleDateString('es-ES', { month: 'long' }).toLowerCase();
       
-      // Look for a transaction that mentions this month/year or falls in it if contract linked
-      // Logic: Find transaction where description includes MonthName
-      // AND transaction date is reasonably close (within the year)
-      
       const found = transactions.find(t => {
           const desc = t.description.toLowerCase();
-          // Check if description contains month name (e.g. "agosto")
-          // Also check year if possible, but standard description is "Alquiler Agosto"
-          // If we have multiple years, "Alquiler Agosto" might be ambiguous.
-          // We can check if transaction date year matches current view year, OR if description has year.
-          
-          if (!desc.includes(monthName)) return false;
-          
-          // Safety: If description doesn't have year, check transaction date year
-          if (!desc.includes(currentYear.toString())) {
-             const tYear = new Date(t.date).getFullYear();
-             if (tYear !== currentYear) return false;
+          const tDate = new Date(t.date);
+          const tYear = tDate.getFullYear();
+          const tMonth = tDate.getMonth();
+
+          // 1. If contract code matches (strong link), check if transaction date falls in this month/year window
+          // or description matches. 
+          if (t.contractCode === contract.code) {
+               // Simple check: is transaction in the same month/year?
+               // Usually payments are made in the same month or slightly before/after.
+               // Let's rely on description for accuracy of "which month was paid".
+               if (desc.includes(monthName) && (desc.includes(currentYear.toString()) || tYear === currentYear)) return true;
+               
+               // Fallback: If description is generic "Abono", check date proximity (same month)
+               if (!desc.includes('alquiler') && tYear === currentYear && tMonth === monthIndex) return true;
           }
-          return true;
+
+          // 2. Legacy check by description text only
+          if (desc.includes(monthName)) {
+             if (!desc.includes(currentYear.toString())) {
+                 if (tYear !== currentYear) return false;
+             }
+             return true;
+          }
+          return false;
       });
 
-      return found ? new Date(found.date).toLocaleDateString() : null;
+      if (found) {
+           // Format transaction date: YYYY-MM-DD -> DD/MM/YYYY
+           const parts = found.date.split('-');
+           if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+           return new Date(found.date).toLocaleDateString();
+      }
+      return null;
   };
 
   const getMonthStatus = (monthIndex: number) => {
     const paymentDay = contract.paymentDay || 1;
+    
+    // Create comparable integers YYYYMM
     const cellVal = year * 100 + monthIndex;
     const startVal = startDate.getFullYear() * 100 + startDate.getMonth();
     const nextPayVal = nextPaymentDate.getFullYear() * 100 + nextPaymentDate.getMonth();
     const todayVal = today.getFullYear() * 100 + today.getMonth();
 
     if (cellVal < startVal) return 'NA'; 
-    if (cellVal < nextPayVal) return 'PAID';
+    if (cellVal < nextPayVal) return 'PAID'; // If current month is before next payment month, it's paid
+    
     if (cellVal === nextPayVal) {
+        // This is the month pending payment
         const isPastDueDay = today.getDate() > paymentDay;
-        const isPastDueMonth = todayVal > cellVal;
-        if (isPastDueMonth || (todayVal === cellVal && isPastDueDay)) return 'OVERDUE_NOW';
+        
+        // If we are in the same month, check day. If we are in a later month, it's definitely overdue.
+        if (todayVal > cellVal) return 'OVERDUE_NOW';
+        if (todayVal === cellVal && isPastDueDay) return 'OVERDUE_NOW';
         return 'DUE_NOW';
     }
-    if (cellVal < todayVal) return 'OVERDUE_FUTURE'; 
+    
+    // Future months relative to next payment date
+    if (cellVal < todayVal) return 'OVERDUE_FUTURE'; // Should have been paid but wasn't (gap in logic or dates)
     return 'FUTURE';
   };
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh] transform transition-all scale-100 border border-slate-200">
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[90vh] transform transition-all scale-100 border border-slate-200">
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
             <div>
                 <h3 className="text-xl font-bold text-slate-800">Historial de Pagos</h3>
@@ -147,7 +170,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                         let cardClass = "border-slate-200 bg-white opacity-60", icon = <Clock size={20} className="text-slate-300" />, label = "Futuro", labelColor = "text-slate-400", action = null;
 
                         if (status === 'PAID') { 
-                            cardClass = "border-emerald-200 bg-emerald-50"; 
+                            cardClass = "border-emerald-200 bg-emerald-50 ring-1 ring-emerald-100"; 
                             icon = <CheckCircle size={24} className="text-emerald-500"/>; 
                             label = "PAGADO"; 
                             labelColor = "text-emerald-600"; 
@@ -174,19 +197,30 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                         }
 
                         return (
-                            <div key={monthIndex} className={`relative rounded-xl border p-4 flex flex-col justify-between h-32 transition-all duration-200 ${cardClass}`}>
-                                <div className="flex justify-between items-start"><span className="capitalize font-bold text-lg text-slate-700">{monthName}</span>{icon}</div>
-                                <div className="mt-2">
+                            <div key={monthIndex} className={`relative rounded-xl border p-4 flex flex-col justify-between h-36 transition-all duration-200 ${cardClass}`}>
+                                <div>
+                                    <div className="flex justify-between items-start mb-2">
+                                        <span className="capitalize font-bold text-lg text-slate-700">{monthName}</span>
+                                        {icon}
+                                    </div>
+                                    
                                     {status !== 'NA' && (
-                                        <div className="flex flex-col gap-0.5">
+                                        <div className="flex flex-col gap-1">
                                            <div className="text-[10px] text-slate-500 font-medium">Vence: {formattedDueDate}</div>
-                                           {status === 'PAID' && paymentDate && (
-                                               <div className="text-[10px] text-emerald-700 font-bold">Pagado: {paymentDate}</div>
+                                           
+                                           {/* PAYMENT DATE DISPLAY */}
+                                           {status === 'PAID' && (
+                                               <div className="flex items-start gap-1 mt-1 bg-white/60 p-1 rounded">
+                                                   <CalendarCheck size={10} className="text-emerald-600 mt-0.5"/>
+                                                   <div className="text-[10px] text-emerald-700 font-bold">
+                                                       {paymentDate ? `Pagado: ${paymentDate}` : 'Pagado'}
+                                                   </div>
+                                               </div>
                                            )}
                                         </div>
                                     )}
-                                    <div className={`font-extrabold text-sm mt-1 ${labelColor}`}>{label}</div>
                                 </div>
+                                <div className={`font-extrabold text-sm mt-1 text-right ${labelColor}`}>{label}</div>
                                 {action && <button onClick={action} className="absolute inset-0 w-full h-full cursor-pointer focus:outline-none rounded-xl" title="Click para pagar" />}
                             </div>
                         );
