@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Plus, Search, Trash2, ArrowDownCircle, ArrowUpCircle, Calendar, ArrowRightLeft, Edit2, FileSpreadsheet, Upload } from 'lucide-react';
+import { Plus, Search, Trash2, ArrowDownCircle, ArrowUpCircle, Calendar, ArrowRightLeft, Edit2, FileSpreadsheet, Upload, Filter } from 'lucide-react';
 import { Transaction, TransactionFormData, Account, Category } from '../types';
 import { TransactionService } from '../services/transactionService';
 import { AccountService } from '../services/accountService';
@@ -19,6 +19,7 @@ const TransactionsPage: React.FC = () => {
   // Filters
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedAccountType, setSelectedAccountType] = useState<'ALL' | 'ACTIVO' | 'PASIVO'>('ALL');
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -175,6 +176,11 @@ const TransactionsPage: React.FC = () => {
     return new Intl.NumberFormat('es-HN', { minimumFractionDigits: 2 }).format(amount);
   };
 
+  const getAccountType = (accCode: string): 'ACTIVO' | 'PASIVO' | undefined => {
+      const acc = accounts.find(a => a.code === accCode);
+      return acc?.type;
+  };
+
   const filteredTransactions = transactions.filter(t => {
     const date = new Date(t.date);
     const tYear = date.getFullYear();
@@ -188,7 +194,22 @@ const TransactionsPage: React.FC = () => {
         t.categoryName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         t.accountName.toLowerCase().includes(searchTerm.toLowerCase());
     
-    return matchesDate && matchesSearch;
+    let matchesType = true;
+    if (selectedAccountType !== 'ALL') {
+        const accType = getAccountType(t.accountCode);
+        // For transfers, we check source account (though usually we care about the flow)
+        matchesType = accType === selectedAccountType;
+        
+        // Optional: If it's a transfer and destination account matches, include it too?
+        // For strict filtering: show if source matches.
+        // If transfer has destination, check it too if we want to see it in Pasivo when paying CC
+        if (t.type === 'TRANSFERENCIA' && t.destinationAccountCode) {
+             const destType = getAccountType(t.destinationAccountCode);
+             if (destType === selectedAccountType) matchesType = true;
+        }
+    }
+    
+    return matchesDate && matchesSearch && matchesType;
   });
 
   if (loading) {
@@ -236,24 +257,39 @@ const TransactionsPage: React.FC = () => {
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         {/* Filters Toolbar */}
         <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-wrap items-center gap-4">
-          <div className="relative max-w-md flex-1 min-w-[200px]">
+          <div className="relative max-w-xs flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <input 
               type="text"
-              placeholder="Buscar por descripción, cuenta..."
+              placeholder="Buscar..."
               className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none text-sm bg-white"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <div className="flex items-center gap-2">
+          
+          <div className="flex items-center gap-2 border-l border-slate-200 pl-4">
+             <Filter size={16} className="text-slate-400" />
+             <span className="text-sm font-medium text-slate-600 hidden sm:inline">Filtros:</span>
+             
+             {/* Account Type Filter */}
+             <select 
+                className="px-3 py-2 bg-white border border-slate-300 rounded-lg outline-none text-sm focus:ring-2 focus:ring-brand-500"
+                value={selectedAccountType}
+                onChange={(e) => setSelectedAccountType(e.target.value as any)}
+             >
+                <option value="ALL">Todas las Cuentas</option>
+                <option value="ACTIVO">Activos (Bancos/Efectivo)</option>
+                <option value="PASIVO">Pasivos (Tarjetas/Deudas)</option>
+             </select>
+
              <select 
                 className="px-3 py-2 bg-white border border-slate-300 rounded-lg outline-none text-sm focus:ring-2 focus:ring-brand-500"
                 value={selectedMonth}
                 onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
              >
                 {Array.from({length: 12}, (_, i) => (
-                    <option key={i} value={i}>{new Date(0, i).toLocaleDateString('es-ES', {month: 'long'}).toUpperCase()}</option>
+                    <option key={i} value={i}>{new Date(0, i).toLocaleDateString('es-ES', {month: 'short'}).toUpperCase()}</option>
                 ))}
              </select>
              <select 
