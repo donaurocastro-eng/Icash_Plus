@@ -1,12 +1,13 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { Plus, Search, Edit2, Trash2, Building, Users, FileText, MapPin, Upload, FileSpreadsheet, Home, DollarSign, Calendar as CalendarIcon, Filter, Layers, TrendingUp, Zap, AlertTriangle, MessageCircle, Phone } from 'lucide-react';
-import { Property, Tenant, Contract, Apartment, PropertyFormData, TenantFormData, ContractFormData, ApartmentFormData, PaymentFormData, BulkPaymentFormData, PropertyServiceItem, PropertyServiceItemFormData, ServicePaymentFormData } from '../types';
+import { Property, Tenant, Contract, Apartment, PropertyFormData, TenantFormData, ContractFormData, ApartmentFormData, PaymentFormData, BulkPaymentFormData, PropertyServiceItem, PropertyServiceItemFormData, ServicePaymentFormData, Transaction } from '../types';
 import { PropertyService } from '../services/propertyService';
 import { TenantService } from '../services/tenantService';
 import { ContractService } from '../services/contractService';
 import { ApartmentService } from '../services/apartmentService';
 import { ServiceItemService } from '../services/serviceItemService';
+import { TransactionService } from '../services/transactionService';
 import PropertyModal from '../components/PropertyModal';
 import TenantModal from '../components/TenantModal';
 import ContractModal from '../components/ContractModal';
@@ -17,8 +18,6 @@ import BulkPaymentModal from '../components/BulkPaymentModal';
 import ContractPriceHistoryModal from '../components/ContractPriceHistoryModal';
 import ServiceItemModal from '../components/ServiceItemModal';
 import ServicePaymentModal from '../components/ServicePaymentModal';
-import { AccountService } from '../services/accountService';
-import { CategoryService } from '../services/categoryService';
 import * as XLSX from 'xlsx';
 
 type Tab = 'PROPERTIES' | 'UNITS' | 'TENANTS' | 'CONTRACTS' | 'PAYMENTS' | 'SERVICES' | 'DELINQUENTS';
@@ -34,6 +33,7 @@ const RealEstatePage: React.FC = () => {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [services, setServices] = useState<PropertyServiceItem[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
 
   // Modal States
   const [isPropModalOpen, setIsPropModalOpen] = useState(false);
@@ -71,16 +71,20 @@ const RealEstatePage: React.FC = () => {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const p = await PropertyService.getAll().catch(e => []);
-      const t = await TenantService.getAll().catch(e => []);
-      const a = await ApartmentService.getAll().catch(e => []);
-      const c = await ContractService.getAll().catch(e => []);
-      const s = await ServiceItemService.getAll().catch(e => []);
+      const [p, t, a, c, s, tx] = await Promise.all([
+          PropertyService.getAll().catch(e => []),
+          TenantService.getAll().catch(e => []),
+          ApartmentService.getAll().catch(e => []),
+          ContractService.getAll().catch(e => []),
+          ServiceItemService.getAll().catch(e => []),
+          TransactionService.getAll().catch(e => [])
+      ]);
       setProperties(p);
       setTenants(t);
       setApartments(a);
       setContracts(c);
       setServices(s);
+      setTransactions(tx);
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
@@ -259,23 +263,31 @@ const RealEstatePage: React.FC = () => {
   const delinquentContracts = contracts.filter(c => {
       if (c.status !== 'ACTIVE') return false;
       
-      // Use strictly LOCAL date components to construct YYYY-MM-DD for today.
       const now = new Date();
       const year = now.getFullYear();
       const month = String(now.getMonth() + 1).padStart(2, '0');
       const day = String(now.getDate()).padStart(2, '0');
       const todayStr = `${year}-${month}-${day}`;
       
-      // Treat nextPaymentDate as just a date string YYYY-MM-DD
       const nextDateStr = c.nextPaymentDate ? c.nextPaymentDate.split('T')[0] : c.startDate.split('T')[0];
       
-      // STRICT COMPARISON:
-      // Overdue ONLY if today > nextDate
-      // (e.g. today is 7th, due is 6th -> TRUE)
-      // (e.g. today is 6th, due is 6th -> FALSE)
       const isOverdue = todayStr > nextDateStr;
       
       if (!isOverdue) return false;
+
+      // Smart Check: Ensure it's not actually paid (via transaction check)
+      // This handles cases where user registered payment but Contract Date wasn't updated
+      const dueDate = new Date(nextDateStr);
+      const wasPaidInPeriod = transactions.some(t => {
+          if (t.contractCode === c.code) {
+              const tDate = new Date(t.date);
+              // Matches same month/year
+              return tDate.getMonth() === dueDate.getMonth() && tDate.getFullYear() === dueDate.getFullYear();
+          }
+          return false;
+      });
+
+      if (wasPaidInPeriod) return false;
 
       // Apply Search Filter
       const ten = tenants.find(t => t.code === c.tenantCode);

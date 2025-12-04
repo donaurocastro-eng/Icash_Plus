@@ -66,7 +66,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
   };
 
   const startDate = parseDate(contract.startDate);
-  const nextPaymentDate = parseDate(contract.nextPaymentDate || contract.startDate);
+  // We use the transactions to determine truth, nextPaymentDate is secondary for history view
   const today = new Date(); 
   const months = Array.from({ length: 12 }, (_, i) => i);
 
@@ -76,28 +76,25 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
       const monthName = monthDate.toLocaleDateString('es-ES', { month: 'long' }).toLowerCase();
       
       const found = transactions.find(t => {
-          const tDate = new Date(t.date); // This is UTC midnight from ISO string
           // We need to parse YYYY, MM from the ISO string to be safe
           const [tYStr, tMStr] = t.date.split('-');
           const tYear = parseInt(tYStr);
           const tMonth = parseInt(tMStr) - 1; // 0-indexed
 
-          // 1. If contract code matches (strong link), trust the date
+          // 1. If contract code matches (strong link), check date OR description
           if (t.contractCode === contract.code) {
-               // Logic A: Transaction Date is in the target month/year
+               // Logic A: Transaction Date matches target month/year
                if (tYear === currentYear && tMonth === monthIndex) return true;
 
-               // Logic B: Description explicit match (fallback if date is off, e.g. paid early)
+               // Logic B: Description matches (e.g. "Alquiler Diciembre" paid in November)
                const desc = t.description.toLowerCase();
                if (desc.includes(monthName) && (desc.includes(currentYear.toString()) || tYear === currentYear)) return true;
           }
 
           // 2. Weak link (legacy or missing contract code)
-          // Must match property/unit AND description
           const desc = t.description.toLowerCase();
           if (desc.includes(monthName)) {
              if (!desc.includes(currentYear.toString())) {
-                 // If year is not in desc, assume transaction year match is required
                  if (tYear !== currentYear) return false;
              }
              return true;
@@ -109,34 +106,35 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
   };
 
   const getMonthStatus = (monthIndex: number, hasPayment: boolean) => {
-    // Priority: If payment found, it is PAID.
     if (hasPayment) return 'PAID';
 
-    const paymentDay = contract.paymentDay || 1;
-    
-    // Create comparable integers YYYYMM
     const cellVal = year * 100 + monthIndex;
     const startVal = startDate.getFullYear() * 100 + startDate.getMonth();
-    const nextPayVal = nextPaymentDate.getFullYear() * 100 + nextPaymentDate.getMonth();
+    
+    // Calculate Next Payment Value based on Contract Data
+    const npDate = parseDate(contract.nextPaymentDate);
+    const nextPayVal = npDate.getFullYear() * 100 + npDate.getMonth();
     const todayVal = today.getFullYear() * 100 + today.getMonth();
 
     if (cellVal < startVal) return 'NA'; 
+
+    // If no payment found, but it is before the recorded next payment date, 
+    // it implies it was paid (maybe manually or legacy).
+    if (cellVal < nextPayVal) return 'PAID';
+
+    const paymentDay = contract.paymentDay || 1;
     
-    // If it's before the "Next Payment Date" recorded in contract, assume it was paid (legacy logic)
-    // BUT checking hasPayment above is safer. We'll keep this as fallback for migrated data without txs.
-    if (cellVal < nextPayVal) return 'PAID'; 
-    
+    // If this is the specific month pending
     if (cellVal === nextPayVal) {
-        // This is the month pending payment
         const isPastDueDay = today.getDate() > paymentDay;
-        
-        if (todayVal > cellVal) return 'OVERDUE_NOW'; // We are in a future month relative to this cell
-        if (todayVal === cellVal && isPastDueDay) return 'OVERDUE_NOW'; // Same month, day passed
+        // If current real month is later than this cell, it's definitely overdue
+        if (todayVal > cellVal) return 'OVERDUE_NOW'; 
+        // If same month but day passed
+        if (todayVal === cellVal && isPastDueDay) return 'OVERDUE_NOW'; 
         return 'DUE_NOW';
     }
     
-    // Future months relative to next payment date
-    if (cellVal < todayVal) return 'OVERDUE_FUTURE'; 
+    if (cellVal < todayVal) return 'OVERDUE_FUTURE'; // Actually overdue from past
     return 'FUTURE';
   };
 
@@ -219,7 +217,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                                         <div className="flex flex-col gap-1">
                                            <div className="text-[10px] text-slate-500 font-medium">Vence: {formattedDueDate}</div>
                                            
-                                           {/* PAYMENT DATE DISPLAY */}
+                                           {/* PAYMENT DATE DISPLAY (REQUESTED FEATURE) */}
                                            {status === 'PAID' && (
                                                <div className="mt-2 flex items-center gap-1.5 bg-white/80 px-2 py-1.5 rounded border border-emerald-200 shadow-sm">
                                                    <CalendarCheck size={14} className="text-emerald-600"/>
