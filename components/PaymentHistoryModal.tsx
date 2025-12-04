@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, ChevronLeft, ChevronRight, CheckCircle, AlertCircle, Clock, DollarSign, CalendarCheck } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, CheckCircle, AlertCircle, Clock, DollarSign, CalendarCheck, Trash2 } from 'lucide-react';
 import { Contract, Transaction } from '../types';
 import { TransactionService } from '../services/transactionService';
 
@@ -12,6 +12,7 @@ interface PaymentHistoryModalProps {
   tenantName?: string;
   unitName?: string;
   onRegisterPayment: (monthDate: Date) => void;
+  onDeleteTransaction?: (code: string) => Promise<void>;
 }
 
 const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
@@ -21,7 +22,8 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
   contractLabel,
   tenantName,
   unitName,
-  onRegisterPayment
+  onRegisterPayment,
+  onDeleteTransaction
 }) => {
   const [year, setYear] = useState(new Date().getFullYear());
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -70,6 +72,22 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
     } finally {
         setLoading(false);
     }
+  };
+
+  const handleDelete = async (txCode: string) => {
+      if (!confirm("¿Estás seguro de eliminar este pago? Esta acción revertirá el saldo de la cuenta y dejará el mes como pendiente.")) return;
+      
+      if (onDeleteTransaction) {
+          setLoading(true);
+          try {
+              await onDeleteTransaction(txCode);
+              await loadTransactions(); // Refresh modal data
+          } catch (e) {
+              console.error(e);
+          } finally {
+              setLoading(false);
+          }
+      }
   };
 
   if (!isOpen || !contract) return null;
@@ -218,7 +236,18 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                                 <div>
                                     <div className="flex justify-between items-start mb-2">
                                         <span className="capitalize font-bold text-lg text-slate-700">{monthName}</span>
-                                        {icon}
+                                        <div className="flex items-center gap-2">
+                                            {status === 'PAID' && transaction && onDeleteTransaction && (
+                                                <button 
+                                                    onClick={(e) => { e.stopPropagation(); handleDelete(transaction.code); }}
+                                                    className="p-1 text-emerald-600 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors z-20"
+                                                    title="Eliminar Pago"
+                                                >
+                                                    <Trash2 size={18}/>
+                                                </button>
+                                            )}
+                                            {icon}
+                                        </div>
                                     </div>
                                     
                                     {status !== 'NA' && (

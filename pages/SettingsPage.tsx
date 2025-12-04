@@ -1,30 +1,38 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, CheckCircle, XCircle, AlertTriangle, Database, RefreshCw, ShieldAlert, Activity, Terminal, Trash2, Building, Wrench, FileText } from 'lucide-react';
+import { Save, CheckCircle, XCircle, AlertTriangle, Database, RefreshCw, ShieldAlert, Activity, Terminal, Trash2, Building, Wrench, FileText, Search, Play, ArrowRight, Check } from 'lucide-react';
 import { db } from '../services/db';
+
+interface FixItem {
+    contractCode: string;
+    tenantName: string;
+    unitName: string;
+    currentDate: string; // YYYY-MM-DD
+    correctDate: string; // YYYY-MM-DD
+    paymentDay: number;
+}
 
 const SettingsPage: React.FC = () => {
   const [dbUrl, setDbUrl] = useState('');
-  const [status, setStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
-  const [message, setMessage] = useState('');
   const [initLoading, setInitLoading] = useState(false);
-  const [schemaStatus, setSchemaStatus] = useState<'unknown' | 'ok' | 'missing' | 'incomplete'>('unknown');
   const [initLogs, setInitLogs] = useState<string[]>([]);
+  
+  // States for Repair Tool
+  const [analysisResults, setAnalysisResults] = useState<FixItem[]>([]);
+  const [hasAnalyzed, setHasAnalyzed] = useState(false);
+  const [isFixing, setIsFixing] = useState(false);
+  const [fixSuccessCount, setFixSuccessCount] = useState(0);
+  const [fixFailCount, setFixFailCount] = useState(0);
+  const [showConfirmFix, setShowConfirmFix] = useState(false); // New state for inline confirmation
 
   useEffect(() => {
     const current = db.getUrl();
     if (current) {
       setDbUrl(current);
-      checkSchema(current);
     }
   }, []);
 
-  const addLog = (msg: string) => setInitLogs(prev => [...prev, msg]);
-
-  const checkSchema = async (urlOverride?: string) => {
-    const urlToCheck = urlOverride || db.getUrl();
-    if(urlToCheck) setSchemaStatus('ok');
-  };
+  const addLog = (msg: string) => setInitLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
 
   const handleInitializeStepByStep = async () => {
     const currentStoredUrl = db.getUrl();
@@ -39,7 +47,7 @@ const SettingsPage: React.FC = () => {
         
         // LOANS TABLE
         addLog("🛠️ Verificando tabla de Préstamos (loans)...");
-        await db.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`); // Ensure UUID extension
+        await db.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`); 
         await db.query(`
             CREATE TABLE IF NOT EXISTS public.loans (
               id uuid NOT NULL DEFAULT uuid_generate_v4(),
@@ -72,7 +80,7 @@ const SettingsPage: React.FC = () => {
         await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS destination_account_code text NULL;`);
         await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS destination_account_name text NULL;`);
 
-        // EXISTING UPDATES (Just in case)
+        // EXISTING UPDATES
         addLog("🛠️ Verificando servicios...");
         await db.query(`
             CREATE TABLE IF NOT EXISTS public.property_services (
@@ -88,7 +96,7 @@ const SettingsPage: React.FC = () => {
         await db.query(`ALTER TABLE public.property_services ADD COLUMN IF NOT EXISTS default_account_code text;`);
 
         addLog("✨ ¡Proceso completado! Recargando...");
-        window.location.reload();
+        setTimeout(() => window.location.reload(), 1500);
 
     } catch (error: any) {
       console.error(error);
@@ -99,15 +107,19 @@ const SettingsPage: React.FC = () => {
     }
   };
 
-  const handleFixContractDates = async () => {
-    if (!window.confirm("Esta acción buscará contratos donde la Fecha de Próximo Pago NO coincida con el Día de Pago configurado y la corregirá. ¿Continuar?")) return;
-    
+  // --- REPAIR TOOL LOGIC ---
+
+  const handleAnalyzeDates = async () => {
     setInitLoading(true);
-    setInitLogs([]); // Clear logs for a fresh start
+    setInitLogs([]);
+    setAnalysisResults([]);
+    setHasAnalyzed(false);
+    setShowConfirmFix(false);
+    setFixSuccessCount(0);
+    setFixFailCount(0);
     addLog("🔍 Iniciando análisis de contratos activos...");
 
     try {
-        // Fetch contracts
         const contracts = await db.query(`
             SELECT c.code, c.next_payment_date, c.payment_day, t.full_name as tenant_name, a.name as unit_name
             FROM contracts c
@@ -116,120 +128,267 @@ const SettingsPage: React.FC = () => {
             WHERE c.status = 'ACTIVE'
         `);
         
-        let updatesCount = 0;
+        const discrepancies: FixItem[] = [];
 
         for (const contract of contracts) {
-            // Handle date parsing safely (Postgres date string YYYY-MM-DD)
-            const dateStr = typeof contract.next_payment_date === 'string' 
-                ? contract.next_payment_date 
-                : new Date(contract.next_payment_date).toISOString().split('T')[0];
-                
-            const [yStr, mStr, dStr] = dateStr.split('-');
-            const year = parseInt(yStr);
-            const month = parseInt(mStr) - 1; // JS months are 0-indexed
-            const currentDay = parseInt(dStr);
-            
-            const targetDay = parseInt(contract.payment_day);
+            try {
+                if (!contract.next_payment_date) continue;
 
-            // Validation: Only update if day is different and targetDay is valid (1-31)
-            if (currentDay !== targetDay && targetDay > 0 && targetDay <= 31) {
-                
-                // Calculate max days in that month to avoid overflow (e.g. Feb 30)
-                const maxDaysInMonth = new Date(year, month + 1, 0).getDate();
-                const finalDay = Math.min(targetDay, maxDaysInMonth);
-                
-                // Construct new date string YYYY-MM-DD
-                const newDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(finalDay).padStart(2, '0')}`;
-
-                if (newDateStr !== dateStr) {
-                    await db.query("UPDATE contracts SET next_payment_date = $1 WHERE code = $2", [newDateStr, contract.code]);
-                    
-                    const label = `${contract.tenant_name || 'Inquilino'} (${contract.unit_name || contract.code})`;
-                    addLog(`✏️ CORREGIDO: ${label}`);
-                    addLog(`   └─ Fecha cambiada de ${dateStr} ➔ ${newDateStr}`);
-                    
-                    updatesCount++;
+                // Normalize DB Date
+                let dateStr = '';
+                if (contract.next_payment_date instanceof Date) {
+                    dateStr = contract.next_payment_date.toISOString().split('T')[0];
+                } else if (typeof contract.next_payment_date === 'string') {
+                    // Handle potential timestamp format "2025-12-02 00:00:00"
+                    dateStr = contract.next_payment_date.split('T')[0].split(' ')[0]; 
                 }
+                
+                if (!dateStr) continue;
+
+                const [yStr, mStr, dStr] = dateStr.split('-');
+                const year = parseInt(yStr);
+                const month = parseInt(mStr); // 1-12
+                const currentDay = parseInt(dStr);
+                const targetDay = parseInt(contract.payment_day);
+
+                // Check mismatch
+                if (!isNaN(targetDay) && targetDay > 0 && targetDay <= 31 && currentDay !== targetDay) {
+                    // Calc Correct Date
+                    // Be careful with Month Overflow (e.g. Feb 30)
+                    const maxDaysInMonth = new Date(year, month, 0).getDate(); // day 0 of next month gives last day of this month
+                    const finalDay = Math.min(targetDay, maxDaysInMonth);
+                    
+                    const correctDateStr = `${year}-${String(month).padStart(2, '0')}-${String(finalDay).padStart(2, '0')}`;
+
+                    if (dateStr !== correctDateStr) {
+                        discrepancies.push({
+                            contractCode: contract.code,
+                            tenantName: contract.tenant_name || 'Desconocido',
+                            unitName: contract.unit_name || contract.code,
+                            currentDate: dateStr,
+                            correctDate: correctDateStr,
+                            paymentDay: targetDay
+                        });
+                    }
+                }
+            } catch (err) {
+                console.error(err);
+                addLog(`⚠️ Advertencia analizando contrato: ${err}`);
             }
         }
-        
-        addLog("------------------------------------------------");
-        addLog(`✅ ANÁLISIS FINALIZADO.`);
-        addLog(`📊 Total contratos procesados: ${contracts.length}`);
-        addLog(`🛠️ Total fechas corregidas: ${updatesCount}`);
-        
-        if (updatesCount > 0) {
-            alert(`✅ Se corrigieron exitosamente las fechas de ${updatesCount} contratos.\n\nRevisa el registro en pantalla para más detalles.`);
-            // Optional: reload to reflect changes in other tabs, but give user time to read logs
-            setTimeout(() => window.location.reload(), 3000);
+
+        setAnalysisResults(discrepancies);
+        setHasAnalyzed(true);
+        addLog(`✅ Análisis completado. ${contracts.length} revisados.`);
+        if (discrepancies.length > 0) {
+            addLog(`⚠️ ENCONTRADAS ${discrepancies.length} DISCREPANCIAS. Pulsa 'Corregir' para arreglar.`);
         } else {
-            addLog("👍 Todos los contratos tienen la fecha correcta.");
-            alert("Todo está en orden. No se encontraron fechas incorrectas.");
+            addLog(`🎉 Todo está en orden. No se requieren cambios.`);
         }
-        
+
     } catch (error: any) {
-      console.error(error);
-      addLog(`❌ ERROR CRÍTICO: ${error.message}`);
-      alert(`Error: ${error.message}`);
+        addLog(`❌ Error CRÍTICO en análisis: ${error.message}`);
     } finally {
-      setInitLoading(false);
+        setInitLoading(false);
     }
   };
 
+  const handleApplyFixes = async () => {
+      if (analysisResults.length === 0) return;
+      
+      // Inline confirmation handled by UI state now, this function is called AFTER confirmation
+      setIsFixing(true);
+      setShowConfirmFix(false);
+      let success = 0;
+      let fail = 0;
+
+      addLog("🚀 INICIANDO CORRECCIÓN...");
+
+      try {
+          for (const item of analysisResults) {
+              try {
+                  // Ensure date string format is strictly followed
+                  if (!item.correctDate || !item.contractCode) throw new Error("Datos inválidos");
+
+                  await db.query("UPDATE contracts SET next_payment_date = $1 WHERE code = $2", [item.correctDate, item.contractCode]);
+                  addLog(`✅ Corregido: ${item.tenantName} (${item.currentDate} -> ${item.correctDate})`);
+                  success++;
+              } catch (e: any) {
+                  addLog(`❌ Fallo al corregir ${item.contractCode}: ${e.message}`);
+                  fail++;
+              }
+          }
+
+          setFixSuccessCount(success);
+          setFixFailCount(fail);
+          setAnalysisResults([]); // Clear preview list to prevent double submit
+          addLog(`🏁 PROCESO FINALIZADO. Exitosos: ${success}, Fallidos: ${fail}.`);
+          
+          if (success > 0) {
+              addLog("✅ Corrección aplicada. Puedes navegar al Panel Principal para ver los cambios.");
+              // Removed window.location.reload() to prevent errors
+          }
+      } catch (err: any) {
+          addLog(`❌ Error fatal en el proceso de actualización: ${err.message}`);
+          setIsFixing(false);
+      } finally {
+          setIsFixing(false);
+      }
+  };
+
   return (
-    <div className="max-w-3xl mx-auto space-y-6 pb-12">
+    <div className="max-w-4xl mx-auto space-y-6 pb-12">
+      
+      {/* 1. INITIALIZATION SECTION */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="p-6">
-          <h2 className="text-lg font-bold text-slate-800 mb-4">Mantenimiento Base de Datos</h2>
-          <p className="text-sm text-slate-500 mb-4">Utiliza esta opción si acabas de agregar nuevas funcionalidades (como Préstamos o Transferencias) y necesitas actualizar las tablas.</p>
-          
-          <div className="space-y-4">
-            <button 
+          <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+              <Database size={20} className="text-brand-600"/> Mantenimiento Base de Datos
+          </h2>
+          <div className="flex flex-col sm:flex-row items-center gap-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
+             <div className="flex-1">
+                 <p className="text-sm font-bold text-blue-900">Inicializar Tablas</p>
+                 <p className="text-xs text-blue-700 mt-1">Crea o repara la estructura necesaria para las nuevas funciones.</p>
+             </div>
+             <button 
                 onClick={handleInitializeStepByStep}
-                disabled={initLoading}
-                className={`w-full flex items-center justify-center space-x-2 px-4 py-3 text-white rounded-lg font-bold shadow-md transition-colors disabled:opacity-50 bg-indigo-600 hover:bg-indigo-700`}
+                disabled={initLoading || isFixing}
+                className="flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm whitespace-nowrap"
             >
-                {initLoading ? <RefreshCw size={18} className="animate-spin" /> : <Database size={18} />}
-                <span>Inicializar / Reparar Tablas</span>
+                {initLoading && !hasAnalyzed ? <RefreshCw size={16} className="animate-spin" /> : <Play size={16} />}
+                <span>Ejecutar</span>
             </button>
-
-            <div className="pt-6 border-t border-slate-100">
-                <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
-                    <Wrench size={16} className="text-slate-400"/>
-                    Herramientas de Corrección de Datos
-                </h3>
-                
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-medium text-slate-800">Corregir Fechas de Próximo Pago</span>
-                        <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">Contratos</span>
-                    </div>
-                    <p className="text-xs text-slate-500 mb-3">
-                        Utiliza esta herramienta si ves que los contratos aparecen como "Vencidos" antes de tiempo. 
-                        Alinea la fecha de cobro con el "Día de Pago" configurado (ej: cambia 2/12 a 25/12).
-                    </p>
-                    <button 
-                        onClick={handleFixContractDates}
-                        disabled={initLoading}
-                        className="w-full flex items-center justify-center space-x-2 px-4 py-2.5 text-indigo-700 bg-white border border-indigo-200 rounded-lg font-bold hover:bg-indigo-50 hover:border-indigo-300 transition-all shadow-sm disabled:opacity-50"
-                    >
-                        {initLoading ? <RefreshCw size={16} className="animate-spin" /> : <CheckCircle size={16} />}
-                        <span>Ejecutar Corrección de Fechas</span>
-                    </button>
-                </div>
-            </div>
           </div>
+        </div>
+      </div>
 
-          {initLogs.length > 0 && (
-            <div className="mt-6 bg-slate-900 rounded-xl p-4 font-mono text-xs text-emerald-400 overflow-y-auto max-h-64 shadow-inner border border-slate-700">
-                <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-700 text-slate-400">
-                    <Terminal size={14}/> <span>Registro de Actividad</span>
-                </div>
-                {initLogs.map((log, i) => (
-                    <div key={i} className="mb-1 whitespace-pre-wrap">{log}</div>
-                ))}
+      {/* 2. REPAIR TOOL SECTION */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-slate-100">
+            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Wrench size={20} className="text-amber-500"/>
+                Corrector de Fechas
+            </h3>
+            <p className="text-sm text-slate-500 mt-1">
+                Herramienta para alinear la "Fecha de Próximo Pago" con el "Día de Pago" configurado en el contrato.
+                Utilízalo si ves contratos en mora que deberían estar al día.
+            </p>
+        </div>
+
+        <div className="p-6 bg-slate-50 space-y-6">
+            
+            {/* Action Bar */}
+            <div className="flex flex-col sm:flex-row items-center gap-4">
+                <button 
+                    onClick={handleAnalyzeDates}
+                    disabled={initLoading || isFixing}
+                    className="flex-1 w-full sm:w-auto flex justify-center items-center gap-2 px-5 py-3 bg-white border border-slate-300 text-slate-700 font-bold rounded-xl hover:bg-slate-100 hover:text-brand-600 transition-colors shadow-sm disabled:opacity-50"
+                >
+                    {initLoading && !isFixing ? <RefreshCw size={18} className="animate-spin"/> : <Search size={18}/>}
+                    <span>1. Analizar Contratos</span>
+                </button>
+
+                <div className="hidden sm:block text-slate-300"><ArrowRight size={24}/></div>
+
+                {showConfirmFix ? (
+                    <div className="flex-1 w-full sm:w-auto flex gap-2 animate-fadeIn">
+                        <button 
+                            onClick={handleApplyFixes}
+                            className="flex-1 flex justify-center items-center gap-2 px-4 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 shadow-md animate-pulse"
+                        >
+                            <Check size={18}/> Confirmar
+                        </button>
+                        <button 
+                            onClick={() => setShowConfirmFix(false)}
+                            className="px-4 py-3 bg-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-300"
+                        >
+                            <XCircle size={18}/>
+                        </button>
+                    </div>
+                ) : (
+                    <button 
+                        onClick={() => setShowConfirmFix(true)}
+                        disabled={analysisResults.length === 0 || isFixing}
+                        className={`flex-1 w-full sm:w-auto flex justify-center items-center gap-2 px-5 py-3 rounded-xl font-bold text-white shadow-md transition-all
+                            ${analysisResults.length > 0 
+                                ? 'bg-emerald-600 hover:bg-emerald-700' 
+                                : 'bg-slate-300 cursor-not-allowed'
+                            }`}
+                    >
+                        {isFixing ? <Activity size={18} className="animate-spin"/> : <CheckCircle size={18}/>}
+                        <span>2. Corregir ({analysisResults.length})</span>
+                    </button>
+                )}
             </div>
-          )}
+
+            {/* Analysis Results Table */}
+            {hasAnalyzed && (
+                <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
+                    <div className="px-4 py-3 bg-slate-100 border-b border-slate-200 flex justify-between items-center">
+                        <span className="font-bold text-slate-700 text-sm">Resultados del Análisis</span>
+                        {analysisResults.length === 0 ? (
+                            <span className="text-emerald-600 text-xs font-bold bg-emerald-100 px-2 py-1 rounded-full">¡Todo en orden!</span>
+                        ) : (
+                            <span className="text-amber-600 text-xs font-bold bg-amber-100 px-2 py-1 rounded-full">{analysisResults.length} inconsistencias</span>
+                        )}
+                    </div>
+                    
+                    {analysisResults.length > 0 ? (
+                        <div className="max-h-64 overflow-y-auto">
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-slate-50 text-slate-500 font-medium sticky top-0">
+                                    <tr>
+                                        <th className="px-4 py-2">Contrato / Inquilino</th>
+                                        <th className="px-4 py-2 text-center">Día Config.</th>
+                                        <th className="px-4 py-2 text-right text-rose-600">Fecha Actual</th>
+                                        <th className="px-4 py-2 text-center"></th>
+                                        <th className="px-4 py-2 text-left text-emerald-600">Fecha Correcta</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {analysisResults.map((item) => (
+                                        <tr key={item.contractCode} className="hover:bg-slate-50">
+                                            <td className="px-4 py-2">
+                                                <div className="font-bold text-slate-700">{item.tenantName}</div>
+                                                <div className="text-xs text-slate-400">{item.unitName}</div>
+                                            </td>
+                                            <td className="px-4 py-2 text-center">
+                                                <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs font-bold">Día {item.paymentDay}</span>
+                                            </td>
+                                            <td className="px-4 py-2 text-right font-mono text-rose-600 font-medium bg-rose-50/30">
+                                                {item.currentDate}
+                                            </td>
+                                            <td className="px-4 py-2 text-center text-slate-300">
+                                                <ArrowRight size={16} className="mx-auto"/>
+                                            </td>
+                                            <td className="px-4 py-2 text-left font-mono text-emerald-600 font-bold bg-emerald-50/30">
+                                                {item.correctDate}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : (
+                        <div className="p-8 text-center text-slate-400 text-sm">
+                            No se encontraron contratos con fechas desalineadas.
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Console Logs */}
+            {initLogs.length > 0 && (
+                <div className="bg-slate-900 rounded-xl p-4 font-mono text-xs text-emerald-400 overflow-y-auto max-h-64 shadow-inner border border-slate-700">
+                    <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-700 text-slate-400 sticky top-0 bg-slate-900">
+                        <Terminal size={14}/> <span>Consola de Actividad</span>
+                    </div>
+                    {initLogs.map((log, i) => (
+                        <div key={i} className="mb-1 whitespace-pre-wrap border-l-2 border-transparent hover:border-slate-600 pl-2">{log}</div>
+                    ))}
+                </div>
+            )}
+
         </div>
       </div>
     </div>

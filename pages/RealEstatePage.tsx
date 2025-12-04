@@ -149,6 +149,16 @@ const RealEstatePage: React.FC = () => {
       } catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
   };
 
+  const handleDeletePaymentHistory = async (code: string) => {
+      try {
+          await TransactionService.delete(code);
+          await loadAll(); // Refresh global data
+      } catch (e: any) {
+          alert(e.message);
+          throw e; // Modal will handle spinner stop
+      }
+  };
+
   const handleOpenHistory = (c: Contract) => {
       // Inyectamos el propertyCode al abrir el historial para asegurar que la búsqueda
       // "smart" funcione incluso si el contrato no tiene el código guardado.
@@ -679,7 +689,8 @@ const RealEstatePage: React.FC = () => {
         contractLabel={contractLabel} 
         tenantName={tenName}
         unitName={unitName}
-        onRegisterPayment={handleInitiatePayment} 
+        onRegisterPayment={handleInitiatePayment}
+        onDeleteTransaction={handleDeletePaymentHistory}
       />
       <PaymentModal isOpen={isPaymentModalOpen} onClose={() => setIsPaymentModalOpen(false)} onSubmit={handleRegisterPayment} contract={payingContract} contractLabel={contractLabel} initialDescription={paymentDescription} isSubmitting={isSubmitting} />
       <BulkPaymentModal isOpen={isBulkModalOpen} onClose={() => setIsBulkModalOpen(false)} onSubmit={handleBulkPayment} contract={viewingContract} contractLabel={contractLabel} isSubmitting={isSubmitting} />
