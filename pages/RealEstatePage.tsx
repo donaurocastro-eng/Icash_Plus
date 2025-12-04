@@ -283,6 +283,7 @@ const RealEstatePage: React.FC = () => {
       
       const tenantName = ten?.fullName.toLowerCase() || '';
       const unitName = apt?.name.toLowerCase() || '';
+      const contractLabel = `${ten?.fullName || ''} - ${apt?.name || ''}`.toLowerCase();
 
       return transactions.some(t => {
           if (t.type !== 'INGRESO') return false;
@@ -292,6 +293,8 @@ const RealEstatePage: React.FC = () => {
           
           if (tDateObj.getFullYear() !== dueYear || tDateObj.getMonth() !== dueMonth) return false;
 
+          const desc = t.description.toLowerCase();
+
           // 1. Coincidencia por Contrato
           if (t.contractCode === c.code) return true;
           
@@ -299,11 +302,11 @@ const RealEstatePage: React.FC = () => {
           if (derivedPropertyCode && t.propertyCode === derivedPropertyCode) return true;
 
           // 3. Coincidencia por Descripción (Smart Match)
-          // Si el nombre del inquilino o el apartamento están en la descripción, asumimos pago
-          const desc = t.description.toLowerCase();
-          // Use stricter length check to avoid false positives on short names
           if (tenantName.length > 2 && desc.includes(tenantName)) return true;
           if (unitName.length > 2 && desc.includes(unitName)) return true;
+          
+          // 4. Coincidencia por Label (Full Match like History)
+          if (contractLabel.length > 5 && desc.includes(contractLabel)) return true;
 
           return false;
       });
