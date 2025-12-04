@@ -9,17 +9,17 @@ import {
   FileText, 
   Zap, 
   DollarSign, 
-  Clock, 
   History, 
-  MoreHorizontal, 
   Layers, 
   CheckCircle, 
   XCircle,
   TrendingUp,
-  CreditCard
+  CreditCard,
+  AlertTriangle,
+  Calendar
 } from 'lucide-react';
 import { 
-  Property, Apartment, Tenant, Contract, PropertyServiceItem,
+  Property, Apartment, Tenant, Contract, PropertyServiceItem, Transaction,
   PropertyFormData, ApartmentFormData, TenantFormData, ContractFormData,
   PaymentFormData, BulkPaymentFormData, PropertyServiceItemFormData, ServicePaymentFormData
 } from '../types';
@@ -42,7 +42,7 @@ import ContractPriceHistoryModal from '../components/ContractPriceHistoryModal';
 import ServiceItemModal from '../components/ServiceItemModal';
 import ServicePaymentModal from '../components/ServicePaymentModal';
 
-type TabType = 'PROPERTIES' | 'UNITS' | 'TENANTS' | 'CONTRACTS' | 'SERVICES';
+type TabType = 'PROPERTIES' | 'UNITS' | 'TENANTS' | 'CONTRACTS' | 'SERVICES' | 'PAYMENTS' | 'DELINQUENT';
 
 const RealEstatePage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('CONTRACTS');
@@ -56,6 +56,7 @@ const RealEstatePage: React.FC = () => {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [services, setServices] = useState<PropertyServiceItem[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]); // Required for smart checks
 
   // Modals State
   const [showPropertyModal, setShowPropertyModal] = useState(false);
@@ -83,18 +84,20 @@ const RealEstatePage: React.FC = () => {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [p, a, t, c, s] = await Promise.all([
+      const [p, a, t, c, s, tx] = await Promise.all([
         PropertyService.getAll(),
         ApartmentService.getAll(),
         TenantService.getAll(),
         ContractService.getAll(),
-        ServiceItemService.getAll()
+        ServiceItemService.getAll(),
+        TransactionService.getAll()
       ]);
       setProperties(p);
       setApartments(a);
       setTenants(t);
       setContracts(c);
       setServices(s);
+      setTransactions(tx);
     } catch (e) {
       console.error(e);
     } finally {
@@ -173,7 +176,6 @@ const RealEstatePage: React.FC = () => {
       await ContractService.registerPayment(data);
       await loadAll();
       setShowPaymentModal(false);
-      // If history modal is open, it will refresh itself via useEffect dependency or we could force it
     } finally { setIsSubmitting(false); }
   };
 
@@ -189,11 +191,11 @@ const RealEstatePage: React.FC = () => {
   const handleDeletePaymentHistory = async (code: string) => {
       try {
           await TransactionService.delete(code);
-          await loadAll(); // Refresh global data
+          await loadAll(); 
           alert("El pago se ha eliminado correctamente. El saldo ha sido revertido.");
       } catch (e: any) {
           alert(e.message);
-          throw e; // Modal will handle spinner stop
+          throw e; 
       }
   };
 
@@ -228,15 +230,63 @@ const RealEstatePage: React.FC = () => {
   };
 
   const openPaymentForDate = (date: Date) => {
-     // This is called from History Modal to "Pay" a specific past/future date
-     // We can reuse the standard Payment Modal but pre-fill the date
-     // Ideally PaymentModal needs to accept an initialDate. 
-     // For now, we just close history and open Payment.
-     // In a real app, we'd pass the date to PaymentModal state.
      setShowHistoryModal(false);
      setShowPaymentModal(true);
-     // NOTE: PaymentModal currently defaults to today. 
-     // To support specific date, PaymentModal needs 'initialDate' prop.
+  };
+
+  // --- SMART CHECK LOGIC ---
+  const checkIfPaidInPeriod = (contract: Contract) => {
+      if (!contract.nextPaymentDate) return false;
+      const dueDate = new Date(contract.nextPaymentDate);
+      // Correct for Timezone
+      const correctedDueDate = new Date(dueDate.valueOf() + dueDate.getTimezoneOffset() * 60000);
+      const dueMonth = correctedDueDate.getMonth();
+      const dueYear = correctedDueDate.getFullYear();
+
+      // Find transaction match
+      const paid = transactions.find(t => {
+          if (t.type !== 'INGRESO') return false;
+          const tDate = new Date(t.date);
+          const correctedTDate = new Date(tDate.valueOf() + tDate.getTimezoneOffset() * 60000);
+          
+          // Match Month/Year
+          if (correctedTDate.getMonth() !== dueMonth || correctedTDate.getFullYear() !== dueYear) return false;
+
+          // Strong Match: Contract Code
+          if (t.contractCode === contract.code) return true;
+          
+          // Medium Match: Property Code (if set on contract)
+          if (contract.propertyCode && t.propertyCode === contract.propertyCode) return true;
+          
+          // Weak Match: Fuzzy Description
+          const tObj = tenants.find(te => te.code === contract.tenantCode);
+          const aObj = apartments.find(ap => ap.code === contract.apartmentCode);
+          const desc = t.description.toLowerCase();
+          
+          if (tObj && tObj.fullName && desc.includes(tObj.fullName.toLowerCase())) return true;
+          if (aObj && aObj.name && desc.includes(aObj.name.toLowerCase())) return true;
+
+          return false;
+      });
+
+      return !!paid;
+  };
+
+  const isDelinquent = (c: Contract) => {
+      if (c.status !== 'ACTIVE') return false;
+      if (!c.nextPaymentDate) return false;
+      
+      const today = new Date();
+      const nextDate = new Date(c.nextPaymentDate);
+      const correctedNextDate = new Date(nextDate.valueOf() + nextDate.getTimezoneOffset() * 60000);
+
+      // If today is BEFORE due date, NOT delinquent
+      if (today < correctedNextDate) return false;
+
+      // If today is AFTER due date, check if paid anyway
+      if (checkIfPaidInPeriod(c)) return false;
+
+      return true;
   };
 
   if (loading) return <div className="flex justify-center items-center h-full"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600"></div></div>;
@@ -255,6 +305,26 @@ const RealEstatePage: React.FC = () => {
     </button>
   );
 
+  const PaymentStatusBadge = ({ contract }: { contract: Contract }) => {
+      if (contract.status !== 'ACTIVE') return <span className="text-slate-400 font-mono text-xs">INACTIVO</span>;
+      
+      const today = new Date();
+      const nextDate = new Date(contract.nextPaymentDate);
+      const correctedNextDate = new Date(nextDate.valueOf() + nextDate.getTimezoneOffset() * 60000);
+      
+      const isPaid = checkIfPaidInPeriod(contract);
+      
+      if (isPaid) {
+          return <span className="px-2 py-1 rounded bg-emerald-100 text-emerald-700 text-xs font-bold">AL DÍA</span>;
+      }
+      
+      if (today > correctedNextDate) {
+          return <span className="px-2 py-1 rounded bg-rose-100 text-rose-700 text-xs font-bold">MORA</span>;
+      }
+      
+      return <span className="px-2 py-1 rounded bg-blue-50 text-blue-600 text-xs font-bold">PENDIENTE</span>;
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
@@ -262,8 +332,11 @@ const RealEstatePage: React.FC = () => {
           <h1 className="text-2xl font-bold text-slate-800">Gestión Inmobiliaria</h1>
           <p className="text-slate-500">Administra propiedades, contratos y cobros.</p>
         </div>
-        <div className="flex flex-wrap gap-2 bg-white p-1.5 rounded-xl border border-slate-200 shadow-sm">
+        <div className="flex flex-wrap gap-2 bg-white p-1.5 rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
           <TabButton id="CONTRACTS" label="Contratos" icon={FileText} />
+          <TabButton id="PAYMENTS" label="Control Pagos" icon={DollarSign} />
+          <TabButton id="DELINQUENT" label="En Mora" icon={AlertTriangle} />
+          <div className="w-px h-6 bg-slate-200 my-auto mx-1"></div>
           <TabButton id="PROPERTIES" label="Propiedades" icon={Home} />
           <TabButton id="UNITS" label="Unidades" icon={Layers} />
           <TabButton id="TENANTS" label="Inquilinos" icon={Users} />
@@ -312,8 +385,8 @@ const RealEstatePage: React.FC = () => {
                             <th className="px-6 py-3">Inquilino / Unidad</th>
                             <th className="px-6 py-3">Vigencia</th>
                             <th className="px-6 py-3 text-right">Monto</th>
+                            <th className="px-6 py-3 text-center">Día Pago</th>
                             <th className="px-6 py-3 text-center">Estado</th>
-                            <th className="px-6 py-3 text-center">Próx. Pago</th>
                             <th className="px-6 py-3 text-right">Acciones</th>
                         </tr>
                     </thead>
@@ -335,21 +408,15 @@ const RealEstatePage: React.FC = () => {
                                         {contract.amount.toLocaleString('es-HN', {style:'currency', currency: 'HNL'})}
                                     </td>
                                     <td className="px-6 py-3 text-center">
+                                        <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded font-bold text-xs">Día {contract.paymentDay}</span>
+                                    </td>
+                                    <td className="px-6 py-3 text-center">
                                         <span className={`px-2 py-1 rounded text-[10px] font-bold ${contract.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
                                             {contract.status === 'ACTIVE' ? 'ACTIVO' : 'INACTIVO'}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-3 text-center">
-                                        <span className={`text-xs font-bold ${new Date(contract.nextPaymentDate || '') < new Date() ? 'text-red-500' : 'text-slate-600'}`}>
-                                            {contract.nextPaymentDate}
-                                        </span>
-                                    </td>
                                     <td className="px-6 py-3 text-right">
                                         <div className="flex justify-end gap-1">
-                                            <button onClick={() => { setSelectedContract(contract); setShowPaymentModal(true); }} className="p-1.5 text-emerald-600 bg-emerald-50 hover:bg-emerald-100 rounded" title="Registrar Pago"><DollarSign size={16}/></button>
-                                            <button onClick={() => { setSelectedContract(contract); setShowHistoryModal(true); }} className="p-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded" title="Historial"><History size={16}/></button>
-                                            <button onClick={() => { setSelectedContract(contract); setShowBulkModal(true); }} className="p-1.5 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded" title="Cobro Masivo"><Layers size={16}/></button>
-                                            <button onClick={() => { setSelectedContract(contract); setShowPriceHistoryModal(true); }} className="p-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 rounded" title="Ajuste Precio"><TrendingUp size={16}/></button>
                                             <button onClick={() => { setSelectedContract(contract); setShowContractModal(true); }} className="p-1.5 text-slate-400 hover:text-slate-600 rounded" title="Editar"><Edit2 size={16}/></button>
                                             <button onClick={() => handleDeleteContract(contract.code)} className="p-1.5 text-slate-400 hover:text-red-500 rounded" title="Eliminar"><Trash2 size={16}/></button>
                                         </div>
@@ -357,6 +424,106 @@ const RealEstatePage: React.FC = () => {
                                 </tr>
                             );
                         })}
+                    </tbody>
+                </table>
+            </div>
+        )}
+
+        {/* VIEW: PAYMENTS / CONTROL PAGOS */}
+        {activeTab === 'PAYMENTS' && (
+            <div className="overflow-x-auto">
+                <div className="p-4 bg-indigo-50 border-b border-indigo-100 text-indigo-800 text-sm font-bold flex items-center gap-2">
+                    <Calendar size={18}/> Calendario de Pagos
+                </div>
+                <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-slate-500 font-medium">
+                        <tr>
+                            <th className="px-6 py-3">Estado</th>
+                            <th className="px-6 py-3">Inquilino / Unidad</th>
+                            <th className="px-6 py-3 text-center">Próximo Pago</th>
+                            <th className="px-6 py-3 text-right">Monto</th>
+                            <th className="px-6 py-3 text-right">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {contracts.filter(c => c.status === 'ACTIVE' && getContractLabel(c).toLowerCase().includes(searchTerm.toLowerCase())).map(contract => {
+                            const t = tenants.find(x => x.code === contract.tenantCode);
+                            const a = apartments.find(x => x.code === contract.apartmentCode);
+                            return (
+                                <tr key={contract.code} className="hover:bg-slate-50">
+                                    <td className="px-6 py-3">
+                                        <PaymentStatusBadge contract={contract} />
+                                    </td>
+                                    <td className="px-6 py-3">
+                                        <div className="font-bold text-slate-800">{t?.fullName}</div>
+                                        <div className="text-xs text-slate-500">{a?.name}</div>
+                                    </td>
+                                    <td className="px-6 py-3 text-center font-mono text-slate-600">
+                                        {contract.nextPaymentDate}
+                                    </td>
+                                    <td className="px-6 py-3 text-right font-bold text-slate-700">
+                                        {contract.amount.toLocaleString('es-HN', {minimumFractionDigits:2})}
+                                    </td>
+                                    <td className="px-6 py-3 text-right">
+                                        <div className="flex justify-end gap-2">
+                                            <button onClick={() => { setSelectedContract(contract); setShowHistoryModal(true); }} className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 shadow-sm">HISTORIAL</button>
+                                            <button onClick={() => { setSelectedContract(contract); setShowBulkModal(true); }} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 shadow-sm flex items-center gap-1"><Layers size={14}/> MASIVO</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+        )}
+
+        {/* VIEW: DELINQUENT / EN MORA */}
+        {activeTab === 'DELINQUENT' && (
+            <div className="overflow-x-auto">
+                <div className="p-4 bg-rose-50 border-b border-rose-100 text-rose-800 text-sm font-bold flex items-center gap-2">
+                    <AlertTriangle size={18}/> Inquilinos en Mora
+                </div>
+                <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-slate-500 font-medium">
+                        <tr>
+                            <th className="px-6 py-3">Inquilino</th>
+                            <th className="px-6 py-3">Unidad</th>
+                            <th className="px-6 py-3">Contacto</th>
+                            <th className="px-6 py-3 text-center">Vencimiento</th>
+                            <th className="px-6 py-3 text-right">Monto Deuda</th>
+                            <th className="px-6 py-3 text-right">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {contracts
+                            .filter(c => c.status === 'ACTIVE' && isDelinquent(c))
+                            .map(contract => {
+                                const t = tenants.find(x => x.code === contract.tenantCode);
+                                const a = apartments.find(x => x.code === contract.apartmentCode);
+                                return (
+                                    <tr key={contract.code} className="hover:bg-rose-50/30">
+                                        <td className="px-6 py-3 font-bold text-slate-800">{t?.fullName}</td>
+                                        <td className="px-6 py-3 text-slate-600">{a?.name}</td>
+                                        <td className="px-6 py-3 text-xs text-slate-500">
+                                            {t?.phone && <div>{t.phone}</div>}
+                                            {t?.email && <div>{t.email}</div>}
+                                        </td>
+                                        <td className="px-6 py-3 text-center font-bold text-rose-600">
+                                            {contract.nextPaymentDate}
+                                        </td>
+                                        <td className="px-6 py-3 text-right font-bold text-slate-700">
+                                            {contract.amount.toLocaleString('es-HN', {minimumFractionDigits:2})}
+                                        </td>
+                                        <td className="px-6 py-3 text-right">
+                                            <button onClick={() => { setSelectedContract(contract); setShowHistoryModal(true); }} className="px-3 py-1.5 bg-rose-600 text-white rounded-lg text-xs font-bold hover:bg-rose-700 shadow-sm animate-pulse">COBRAR</button>
+                                        </td>
+                                    </tr>
+                                );
+                        })}
+                        {contracts.filter(c => c.status === 'ACTIVE' && isDelinquent(c)).length === 0 && (
+                            <tr><td colSpan={6} className="p-8 text-center text-slate-400">¡Felicidades! No hay inquilinos en mora.</td></tr>
+                        )}
                     </tbody>
                 </table>
             </div>
