@@ -2,10 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { 
   Plus, Search, Edit2, Trash2, Building, Home, Users, FileText, Zap, 
   DollarSign, Calendar, Clock, CheckCircle, TrendingUp, MoreVertical, Key,
-  CreditCard, List
+  CreditCard, List, AlertTriangle, ArrowRight
 } from 'lucide-react';
 import { 
-  Property, Apartment, Tenant, Contract, PropertyServiceItem, 
+  Property, Apartment, Tenant, Contract, PropertyServiceItem, Transaction,
   PropertyFormData, ApartmentFormData, TenantFormData, ContractFormData, 
   PropertyServiceItemFormData, ServicePaymentFormData, PaymentFormData, BulkPaymentFormData 
 } from '../types';
@@ -28,7 +28,7 @@ import BulkPaymentModal from '../components/BulkPaymentModal';
 import ContractPriceHistoryModal from '../components/ContractPriceHistoryModal';
 
 const RealEstatePage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'PROPERTIES' | 'UNITS' | 'TENANTS' | 'CONTRACTS' | 'SERVICES'>('PROPERTIES');
+  const [activeTab, setActiveTab] = useState<'PROPERTIES' | 'UNITS' | 'TENANTS' | 'CONTRACTS' | 'PAYMENTS' | 'DELINQUENT' | 'SERVICES'>('CONTRACTS');
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -38,6 +38,7 @@ const RealEstatePage: React.FC = () => {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [services, setServices] = useState<PropertyServiceItem[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
 
   // Modals
   const [showPropertyModal, setShowPropertyModal] = useState(false);
@@ -67,18 +68,20 @@ const RealEstatePage: React.FC = () => {
 
   const loadData = async () => {
     try {
-        const [props, apts, tens, conts, servs] = await Promise.all([
+        const [props, apts, tens, conts, servs, txs] = await Promise.all([
             PropertyService.getAll(),
             ApartmentService.getAll(),
             TenantService.getAll(),
             ContractService.getAll(),
-            ServiceItemService.getAll()
+            ServiceItemService.getAll(),
+            TransactionService.getAll()
         ]);
         setProperties(props);
         setApartments(apts);
         setTenants(tens);
         setContracts(conts);
         setServices(servs);
+        setTransactions(txs);
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
@@ -171,8 +174,6 @@ const RealEstatePage: React.FC = () => {
       await TransactionService.delete(txCode);
   };
   const handleHistoryRegisterPayment = (date: Date) => {
-      // Trigger payment modal from history with preset date? 
-      // Simplified: just close history and open payment, user sets date
       setShowHistoryModal(false);
       setShowPaymentModal(true);
   };
@@ -206,6 +207,19 @@ const RealEstatePage: React.FC = () => {
       return `${t?.fullName || c.tenantCode} - ${a?.name || c.apartmentCode}`;
   };
 
+  // Derived Lists
+  const rentTransactions = transactions.filter(t => t.type === 'INGRESO' && t.categoryCode?.includes('INC')).slice(0, 100);
+  
+  const delinquentContracts = contracts.filter(c => {
+      if (c.status !== 'ACTIVE') return false;
+      if (!c.nextPaymentDate) return true;
+      const today = new Date();
+      const nextPay = new Date(c.nextPaymentDate);
+      // Adjust timezone
+      const nextPayAdjusted = new Date(nextPay.valueOf() + nextPay.getTimezoneOffset() * 60000);
+      return nextPayAdjusted < new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  });
+
   if(loading) return <div className="flex justify-center items-center h-full"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div></div>;
 
   return (
@@ -213,13 +227,20 @@ const RealEstatePage: React.FC = () => {
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
               <div>
                   <h1 className="text-2xl font-bold text-slate-800">Bienes Raíces</h1>
-                  <p className="text-slate-500">Gestión de propiedades y alquileres.</p>
+                  <p className="text-slate-500">Gestión de propiedades, alquileres y pagos.</p>
               </div>
-              <div className="flex gap-2 bg-white p-1 rounded-lg border border-slate-200 shadow-sm overflow-x-auto">
+              <div className="flex gap-2 bg-white p-1 rounded-lg border border-slate-200 shadow-sm overflow-x-auto max-w-full">
                    <button onClick={() => setActiveTab('PROPERTIES')} className={`px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap ${activeTab === 'PROPERTIES' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-50'}`}>Propiedades</button>
                    <button onClick={() => setActiveTab('UNITS')} className={`px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap ${activeTab === 'UNITS' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-50'}`}>Unidades</button>
                    <button onClick={() => setActiveTab('TENANTS')} className={`px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap ${activeTab === 'TENANTS' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-50'}`}>Inquilinos</button>
+                   <div className="w-px h-6 bg-slate-200 my-auto mx-1"></div>
                    <button onClick={() => setActiveTab('CONTRACTS')} className={`px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap ${activeTab === 'CONTRACTS' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-50'}`}>Contratos</button>
+                   <button onClick={() => setActiveTab('PAYMENTS')} className={`px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap ${activeTab === 'PAYMENTS' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-50'}`}>Control Pagos</button>
+                   <button onClick={() => setActiveTab('DELINQUENT')} className={`px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap flex items-center gap-2 ${activeTab === 'DELINQUENT' ? 'bg-rose-600 text-white shadow' : 'text-slate-600 hover:bg-slate-50'}`}>
+                       En Mora 
+                       {delinquentContracts.length > 0 && <span className="bg-white text-rose-600 text-[10px] px-1.5 rounded-full font-bold">{delinquentContracts.length}</span>}
+                   </button>
+                   <div className="w-px h-6 bg-slate-200 my-auto mx-1"></div>
                    <button onClick={() => setActiveTab('SERVICES')} className={`px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap ${activeTab === 'SERVICES' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-50'}`}>Servicios</button>
               </div>
           </div>
@@ -229,25 +250,28 @@ const RealEstatePage: React.FC = () => {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
                 <input type="text" placeholder="Buscar..." className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
              </div>
-             <button 
-                onClick={() => {
-                    if (activeTab === 'PROPERTIES') { setSelectedProperty(null); setShowPropertyModal(true); }
-                    if (activeTab === 'UNITS') { setSelectedApartment(null); setShowApartmentModal(true); }
-                    if (activeTab === 'TENANTS') { setSelectedTenant(null); setShowTenantModal(true); }
-                    if (activeTab === 'CONTRACTS') { setSelectedContract(null); setShowContractModal(true); }
-                    if (activeTab === 'SERVICES') { setSelectedService(null); setShowServiceModal(true); }
-                }} 
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-bold flex items-center gap-2 shadow-md"
-             >
-                <Plus size={18}/> 
-                <span>
-                    {activeTab === 'PROPERTIES' && 'Nueva Propiedad'}
-                    {activeTab === 'UNITS' && 'Nueva Unidad'}
-                    {activeTab === 'TENANTS' && 'Nuevo Inquilino'}
-                    {activeTab === 'CONTRACTS' && 'Nuevo Contrato'}
-                    {activeTab === 'SERVICES' && 'Nuevo Servicio'}
-                </span>
-             </button>
+             
+             {activeTab !== 'PAYMENTS' && activeTab !== 'DELINQUENT' && (
+                 <button 
+                    onClick={() => {
+                        if (activeTab === 'PROPERTIES') { setSelectedProperty(null); setShowPropertyModal(true); }
+                        if (activeTab === 'UNITS') { setSelectedApartment(null); setShowApartmentModal(true); }
+                        if (activeTab === 'TENANTS') { setSelectedTenant(null); setShowTenantModal(true); }
+                        if (activeTab === 'CONTRACTS') { setSelectedContract(null); setShowContractModal(true); }
+                        if (activeTab === 'SERVICES') { setSelectedService(null); setShowServiceModal(true); }
+                    }} 
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-bold flex items-center gap-2 shadow-md"
+                 >
+                    <Plus size={18}/> 
+                    <span>
+                        {activeTab === 'PROPERTIES' && 'Nueva Propiedad'}
+                        {activeTab === 'UNITS' && 'Nueva Unidad'}
+                        {activeTab === 'TENANTS' && 'Nuevo Inquilino'}
+                        {activeTab === 'CONTRACTS' && 'Nuevo Contrato'}
+                        {activeTab === 'SERVICES' && 'Nuevo Servicio'}
+                    </span>
+                 </button>
+             )}
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -351,7 +375,10 @@ const RealEstatePage: React.FC = () => {
                                             <span className="text-[11px] font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">{contract.code}</span>
                                         </td>
                                         <td className="px-6 py-3">
-                                            <div className="font-bold text-slate-800 flex items-center gap-2"><span className="truncate max-w-[180px]">{t?.fullName || contract.tenantCode}</span></div>
+                                            <div className="font-bold text-slate-800 flex items-center gap-2">
+                                                <span className="truncate max-w-[180px]">{t?.fullName || contract.tenantCode}</span>
+                                                <span className="text-[10px] text-slate-400 font-mono bg-slate-100 px-1 rounded">{contract.tenantCode}</span>
+                                            </div>
                                             <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-1"><Home size={10} className="text-slate-400"/><span>{a?.name || contract.apartmentCode}</span></div>
                                         </td>
                                         <td className="px-6 py-3 text-xs text-slate-500">
@@ -376,6 +403,127 @@ const RealEstatePage: React.FC = () => {
                             })}
                         </tbody>
                     </table>
+                 </div>
+             )}
+
+             {/* PAYMENTS TAB (Control de Pagos) */}
+             {activeTab === 'PAYMENTS' && (
+                 <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                        <thead className="bg-slate-50 text-slate-500 font-medium">
+                            <tr>
+                                <th className="px-6 py-3">Fecha</th>
+                                <th className="px-6 py-3">Inquilino</th>
+                                <th className="px-6 py-3">Contrato / Unidad</th>
+                                <th className="px-6 py-3">Descripción</th>
+                                <th className="px-6 py-3 text-right">Monto</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {rentTransactions.filter(t => 
+                                (t.description.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                                 (t.tenantName || '').toLowerCase().includes(searchTerm.toLowerCase()))
+                            ).map(tx => {
+                                const contract = contracts.find(c => c.code === tx.contractCode);
+                                return (
+                                    <tr key={tx.code} className="hover:bg-slate-50">
+                                        <td className="px-6 py-3 text-slate-600 font-mono text-xs">
+                                            {tx.date}
+                                            <div className="text-[10px] text-slate-400">{tx.code}</div>
+                                        </td>
+                                        <td className="px-6 py-3">
+                                            {tx.tenantName ? (
+                                                <div>
+                                                    <span className="font-bold text-slate-700">{tx.tenantName}</span>
+                                                    <span className="block text-[10px] text-slate-400 font-mono">{tx.tenantCode}</span>
+                                                </div>
+                                            ) : (
+                                                <span className="text-slate-400 italic">Desconocido</span>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-3">
+                                            {tx.contractCode && <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[10px] font-mono mr-2">{tx.contractCode}</span>}
+                                            {tx.propertyName && <span className="text-xs text-slate-600">{tx.propertyName}</span>}
+                                        </td>
+                                        <td className="px-6 py-3 text-slate-700 truncate max-w-xs">{tx.description}</td>
+                                        <td className="px-6 py-3 text-right font-bold text-emerald-600">
+                                            +{tx.amount.toLocaleString('es-HN', {minimumFractionDigits: 2})}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                            {rentTransactions.length === 0 && (
+                                <tr>
+                                    <td colSpan={5} className="p-8 text-center text-slate-400">
+                                        No se encontraron pagos recientes de alquiler.
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                 </div>
+             )}
+
+             {/* DELINQUENT TAB (En Mora) */}
+             {activeTab === 'DELINQUENT' && (
+                 <div className="overflow-x-auto">
+                    {delinquentContracts.length === 0 ? (
+                        <div className="p-12 text-center">
+                            <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <CheckCircle size={32}/>
+                            </div>
+                            <h3 className="text-lg font-bold text-slate-800">¡Todo al día!</h3>
+                            <p className="text-slate-500">No hay inquilinos con pagos atrasados.</p>
+                        </div>
+                    ) : (
+                        <table className="w-full text-left text-sm">
+                            <thead className="bg-rose-50 text-rose-800 font-medium">
+                                <tr>
+                                    <th className="px-6 py-3">Inquilino</th>
+                                    <th className="px-6 py-3">Unidad / Contrato</th>
+                                    <th className="px-6 py-3">Próximo Pago (Vencido)</th>
+                                    <th className="px-6 py-3 text-right">Monto Pendiente</th>
+                                    <th className="px-6 py-3 text-center">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {delinquentContracts.map(c => {
+                                    const t = tenants.find(x => x.code === c.tenantCode);
+                                    const a = apartments.find(x => x.code === c.apartmentCode);
+                                    return (
+                                        <tr key={c.code} className="hover:bg-slate-50">
+                                            <td className="px-6 py-3">
+                                                <div className="font-bold text-slate-800">{t?.fullName || c.tenantCode}</div>
+                                                <div className="text-xs text-slate-400 font-mono bg-slate-100 px-1 rounded w-fit">{c.tenantCode}</div>
+                                            </td>
+                                            <td className="px-6 py-3">
+                                                <div className="text-sm text-slate-700">{a?.name || c.apartmentCode}</div>
+                                                <div className="text-[10px] text-slate-400 font-mono">{c.code}</div>
+                                            </td>
+                                            <td className="px-6 py-3">
+                                                <div className="flex items-center gap-2 text-rose-600 font-bold">
+                                                    <AlertTriangle size={16}/>
+                                                    {c.nextPaymentDate}
+                                                </div>
+                                                <span className="text-xs text-rose-400">Vencido</span>
+                                            </td>
+                                            <td className="px-6 py-3 text-right font-mono font-bold text-slate-700">
+                                                {c.amount.toLocaleString('es-HN', {style: 'currency', currency: 'HNL'})}
+                                            </td>
+                                            <td className="px-6 py-3 text-center">
+                                                <button 
+                                                    onClick={() => { setSelectedContract(c); setShowPaymentModal(true); }}
+                                                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 shadow-md flex items-center gap-2 mx-auto"
+                                                >
+                                                    <DollarSign size={14}/> Cobrar Ahora
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    )}
                  </div>
              )}
 
