@@ -61,7 +61,7 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
       const tenantName = t ? t.fullName : 'Desconocido';
       const tenantCode = t ? t.code : c.tenantCode;
 
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 12; i++) { // Increased to 12 months since UI is now compact
           const monthName = pointerDate.toLocaleDateString('es-ES', { month: 'long' });
           const year = pointerDate.getFullYear();
           const label = monthName.charAt(0).toUpperCase() + monthName.slice(1);
@@ -112,86 +112,85 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm transition-opacity" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] animate-fadeIn scale-100">
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh] animate-fadeIn scale-100">
         
         {/* HEADER */}
-        <div className="px-6 py-5 border-b border-slate-100 bg-gradient-to-r from-indigo-50 to-white flex justify-between items-center">
+        <div className="px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-indigo-50 to-white flex justify-between items-center">
             <div>
-                <h3 className="text-xl font-bold text-indigo-900 flex items-center gap-2">
-                    <FileText size={22} className="text-indigo-600"/> Cobro Masivo
+                <h3 className="text-sm font-bold text-indigo-900 flex items-center gap-2">
+                    <FileText size={16} className="text-indigo-600"/> Cobro Masivo
                 </h3>
-                <p className="text-xs text-indigo-600/80 font-medium mt-1 ml-1">{contractLabel}</p>
+                <p className="text-[10px] text-indigo-600/80 font-medium mt-0.5 ml-0.5 truncate max-w-[250px]">{contractLabel}</p>
             </div>
             <button 
                 onClick={onClose} 
-                className="p-2 bg-white text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors shadow-sm border border-slate-100"
+                className="p-1.5 bg-white text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors shadow-sm border border-slate-100"
             >
-                <X size={20} />
+                <X size={16} />
             </button>
         </div>
 
         {/* BODY */}
-        <div className="p-6 space-y-6 overflow-y-auto bg-slate-50/30">
+        <div className="p-4 space-y-4 overflow-y-auto bg-slate-50/30">
             {error && (
-                <div className="bg-rose-50 border border-rose-100 text-rose-600 p-4 rounded-xl text-sm flex gap-3 shadow-sm">
-                    <AlertCircle size={20} className="shrink-0"/>
+                <div className="bg-rose-50 border border-rose-100 text-rose-600 p-2.5 rounded-lg text-xs flex gap-2 shadow-sm">
+                    <AlertCircle size={16} className="shrink-0"/>
                     <span className="font-medium">{error}</span>
                 </div>
             )}
 
             {/* Account Selector */}
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-2">
-                <label className="block text-sm font-bold text-slate-700">Cuenta de Destino</label>
+            <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm space-y-1">
+                <label className="block text-xs font-bold text-slate-700">Cuenta de Destino</label>
                 <select 
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-700 font-medium"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-700 font-medium text-xs"
                     value={accountCode}
                     onChange={e => setAccountCode(e.target.value)}
                 >
                     <option value="">Seleccionar cuenta...</option>
                     {accounts.map(a => <option key={a.code} value={a.code}>{a.name} ({a.currency})</option>)}
                 </select>
-                <p className="text-[10px] text-slate-400 px-1">El dinero ingresará a esta cuenta.</p>
             </div>
 
             {/* Month List */}
             <div>
-                <div className="flex justify-between items-end mb-3 px-1">
-                    <label className="block text-sm font-bold text-slate-700">Meses a Pagar</label>
-                    <span className="text-xs text-indigo-600 font-bold bg-indigo-50 px-2 py-1 rounded-md">{selectedCount} seleccionados</span>
+                <div className="flex justify-between items-end mb-2 px-1">
+                    <label className="block text-xs font-bold text-slate-700">Meses a Pagar</label>
+                    <span className="text-[10px] text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded-md">{selectedCount} seleccionados</span>
                 </div>
                 
-                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
                     {items.map((item, idx) => (
                         <div 
                             key={idx} 
                             onClick={() => toggleItem(idx)}
                             className={`
-                                group flex items-start gap-4 p-4 rounded-xl border cursor-pointer transition-all duration-200
+                                group flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-all duration-200
                                 ${item.selected 
-                                    ? 'bg-white border-indigo-500 shadow-md ring-1 ring-indigo-500' 
-                                    : 'bg-white border-slate-200 hover:border-indigo-300 hover:shadow-sm opacity-80 hover:opacity-100'
+                                    ? 'bg-white border-indigo-500 shadow-sm ring-1 ring-indigo-500' 
+                                    : 'bg-white border-slate-200 hover:border-indigo-300 opacity-90 hover:opacity-100'
                                 }
                             `}
                         >
-                            <div className={`mt-1 transition-colors ${item.selected ? 'text-indigo-600' : 'text-slate-300 group-hover:text-slate-400'}`}>
-                                {item.selected ? <CheckSquare size={22} strokeWidth={2.5}/> : <Square size={22}/>}
+                            <div className={`mt-0.5 transition-colors ${item.selected ? 'text-indigo-600' : 'text-slate-300 group-hover:text-slate-400'}`}>
+                                {item.selected ? <CheckSquare size={18} strokeWidth={2.5}/> : <Square size={18}/>}
                             </div>
                             
                             <div className="flex-1 min-w-0">
                                 <div className="flex justify-between items-start">
-                                    <p className={`text-sm font-bold truncate pr-2 ${item.selected ? 'text-indigo-900' : 'text-slate-600'}`}>
+                                    <p className={`text-xs font-bold truncate pr-2 ${item.selected ? 'text-indigo-900' : 'text-slate-600'}`}>
                                         {item.description.split(' - ')[1] ? item.description.split(' - ')[1] : item.description}
                                     </p>
-                                    <p className={`font-mono font-bold text-sm ${item.selected ? 'text-emerald-600' : 'text-slate-500'}`}>
+                                    <p className={`font-mono font-bold text-xs ${item.selected ? 'text-emerald-600' : 'text-slate-500'}`}>
                                         {item.amount.toLocaleString('es-HN', { minimumFractionDigits: 2 })}
                                     </p>
                                 </div>
                                 
-                                <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-400">
-                                    <Calendar size={12}/>
+                                <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-slate-400">
+                                    <Calendar size={10}/>
                                     <span>Vence: {item.date}</span>
                                 </div>
-                                <p className="text-[10px] text-slate-400 mt-2 font-mono bg-slate-50 p-2 rounded border border-slate-100 break-words whitespace-normal">
+                                <p className="text-[9px] text-slate-400 mt-1 font-mono bg-slate-50 p-1 rounded border border-slate-100 break-words whitespace-normal leading-tight">
                                     {item.description}
                                 </p>
                             </div>
@@ -202,31 +201,31 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
         </div>
 
         {/* FOOTER */}
-        <div className="p-6 bg-white border-t border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-10">
+        <div className="px-4 py-3 bg-white border-t border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-10">
             <div className="flex flex-col items-start">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Total a Cobrar</span>
-                <span className="text-2xl font-extrabold text-emerald-600 flex items-center gap-1">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total a Cobrar</span>
+                <span className="text-lg font-extrabold text-emerald-600 flex items-center gap-1">
                     {totalAmount.toLocaleString('es-HN', {minimumFractionDigits: 2})}
                 </span>
             </div>
             
-            <div className="flex gap-3 w-full sm:w-auto">
+            <div className="flex gap-2 w-full sm:w-auto">
                 <button 
                     onClick={onClose}
-                    className="flex-1 sm:flex-none px-4 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors text-sm"
+                    className="flex-1 sm:flex-none px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg font-bold hover:bg-slate-200 transition-colors text-xs"
                 >
                     Cancelar
                 </button>
                 <button 
                     onClick={handleSubmit}
                     disabled={isSubmitting || selectedCount === 0}
-                    className="flex-1 sm:flex-none px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-md shadow-indigo-200 disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-2 transition-all transform active:scale-95 text-sm"
+                    className="flex-1 sm:flex-none px-4 py-1.5 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 shadow-md shadow-indigo-200 disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-1.5 transition-all transform active:scale-95 text-xs"
                 >
                     {isSubmitting ? (
                         <>Procesando...</>
                     ) : (
                         <>
-                            Registrar {selectedCount} Pagos <ArrowRight size={16}/>
+                            Registrar {selectedCount} Pagos <ArrowRight size={14}/>
                         </>
                     )}
                 </button>
