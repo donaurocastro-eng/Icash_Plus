@@ -3,7 +3,7 @@ import {
   Save, CheckCircle, XCircle, AlertTriangle, Database, RefreshCw, 
   ShieldAlert, Activity, Terminal, Trash2, Building, Wrench, 
   FileText, Search, Play, ArrowRight, Check, Scale, Rewind,
-  Settings, ChevronRight
+  Settings, ChevronRight, X
 } from 'lucide-react';
 import { db } from '../services/db';
 import { ContractService } from '../services/contractService';
@@ -36,6 +36,7 @@ const SettingsPage: React.FC = () => {
   const [selectedPurgeCategory, setSelectedPurgeCategory] = useState('');
   const [purgeCount, setPurgeCount] = useState<number | null>(null);
   const [isPurging, setIsPurging] = useState(false);
+  const [showPurgeConfirmUI, setShowPurgeConfirmUI] = useState(false); // New explicit UI state
 
   // States for Contract Reset
   const [isResettingContracts, setIsResettingContracts] = useState(false);
@@ -91,6 +92,7 @@ const SettingsPage: React.FC = () => {
           return;
       }
       setInitLoading(true);
+      setShowPurgeConfirmUI(false); // Reset confirm UI
       try {
           // Count only
           const txs = await TransactionService.getAll();
@@ -108,19 +110,14 @@ const SettingsPage: React.FC = () => {
       }
   };
 
-  const handleExecutePurge = async () => {
-      addLog(`🏁 Iniciando solicitud de eliminación para categoría: ${selectedPurgeCategory}`);
-      
-      if (!selectedPurgeCategory || !purgeCount) {
-          addLog("❌ Proceso cancelado: Categoría no válida o contador en cero.");
-          return;
-      }
-      
-      const confirmMsg = `PELIGRO: ¿Estás seguro de eliminar ${purgeCount} transacciones?\n\nEsta acción es irreversible y afectará los saldos de tus cuentas.`;
-      if (!window.confirm(confirmMsg)) {
-          addLog("🛑 Cancelado por el usuario.");
-          return;
-      }
+  const handleInitiatePurge = () => {
+      if (!selectedPurgeCategory || !purgeCount) return;
+      setShowPurgeConfirmUI(true);
+      addLog("⚠️ Solicitando confirmación del usuario para borrar...");
+  };
+
+  const handleConfirmPurge = async () => {
+      addLog(`🏁 Ejecutando eliminación masiva para: ${selectedPurgeCategory}`);
       
       setIsPurging(true);
       try {
@@ -134,12 +131,13 @@ const SettingsPage: React.FC = () => {
           if (deleted > 0) {
               alert(`✅ ÉXITO: Se eliminaron ${deleted} registros correctamente.`);
           } else {
-              alert(`⚠️ AVISO: El sistema reportó 0 eliminaciones. Es posible que los datos ya no existan.`);
+              alert(`⚠️ AVISO: El sistema reportó 0 eliminaciones.`);
           }
           
           // Reset UI
           setPurgeCount(null); 
           setSelectedPurgeCategory(''); 
+          setShowPurgeConfirmUI(false);
           
       } catch (e: any) {
           console.error(e);
@@ -392,31 +390,58 @@ const SettingsPage: React.FC = () => {
                                   <select 
                                       className="w-full px-4 py-3 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-rose-500 outline-none"
                                       value={selectedPurgeCategory}
-                                      onChange={e => { setSelectedPurgeCategory(e.target.value); setPurgeCount(null); }}
+                                      onChange={e => { setSelectedPurgeCategory(e.target.value); setPurgeCount(null); setShowPurgeConfirmUI(false); }}
                                   >
                                       <option value="">Selecciona categoría a purgar...</option>
                                       {categories.map(c => <option key={c.code} value={c.code}>{c.name} ({c.type})</option>)}
                                   </select>
                                   
-                                  <div className="flex gap-2">
-                                      <button 
-                                          onClick={handleAnalyzePurge}
-                                          disabled={!selectedPurgeCategory || initLoading}
-                                          className="flex-1 py-2 bg-white border border-slate-300 text-slate-700 font-bold rounded-lg hover:bg-slate-50 text-xs uppercase tracking-wider"
-                                      >
-                                          Escanear
-                                      </button>
-                                      {purgeCount !== null && purgeCount > 0 && (
+                                  {/* CONFIRMATION UI */}
+                                  {showPurgeConfirmUI ? (
+                                      <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 animate-fadeIn">
+                                          <div className="flex items-center gap-2 text-rose-800 font-bold mb-2">
+                                              <AlertTriangle size={20}/>
+                                              Confirmar Eliminación
+                                          </div>
+                                          <p className="text-xs text-rose-700 mb-4">
+                                              Vas a eliminar <strong>{purgeCount}</strong> transacciones. Esto afectará el saldo de tus cuentas. Esta acción no se puede deshacer.
+                                          </p>
+                                          <div className="flex gap-2">
+                                              <button 
+                                                  onClick={() => setShowPurgeConfirmUI(false)}
+                                                  className="flex-1 py-2 bg-white border border-rose-200 text-rose-700 rounded-lg text-xs font-bold hover:bg-rose-50"
+                                              >
+                                                  Cancelar
+                                              </button>
+                                              <button 
+                                                  onClick={handleConfirmPurge}
+                                                  className="flex-[2] py-2 bg-rose-600 text-white rounded-lg text-xs font-bold hover:bg-rose-700 shadow-sm flex justify-center items-center gap-2"
+                                              >
+                                                  <Trash2 size={14}/> SÍ, ELIMINAR AHORA
+                                              </button>
+                                          </div>
+                                      </div>
+                                  ) : (
+                                      <div className="flex gap-2">
                                           <button 
-                                              onClick={handleExecutePurge}
-                                              disabled={isPurging}
-                                              className="flex-[2] py-2 bg-rose-600 text-white font-bold rounded-lg hover:bg-rose-700 shadow-md text-xs uppercase tracking-wider flex items-center justify-center gap-2"
+                                              onClick={handleAnalyzePurge}
+                                              disabled={!selectedPurgeCategory || initLoading}
+                                              className="flex-1 py-2 bg-white border border-slate-300 text-slate-700 font-bold rounded-lg hover:bg-slate-50 text-xs uppercase tracking-wider"
                                           >
-                                              {isPurging ? <Activity size={16} className="animate-spin"/> : <Trash2 size={16}/>}
-                                              Eliminar {purgeCount} Registros
+                                              Escanear
                                           </button>
-                                      )}
-                                  </div>
+                                          {purgeCount !== null && purgeCount > 0 && (
+                                              <button 
+                                                  onClick={handleInitiatePurge}
+                                                  disabled={isPurging}
+                                                  className="flex-[2] py-2 bg-rose-600 text-white font-bold rounded-lg hover:bg-rose-700 shadow-md text-xs uppercase tracking-wider flex items-center justify-center gap-2"
+                                              >
+                                                  {isPurging ? <Activity size={16} className="animate-spin"/> : <Trash2 size={16}/>}
+                                                  Preparar ({purgeCount})
+                                              </button>
+                                          )}
+                                      </div>
+                                  )}
                               </div>
                           </div>
                       </div>
