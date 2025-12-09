@@ -168,43 +168,74 @@ export const TransactionService = {
        const existing = rows.map(r => ({ code: r.code } as Transaction));
        const newCode = generateNextCode(existing);
        
+       // FETCH NAMES TO SATISFY NOT-NULL CONSTRAINTS
+       let categoryName = data.categoryCode;
+       let accountName = data.accountCode;
+       let destinationAccountName = null;
+
        try {
+           if (data.categoryCode) {
+               const catRes = await db.query('SELECT name FROM categories WHERE code=$1', [data.categoryCode]);
+               if (catRes.length > 0) categoryName = catRes[0].name;
+           }
+           if (data.accountCode) {
+               const accRes = await db.query('SELECT name FROM accounts WHERE code=$1', [data.accountCode]);
+               if (accRes.length > 0) accountName = accRes[0].name;
+           }
+           if (data.destinationAccountCode) {
+               const destRes = await db.query('SELECT name FROM accounts WHERE code=$1', [data.destinationAccountCode]);
+               if (destRes.length > 0) destinationAccountName = destRes[0].name;
+           }
+       } catch (e) {
+           console.warn("Could not fetch names for snapshot:", e);
+       }
+
+       try {
+           // ATTEMPT 1: FULL INSERT
            await db.query(`
              INSERT INTO transactions (
-               code, date, description, amount, type, category_code, account_code, 
+               code, date, description, amount, type, category_code, category_name, account_code, account_name,
                property_code, contract_code, tenant_code, destination_account_code, destination_account_name,
                loan_id, loan_code, payment_number
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
            `, [
              newCode, data.date, data.description, data.amount, data.type, 
-             data.categoryCode, data.accountCode, data.propertyCode || null, 
+             data.categoryCode, categoryName, 
+             data.accountCode, accountName,
+             data.propertyCode || null, 
              data.contractCode || null, data.tenantCode || null,
-             data.destinationAccountCode || null, null, 
+             data.destinationAccountCode || null, destinationAccountName, 
              data.loanId || null, data.loanCode || null, data.paymentNumber || null
            ]);
        } catch (e: any) {
            console.warn("Full Insert failed, trying Real Estate safe insert...", e.message);
            
            try {
+               // ATTEMPT 2: REAL ESTATE SAFE INSERT (Includes category_name)
                await db.query(`
                  INSERT INTO transactions (
-                   code, date, description, amount, type, category_code, account_code, 
+                   code, date, description, amount, type, category_code, category_name, account_code, account_name,
                    property_code, contract_code, tenant_code
-                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                `, [
                  newCode, data.date, data.description, data.amount, data.type, 
-                 data.categoryCode, data.accountCode, data.propertyCode || null,
+                 data.categoryCode, categoryName,
+                 data.accountCode, accountName,
+                 data.propertyCode || null,
                  data.contractCode || null, data.tenantCode || null
                ]);
            } catch (e2: any) {
                console.warn("Real Estate Insert failed, trying basic insert...", e2.message);
+               // ATTEMPT 3: BARE MINIMUM (Includes category_name)
                await db.query(`
                  INSERT INTO transactions (
-                   code, date, description, amount, type, category_code, account_code, property_code
-                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                   code, date, description, amount, type, category_code, category_name, account_code, account_name, property_code
+                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                `, [
                  newCode, data.date, data.description, data.amount, data.type, 
-                 data.categoryCode, data.accountCode, data.propertyCode || null
+                 data.categoryCode, categoryName,
+                 data.accountCode, accountName,
+                 data.propertyCode || null
                ]);
            }
        }
@@ -212,7 +243,8 @@ export const TransactionService = {
        return { 
            code: newCode, 
            ...data, 
-           categoryName: '', accountName: '',
+           categoryName: categoryName, 
+           accountName: accountName,
            createdAt: new Date().toISOString() 
        };
     } else {
