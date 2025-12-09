@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { 
   Plus, Search, Edit2, Trash2, Building, Home, Users, FileText, Zap, 
@@ -222,7 +223,25 @@ const RealEstatePage: React.FC = () => {
   };
 
   // Derived Lists
-  const rentTransactions = transactions.filter(t => t.type === 'INGRESO' && t.categoryCode?.includes('INC')).slice(0, 100);
+  // UPDATED: Broaden filter to catch ANY Income transaction that looks like rent
+  const rentTransactions = transactions.filter(t => {
+      if (t.type !== 'INGRESO') return false;
+      
+      // Explicitly linked to a contract
+      if (t.contractCode) return true;
+      
+      // Explicitly linked to a tenant
+      if (t.tenantCode) return true;
+      
+      // Uses a standard Income category
+      if (t.categoryCode?.includes('INC')) return true;
+      
+      // Text matching as fallback
+      const desc = t.description.toLowerCase();
+      if (desc.includes('alquiler') || desc.includes('renta') || desc.includes('arriendo')) return true;
+      
+      return false;
+  }).slice(0, 100);
   
   const delinquentContracts = contracts.filter(c => {
       if (c.status !== 'ACTIVE') return false;

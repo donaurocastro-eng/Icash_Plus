@@ -3,7 +3,6 @@ import { db } from './db';
 
 const STORAGE_KEY = 'icash_plus_transactions';
 
-// Helpers
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const generateNextCode = (existing: Transaction[]): string => {
@@ -25,7 +24,6 @@ const toDateString = (val: any): string => {
   if (!val) return new Date().toISOString().split('T')[0];
   if (val instanceof Date) return val.toISOString().split('T')[0];
   const s = String(val);
-  // Handle '2024-01-01 00:00:00' or '2024-01-01T00:00:00.000Z'
   if (s.includes('T')) return s.split('T')[0];
   return s.split(' ')[0];
 };
@@ -41,7 +39,6 @@ export const TransactionService = {
   getAll: async (): Promise<Transaction[]> => {
     if (db.isConfigured()) {
       try {
-        // LEVEL 1: Full Query (Latest Schema)
         const rows = await db.query(`
           SELECT 
             t.code, t.date, t.description, t.amount, t.type, 
@@ -70,7 +67,6 @@ export const TransactionService = {
         console.warn("Level 1 Query failed (Schema Mismatch). Trying Level 2...", error.message);
         
         try {
-            // LEVEL 2: Fallback (No Contracts/Tenants joins, but includes Loans/Transfers columns)
             const rows = await db.query(`
                 SELECT 
                   t.code, t.date, t.description, t.amount, t.type, 
@@ -93,7 +89,6 @@ export const TransactionService = {
             console.warn("Level 2 Query failed. Trying Level 3 (Bare Minimum)...", error2.message);
             
             try {
-                // LEVEL 3: Bare Minimum (Core columns only - Guaranteed to exist)
                 const rows = await db.query(`
                     SELECT 
                       t.code, t.date, t.description, t.amount, t.type, 
@@ -109,7 +104,7 @@ export const TransactionService = {
                 return rows.map(normalizeRow);
             } catch (error3: any) {
                 console.error("CRITICAL: All query attempts failed.", error3);
-                return []; // Return empty array to prevent app crash
+                return [];
             }
         }
       }
@@ -173,10 +168,7 @@ export const TransactionService = {
        const existing = rows.map(r => ({ code: r.code } as Transaction));
        const newCode = generateNextCode(existing);
        
-       // STRATEGY: Try Most Complete -> Fallback to Real Estate Safe -> Fallback to Basic
-       
        try {
-           // ATTEMPT 1: FULL INSERT (Includes Loan, Transfers, Tenant, Contract)
            await db.query(`
              INSERT INTO transactions (
                code, date, description, amount, type, category_code, account_code, 
@@ -194,9 +186,6 @@ export const TransactionService = {
            console.warn("Full Insert failed, trying Real Estate safe insert...", e.message);
            
            try {
-               // ATTEMPT 2: REAL ESTATE SAFE INSERT
-               // Preserves Contract & Tenant info (Critical for Real Estate Module)
-               // Drops Loan/DestinationAccount columns which might be missing in older schemas
                await db.query(`
                  INSERT INTO transactions (
                    code, date, description, amount, type, category_code, account_code, 
@@ -209,8 +198,6 @@ export const TransactionService = {
                ]);
            } catch (e2: any) {
                console.warn("Real Estate Insert failed, trying basic insert...", e2.message);
-               
-               // ATTEMPT 3: BARE MINIMUM (Last Resort)
                await db.query(`
                  INSERT INTO transactions (
                    code, date, description, amount, type, category_code, account_code, property_code
@@ -225,7 +212,7 @@ export const TransactionService = {
        return { 
            code: newCode, 
            ...data, 
-           categoryName: '', accountName: '', // populated on refetch
+           categoryName: '', accountName: '',
            createdAt: new Date().toISOString() 
        };
     } else {
@@ -276,15 +263,25 @@ export const TransactionService = {
   },
 
   deleteByCategory: async (categoryCode: string): Promise<number> => {
-      console.log(`TransactionService: Deleting transactions with category '${categoryCode}'...`);
+      console.log(`TransactionService: Requesting delete for category '${categoryCode}'...`);
       if (db.isConfigured()) {
           try {
-              const result = await db.query('DELETE FROM transactions WHERE category_code=$1 RETURNING code', [categoryCode]);
-              console.log("TransactionService: DB Delete Result:", result);
-              return result.length;
+              // STEP 1: Get count first to be sure
+              const countRes = await db.query('SELECT count(*) as count FROM transactions WHERE category_code=$1', [categoryCode]);
+              const count = parseInt(countRes[0].count || '0');
+              
+              if (count === 0) {
+                  console.log("TransactionService: No records found to delete.");
+                  return 0;
+              }
+
+              // STEP 2: Execute Delete
+              await db.query('DELETE FROM transactions WHERE category_code=$1', [categoryCode]);
+              console.log(`TransactionService: Successfully sent DELETE for ${count} records.`);
+              return count;
           } catch (e: any) {
               console.error("TransactionService: DB Delete Error:", e);
-              throw new Error(`Error en base de datos: ${e.message}`);
+              throw new Error(`DB Error: ${e.message}`);
           }
       } else {
           let existing = await TransactionService.getAll();
