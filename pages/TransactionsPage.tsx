@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Plus, Search, Trash2, ArrowDownCircle, ArrowUpCircle, Calendar, ArrowRightLeft, Edit2, FileSpreadsheet, Upload, Filter, Loader } from 'lucide-react';
+import { Plus, Search, Trash2, ArrowDownCircle, ArrowUpCircle, Calendar, ArrowRightLeft, Edit2, FileSpreadsheet, Upload, Filter, Loader, X, AlertTriangle, CheckCircle } from 'lucide-react';
 import { Transaction, TransactionFormData, Account, Category } from '../types';
 import { TransactionService } from '../services/transactionService';
 import { AccountService } from '../services/accountService';
@@ -27,7 +27,9 @@ const TransactionsPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   
-  // Delete State
+  // Custom UI State (Replacements for window.confirm/alert)
+  const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
+  const [notification, setNotification] = useState<{type: 'success' | 'error', message: string} | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -53,12 +55,23 @@ const TransactionsPage: React.FC = () => {
     loadTransactions();
   }, []);
 
+  // Auto-hide notification
+  useEffect(() => {
+      if (notification) {
+          const timer = setTimeout(() => setNotification(null), 5000);
+          return () => clearTimeout(timer);
+      }
+  }, [notification]);
+
   const handleCreate = async (data: TransactionFormData) => {
     setIsSubmitting(true);
     try {
       await TransactionService.create(data);
       await loadTransactions();
       setIsModalOpen(false);
+      setNotification({ type: 'success', message: 'Transacción creada correctamente' });
+    } catch (error: any) {
+        setNotification({ type: 'error', message: error.message });
     } finally {
       setIsSubmitting(false);
     }
@@ -72,30 +85,31 @@ const TransactionsPage: React.FC = () => {
           await loadTransactions();
           setIsModalOpen(false);
           setEditingTransaction(null);
+          setNotification({ type: 'success', message: 'Transacción actualizada' });
       } catch (e: any) {
-          alert(e.message);
+          setNotification({ type: 'error', message: e.message });
       } finally {
           setIsSubmitting(false);
       }
   };
 
-  const handleDelete = async (code: string) => {
-    if (!window.confirm(`¿CONFIRMAR ELIMINACIÓN?\n\nSe borrará la transacción ${code} y se revertirá el saldo de la cuenta afectada (se sumará/restará el dinero de vuelta).`)) {
-        return;
-    }
+  // Replacement for window.confirm
+  const requestDelete = (tx: Transaction) => {
+      setTransactionToDelete(tx);
+      setNotification(null);
+  };
 
-    setDeletingId(code); // Show spinner
+  const confirmDelete = async () => {
+    if (!transactionToDelete) return;
+    setDeletingId(transactionToDelete.code);
+    
     try {
-      await TransactionService.delete(code);
+      await TransactionService.delete(transactionToDelete.code);
       await loadTransactions();
-      
-      // Use setTimeout to ensure UI renders before alert blocks it
-      setTimeout(() => {
-          alert("✅ Transacción eliminada correctamente.\n\nEl saldo de la cuenta ha sido actualizado.");
-      }, 100);
+      setNotification({ type: 'success', message: 'Registro eliminado y saldo actualizado con éxito.' });
+      setTransactionToDelete(null);
     } catch (error: any) {
-      console.error(error);
-      alert(`❌ Error al eliminar: ${error.message}`);
+      setNotification({ type: 'error', message: `Error al eliminar: ${error.message}` });
     } finally {
       setDeletingId(null);
     }
@@ -120,6 +134,8 @@ const TransactionsPage: React.FC = () => {
 
   const processExcelFile = async (file: File) => {
     setIsImporting(true);
+    setNotification({ type: 'success', message: 'Procesando archivo...' }); // Using success color for info
+    
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
@@ -127,7 +143,10 @@ const TransactionsPage: React.FC = () => {
         const wb = XLSX.read(data, { type: 'binary' });
         const json = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) as any[];
         
-        if (json.length === 0) { alert("Archivo vacío"); return; }
+        if (json.length === 0) { 
+            setNotification({ type: 'error', message: "Archivo vacío" });
+            return; 
+        }
 
         let successCount = 0;
         let errorCount = 0;
@@ -167,10 +186,10 @@ const TransactionsPage: React.FC = () => {
         }
         
         await loadTransactions();
-        alert(`Importación finalizada.\n✅ Exitosos: ${successCount}\n❌ Fallidos: ${errorCount}`);
+        setNotification({ type: 'success', message: `Importación finalizada. ✅ Exitosos: ${successCount} ❌ Fallidos: ${errorCount}` });
       } catch (err) {
           console.error(err);
-          alert("Error al leer el archivo Excel.");
+          setNotification({ type: 'error', message: "Error al leer el archivo Excel." });
       } finally {
           setIsImporting(false);
       }
@@ -243,13 +262,72 @@ const TransactionsPage: React.FC = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600"></div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      
+      {/* NOTIFICATION BANNER */}
+      {notification && (
+          <div className={`fixed top-4 right-4 z-[100] max-w-sm w-full p-4 rounded-xl shadow-2xl border flex items-start gap-3 animate-slideIn ${
+              notification.type === 'success' 
+              ? 'bg-emerald-50 border-emerald-100 text-emerald-800' 
+              : 'bg-rose-50 border-rose-100 text-rose-800'
+          }`}>
+              {notification.type === 'success' ? <CheckCircle size={20} className="text-emerald-500 shrink-0"/> : <AlertTriangle size={20} className="text-rose-500 shrink-0"/>}
+              <div className="flex-1 text-sm font-medium">{notification.message}</div>
+              <button onClick={() => setNotification(null)} className="text-slate-400 hover:text-slate-600"><X size={16}/></button>
+          </div>
+      )}
+
+      {/* DELETE CONFIRMATION MODAL */}
+      {transactionToDelete && (
+          <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => !deletingId && setTransactionToDelete(null)} />
+              <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden p-6 animate-fadeIn">
+                  <div className="flex flex-col items-center text-center space-y-4">
+                      <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center">
+                          {deletingId ? <Loader size={32} className="animate-spin"/> : <Trash2 size={32}/>}
+                      </div>
+                      
+                      <h3 className="text-xl font-bold text-slate-800">
+                          {deletingId ? 'Eliminando...' : '¿Eliminar Transacción?'}
+                      </h3>
+                      
+                      {!deletingId && (
+                          <div className="text-sm text-slate-600">
+                              <p className="mb-2">Vas a eliminar el registro: <strong>{transactionToDelete.description}</strong></p>
+                              <div className="bg-amber-50 text-amber-800 p-3 rounded-lg text-xs text-left border border-amber-100">
+                                  <AlertTriangle size={14} className="inline mr-1 mb-0.5"/>
+                                  <strong>Acción Automática:</strong> El saldo de la cuenta <u>{transactionToDelete.accountName}</u> será revertido (se {transactionToDelete.type === 'INGRESO' ? 'restará' : 'sumará'} el monto).
+                              </div>
+                          </div>
+                      )}
+
+                      <div className="flex gap-3 w-full pt-2">
+                          <button 
+                              onClick={() => setTransactionToDelete(null)}
+                              disabled={!!deletingId}
+                              className="flex-1 py-3 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold hover:bg-slate-50 transition-colors disabled:opacity-50"
+                          >
+                              Cancelar
+                          </button>
+                          <button 
+                              onClick={confirmDelete}
+                              disabled={!!deletingId}
+                              className="flex-1 py-3 bg-rose-600 text-white rounded-xl font-bold hover:bg-rose-700 shadow-md disabled:opacity-50 flex justify-center items-center gap-2"
+                          >
+                              {deletingId ? 'Procesando...' : 'Sí, Eliminar'}
+                          </button>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Transacciones</h1>
@@ -423,16 +501,12 @@ const TransactionsPage: React.FC = () => {
                             <Edit2 size={16} />
                         </button>
                         <button 
-                            onClick={() => handleDelete(tx.code)}
+                            onClick={() => requestDelete(tx)}
                             className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
                             title="Eliminar"
                             disabled={!!deletingId}
                         >
-                            {deletingId === tx.code ? (
-                                <Loader size={16} className="animate-spin text-red-600"/>
-                            ) : (
-                                <Trash2 size={16} />
-                            )}
+                            <Trash2 size={16} />
                         </button>
                       </div>
                     </td>
