@@ -1,3 +1,4 @@
+
 import { Transaction, TransactionFormData, Account, Category, Property, Contract, Tenant } from '../types';
 import { db } from './db';
 
@@ -42,6 +43,8 @@ export const TransactionService = {
     if (db.isConfigured()) {
       try {
         // LEVEL 1: Full Query (Latest Schema)
+        // Uses COALESCE to prefer the snapshot tenant_code on the transaction, 
+        // falling back to the current contract owner if snapshot is missing (legacy data)
         const rows = await db.query(`
           SELECT 
             t.code, t.date, t.description, t.amount, t.type, 
@@ -49,11 +52,12 @@ export const TransactionService = {
             t.account_code as "accountCode", a.name as "accountName",
             t.property_code as "propertyCode", p.name as "propertyName",
             t.contract_code as "contractCode",
+            t.tenant_code as "storedTenantCode",
             t.destination_account_code as "destinationAccountCode",
             da.name as "destinationAccountName",
             t.created_at as "createdAt",
             t.loan_id as "loanId", t.loan_code as "loanCode", t.payment_number as "paymentNumber",
-            con.tenant_code as "tenantCode",
+            COALESCE(t.tenant_code, con.tenant_code) as "tenantCode",
             ten.full_name as "tenantName"
           FROM transactions t
           LEFT JOIN categories c ON t.category_code = c.code
@@ -61,7 +65,7 @@ export const TransactionService = {
           LEFT JOIN accounts da ON t.destination_account_code = da.code
           LEFT JOIN properties p ON t.property_code = p.code
           LEFT JOIN contracts con ON t.contract_code = con.code
-          LEFT JOIN tenants ten ON con.tenant_code = ten.code
+          LEFT JOIN tenants ten ON COALESCE(t.tenant_code, con.tenant_code) = ten.code
           ORDER BY t.date DESC, t.created_at DESC
         `);
         return rows.map(normalizeRow);
@@ -139,16 +143,20 @@ export const TransactionService = {
           const prop = properties.find(p => p.code === t.propertyCode);
           const destAcc = t.destinationAccountCode ? accounts.find(a => a.code === t.destinationAccountCode) : null;
           
-          let tenantCode = t.tenantCode;
+          let tenantCode = t.tenantCode; // Use stored code first
           let tenantName = t.tenantName;
 
-          if (t.contractCode) {
+          // Fallback to contract current tenant
+          if (!tenantCode && t.contractCode) {
               const contract = contracts.find(c => c.code === t.contractCode);
               if (contract) {
                   tenantCode = contract.tenantCode;
-                  const tenant = tenants.find(te => te.code === tenantCode);
-                  if (tenant) tenantName = tenant.fullName;
               }
+          }
+          
+          if (tenantCode) {
+              const tenant = tenants.find(te => te.code === tenantCode);
+              if (tenant) tenantName = tenant.fullName;
           }
 
           return {
@@ -170,17 +178,18 @@ export const TransactionService = {
        const existing = rows.map(r => ({ code: r.code } as Transaction));
        const newCode = generateNextCode(existing);
        
-       // Try Insert with all fields
+       // Try Insert with all fields including TENANT_CODE
        try {
            await db.query(`
              INSERT INTO transactions (
                code, date, description, amount, type, category_code, account_code, 
-               property_code, contract_code, destination_account_code, destination_account_name,
+               property_code, contract_code, tenant_code, destination_account_code, destination_account_name,
                loan_id, loan_code, payment_number
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
            `, [
              newCode, data.date, data.description, data.amount, data.type, 
-             data.categoryCode, data.accountCode, data.propertyCode || null, data.contractCode || null,
+             data.categoryCode, data.accountCode, data.propertyCode || null, 
+             data.contractCode || null, data.tenantCode || null,
              data.destinationAccountCode || null, null, 
              data.loanId || null, data.loanCode || null, data.paymentNumber || null
            ]);
@@ -247,6 +256,20 @@ export const TransactionService = {
           let existing = await TransactionService.getAll();
           existing = existing.filter(t => t.code !== code);
           localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+      }
+  },
+
+  deleteByCategory: async (categoryCode: string): Promise<number> => {
+      if (db.isConfigured()) {
+          const result = await db.query('DELETE FROM transactions WHERE category_code=$1 RETURNING code', [categoryCode]);
+          // Returns array of deleted rows
+          return result.length;
+      } else {
+          let existing = await TransactionService.getAll();
+          const initialLen = existing.length;
+          existing = existing.filter(t => t.categoryCode !== categoryCode);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+          return initialLen - existing.length;
       }
   }
 };

@@ -271,7 +271,8 @@ export const ContractService = {
        accountCode: data.accountCode,
        propertyCode: propertyCode,
        propertyName: propertyName,
-       contractCode: contract.code // Link transaction to contract
+       contractCode: contract.code, // Link transaction to contract
+       tenantCode: contract.tenantCode // Link transaction to specific tenant (Snapshot)
     });
 
     let nextDate = new Date(contract.nextPaymentDate || contract.startDate);

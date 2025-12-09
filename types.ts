@@ -60,7 +60,7 @@ export interface Transaction {
   loanCode?: string;
   paymentNumber?: number;
   
-  // Derived fields for display (fetched via joins)
+  // Derived fields for display (fetched via joins or stored snapshot)
   tenantCode?: string;
   tenantName?: string;
 
@@ -78,6 +78,7 @@ export interface TransactionFormData {
   propertyCode?: string;
   propertyName?: string;
   contractCode?: string;
+  tenantCode?: string; // Explicitly store tenant for history
   loanId?: string;
   loanCode?: string;
   paymentNumber?: number;
