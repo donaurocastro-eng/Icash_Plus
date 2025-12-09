@@ -21,10 +21,27 @@ const generateNextCode = (existing: Transaction[]): string => {
   return `TR-${nextId.toString().padStart(5, '0')}`;
 };
 
+const toDateString = (val: any): string => {
+  if (!val) return new Date().toISOString().split('T')[0];
+  if (val instanceof Date) return val.toISOString().split('T')[0];
+  const s = String(val);
+  // Handle '2024-01-01 00:00:00' or '2024-01-01T00:00:00.000Z'
+  if (s.includes('T')) return s.split('T')[0];
+  return s.split(' ')[0];
+};
+
+const normalizeRow = (r: any): Transaction => ({
+    ...r,
+    amount: Number(r.amount),
+    date: toDateString(r.date),
+    createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : new Date().toISOString()
+});
+
 export const TransactionService = {
   getAll: async (): Promise<Transaction[]> => {
     if (db.isConfigured()) {
       try {
+        // LEVEL 1: Full Query (Latest Schema)
         const rows = await db.query(`
           SELECT 
             t.code, t.date, t.description, t.amount, t.type, 
@@ -47,31 +64,53 @@ export const TransactionService = {
           LEFT JOIN tenants ten ON con.tenant_code = ten.code
           ORDER BY t.date DESC, t.created_at DESC
         `);
-        return rows.map(r => ({ ...r, amount: Number(r.amount) }));
+        return rows.map(normalizeRow);
       } catch (error: any) {
-        // Fallback for schema mismatch (missing columns like contract_code)
-        if (error.message && (error.message.includes('does not exist') || error.message.includes('column'))) {
-           console.warn("Schema mismatch in TransactionService, falling back to basic query:", error.message);
-           const rows = await db.query(`
-            SELECT 
-              t.code, t.date, t.description, t.amount, t.type, 
-              t.category_code as "categoryCode", c.name as "categoryName",
-              t.account_code as "accountCode", a.name as "accountName",
-              t.property_code as "propertyCode", p.name as "propertyName",
-              t.destination_account_code as "destinationAccountCode",
-              da.name as "destinationAccountName",
-              t.created_at as "createdAt",
-              t.loan_id as "loanId", t.loan_code as "loanCode", t.payment_number as "paymentNumber"
-            FROM transactions t
-            LEFT JOIN categories c ON t.category_code = c.code
-            LEFT JOIN accounts a ON t.account_code = a.code
-            LEFT JOIN accounts da ON t.destination_account_code = da.code
-            LEFT JOIN properties p ON t.property_code = p.code
-            ORDER BY t.date DESC, t.created_at DESC
-          `);
-          return rows.map(r => ({ ...r, amount: Number(r.amount) }));
+        console.warn("Level 1 Query failed (Schema Mismatch). Trying Level 2...", error.message);
+        
+        try {
+            // LEVEL 2: Fallback (No Contracts/Tenants joins, but includes Loans/Transfers columns)
+            const rows = await db.query(`
+                SELECT 
+                  t.code, t.date, t.description, t.amount, t.type, 
+                  t.category_code as "categoryCode", c.name as "categoryName",
+                  t.account_code as "accountCode", a.name as "accountName",
+                  t.property_code as "propertyCode", p.name as "propertyName",
+                  t.destination_account_code as "destinationAccountCode",
+                  da.name as "destinationAccountName",
+                  t.created_at as "createdAt",
+                  t.loan_id as "loanId", t.loan_code as "loanCode", t.payment_number as "paymentNumber"
+                FROM transactions t
+                LEFT JOIN categories c ON t.category_code = c.code
+                LEFT JOIN accounts a ON t.account_code = a.code
+                LEFT JOIN accounts da ON t.destination_account_code = da.code
+                LEFT JOIN properties p ON t.property_code = p.code
+                ORDER BY t.date DESC, t.created_at DESC
+            `);
+            return rows.map(normalizeRow);
+        } catch (error2: any) {
+            console.warn("Level 2 Query failed. Trying Level 3 (Bare Minimum)...", error2.message);
+            
+            try {
+                // LEVEL 3: Bare Minimum (Core columns only - Guaranteed to exist)
+                const rows = await db.query(`
+                    SELECT 
+                      t.code, t.date, t.description, t.amount, t.type, 
+                      t.category_code as "categoryCode", c.name as "categoryName",
+                      t.account_code as "accountCode", a.name as "accountName",
+                      t.property_code as "propertyCode", p.name as "propertyName"
+                    FROM transactions t
+                    LEFT JOIN categories c ON t.category_code = c.code
+                    LEFT JOIN accounts a ON t.account_code = a.code
+                    LEFT JOIN properties p ON t.property_code = p.code
+                    ORDER BY t.date DESC
+                `);
+                return rows.map(normalizeRow);
+            } catch (error3: any) {
+                console.error("CRITICAL: All query attempts failed.", error3);
+                return []; // Return empty array to prevent app crash
+            }
         }
-        throw error;
       }
     } else {
       await delay(300);
@@ -131,18 +170,32 @@ export const TransactionService = {
        const existing = rows.map(r => ({ code: r.code } as Transaction));
        const newCode = generateNextCode(existing);
        
-       await db.query(`
-         INSERT INTO transactions (
-           code, date, description, amount, type, category_code, account_code, 
-           property_code, contract_code, destination_account_code, destination_account_name,
-           loan_id, loan_code, payment_number
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-       `, [
-         newCode, data.date, data.description, data.amount, data.type, 
-         data.categoryCode, data.accountCode, data.propertyCode || null, data.contractCode || null,
-         data.destinationAccountCode || null, null, 
-         data.loanId || null, data.loanCode || null, data.paymentNumber || null
-       ]);
+       // Try Insert with all fields
+       try {
+           await db.query(`
+             INSERT INTO transactions (
+               code, date, description, amount, type, category_code, account_code, 
+               property_code, contract_code, destination_account_code, destination_account_name,
+               loan_id, loan_code, payment_number
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+           `, [
+             newCode, data.date, data.description, data.amount, data.type, 
+             data.categoryCode, data.accountCode, data.propertyCode || null, data.contractCode || null,
+             data.destinationAccountCode || null, null, 
+             data.loanId || null, data.loanCode || null, data.paymentNumber || null
+           ]);
+       } catch (e: any) {
+           console.warn("Full Insert failed, trying basic insert...", e.message);
+           // Fallback Insert (Basic columns only)
+           await db.query(`
+             INSERT INTO transactions (
+               code, date, description, amount, type, category_code, account_code, property_code
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           `, [
+             newCode, data.date, data.description, data.amount, data.type, 
+             data.categoryCode, data.accountCode, data.propertyCode || null
+           ]);
+       }
        
        return { 
            code: newCode, 

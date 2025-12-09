@@ -165,11 +165,14 @@ const TransactionsPage: React.FC = () => {
   // --- EXCEL LOGIC END ---
 
   const formatDate = (isoString: string) => {
-    const date = new Date(isoString);
-    const day = date.getUTCDate().toString().padStart(2, '0');
-    const month = (date.getUTCMonth() + 1).toString().padStart(2, '0');
-    const year = date.getUTCFullYear();
-    return `${day}/${month}/${year}`;
+    if (!isoString) return '';
+    try {
+      const date = new Date(isoString);
+      const day = date.getUTCDate().toString().padStart(2, '0');
+      const month = (date.getUTCMonth() + 1).toString().padStart(2, '0');
+      const year = date.getUTCFullYear();
+      return `${day}/${month}/${year}`;
+    } catch(e) { return isoString; }
   };
 
   const formatMoney = (amount: number) => {
@@ -182,27 +185,37 @@ const TransactionsPage: React.FC = () => {
   };
 
   const filteredTransactions = transactions.filter(t => {
-    const date = new Date(t.date);
-    const tYear = date.getFullYear();
-    const tMonth = parseInt(t.date.split('-')[1]) - 1; 
+    // Safety check for date string
+    if (!t.date || typeof t.date !== 'string') return false;
+
+    let tYear = 0;
+    let tMonth = 0;
+
+    try {
+        const date = new Date(t.date);
+        tYear = date.getFullYear();
+        
+        // Use split if possible for accurate accounting month, fallback to date object
+        const parts = t.date.split('-');
+        if (parts.length >= 2) {
+            tMonth = parseInt(parts[1]) - 1; 
+        } else {
+            tMonth = date.getMonth(); 
+        }
+    } catch(e) { return false; }
 
     const matchesDate = tYear === selectedYear && tMonth === selectedMonth;
 
     const matchesSearch = 
         t.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
         t.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        t.categoryName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        t.accountName.toLowerCase().includes(searchTerm.toLowerCase());
+        (t.categoryName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (t.accountName || '').toLowerCase().includes(searchTerm.toLowerCase());
     
     let matchesType = true;
     if (selectedAccountType !== 'ALL') {
         const accType = getAccountType(t.accountCode);
-        // For transfers, we check source account (though usually we care about the flow)
         matchesType = accType === selectedAccountType;
-        
-        // Optional: If it's a transfer and destination account matches, include it too?
-        // For strict filtering: show if source matches.
-        // If transfer has destination, check it too if we want to see it in Pasivo when paying CC
         if (t.type === 'TRANSFERENCIA' && t.destinationAccountCode) {
              const destType = getAccountType(t.destinationAccountCode);
              if (destType === selectedAccountType) matchesType = true;

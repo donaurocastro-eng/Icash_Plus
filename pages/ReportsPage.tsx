@@ -106,6 +106,19 @@ const ReportsPage: React.FC = () => {
       );
   };
 
+  // Safe Date Parser Helper
+  const getTxDateParts = (dateStr: string): { year: number, month: number } | null => {
+      if (!dateStr || typeof dateStr !== 'string') return null;
+      try {
+          const parts = dateStr.split('-');
+          if (parts.length < 2) return null;
+          return { 
+              year: parseInt(parts[0]), 
+              month: parseInt(parts[1]) 
+          };
+      } catch (e) { return null; }
+  };
+
   // --- BALANCE SHEET ---
   const calculateConsolidatedBalance = () => {
     const balance = {
@@ -162,8 +175,9 @@ const ReportsPage: React.FC = () => {
   // --- CASHFLOW ---
   const calculateCashflow = () => {
     const filtered = transactions.filter(tx => {
-      const [y, m] = tx.date.split('-').map(Number);
-      return y === selectedYear && (m - 1) === selectedMonth;
+      const parts = getTxDateParts(tx.date);
+      if (!parts) return false;
+      return parts.year === selectedYear && (parts.month - 1) === selectedMonth;
     });
 
     const income = filtered.filter(t => t.type === 'INGRESO').reduce((sum, t) => sum + Number(t.amount), 0);
@@ -198,10 +212,12 @@ const ReportsPage: React.FC = () => {
 
       transactions.forEach(tx => {
           if (tx.propertyCode !== selectedPropCode) return;
-          const y = parseInt(tx.date.substring(0, 4));
-          const m = parseInt(tx.date.substring(5, 7));
-          if (y !== selectedYear) return;
-          const monthIdx = m - 1;
+          const parts = getTxDateParts(tx.date);
+          if (!parts) return;
+          
+          if (parts.year !== selectedYear) return;
+          const monthIdx = parts.month - 1;
+          
           if (monthIdx >= 0 && monthIdx < 12) {
               const amount = Number(tx.amount);
               if (tx.type === 'INGRESO') months[monthIdx].income += amount;
@@ -221,9 +237,11 @@ const ReportsPage: React.FC = () => {
           
           transactions.forEach(tx => {
               if (tx.propertyCode !== prop.code) return;
-              const [y, m] = tx.date.split('-').map(Number);
+              const parts = getTxDateParts(tx.date);
+              if (!parts) return;
+              
               // Check matching month and year
-              if (y === selectedYear && (m - 1) === selectedMonth) {
+              if (parts.year === selectedYear && (parts.month - 1) === selectedMonth) {
                    const amt = Number(tx.amount);
                    if (tx.type === 'INGRESO') income += amt;
                    else if (tx.type === 'GASTO') expense += amt;
@@ -252,14 +270,16 @@ const ReportsPage: React.FC = () => {
 
           // 1. Calculate Movements WITHIN the month
           const monthTx = transactions.filter(tx => {
-              const [y, m] = tx.date.split('-').map(Number);
-              return y === selectedYear && (m - 1) === selectedMonth && tx.accountCode === accCode;
+              const parts = getTxDateParts(tx.date);
+              if (!parts) return false;
+              return parts.year === selectedYear && (parts.month - 1) === selectedMonth && tx.accountCode === accCode;
           });
 
           const transferInTx = transactions.filter(tx => {
-              const [y, m] = tx.date.split('-').map(Number);
+              const parts = getTxDateParts(tx.date);
+              if (!parts) return false;
               const destCode = (tx as any).destinationAccountCode; 
-              return y === selectedYear && (m - 1) === selectedMonth && destCode === accCode && tx.type === 'TRANSFERENCIA';
+              return parts.year === selectedYear && (parts.month - 1) === selectedMonth && destCode === accCode && tx.type === 'TRANSFERENCIA';
           });
 
           let income = 0;
@@ -283,6 +303,7 @@ const ReportsPage: React.FC = () => {
           // Filter ALL transactions that happened AFTER the start of selected month
           const startOfSelectMonth = new Date(selectedYear, selectedMonth, 1);
           const futureTx = transactions.filter(tx => {
+              if (!tx.date) return false;
               const txDate = new Date(tx.date);
               return txDate >= startOfSelectMonth && (tx.accountCode === accCode || (tx as any).destinationAccountCode === accCode);
           });
