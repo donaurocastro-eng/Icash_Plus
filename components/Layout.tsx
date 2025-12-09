@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { 
   LayoutDashboard, 
@@ -50,7 +49,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentRoute, onNavigate }) =
         }}
         className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 ${
           isActive 
-            ? 'bg-brand-600 text-white shadow-md' 
+            ? 'bg-indigo-600 text-white shadow-md' 
             : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'
         }`}
       >
@@ -74,10 +73,10 @@ const Layout: React.FC<LayoutProps> = ({ children, currentRoute, onNavigate }) =
       `}>
         <div className="h-full flex flex-col">
           <div className="h-16 flex items-center px-6 border-b border-slate-100 shrink-0">
-            <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center mr-3 shadow-sm">
+            <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center mr-3 shadow-sm">
               <span className="text-white font-bold text-lg">$</span>
             </div>
-            <span className="text-xl font-bold text-slate-800 tracking-tight">ICASH<span className="text-brand-600">_PLUS</span></span>
+            <span className="text-xl font-bold text-slate-800 tracking-tight">ICASH<span className="text-indigo-600">_PLUS</span></span>
           </div>
 
           <nav className="flex-1 px-3 py-6 space-y-1 overflow-y-auto">
@@ -111,7 +110,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentRoute, onNavigate }) =
             
             {/* Version Badge */}
             <div className="text-center pt-2">
-               <span className="text-[10px] font-mono text-slate-300">v1.3.0</span>
+               <span className="text-[10px] font-mono text-slate-300">v1.3.1</span>
             </div>
           </div>
         </div>

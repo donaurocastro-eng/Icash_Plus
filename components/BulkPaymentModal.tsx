@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, AlertCircle, Calendar, CheckSquare, Square, DollarSign, FileText, ArrowRight } from 'lucide-react';
+import { X, AlertCircle, Calendar, CheckSquare, Square, FileText, ArrowRight } from 'lucide-react';
 import { Contract, BulkPaymentFormData, BulkPaymentItem, Account, Tenant } from '../types';
 import { AccountService } from '../services/accountService';
 import { TenantService } from '../services/tenantService';
@@ -66,8 +66,7 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
           const year = pointerDate.getFullYear();
           const label = monthName.charAt(0).toUpperCase() + monthName.slice(1);
           
-          // FORMATO SOLICITADO:
-          // Contrato: CTR-060 Inquilino: INQ-016 Juan Pérez - Alquiler Enero 2025
+          // FORMATO: Contrato: CTR-060 Inquilino: INQ-016 Juan Pérez - Alquiler Enero 2025
           const description = `Contrato: ${c.code} Inquilino: ${tenantCode} ${tenantName} - Alquiler ${label} ${year}`;
           
           list.push({
@@ -184,7 +183,7 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
                                         {item.description.split(' - ')[1] ? item.description.split(' - ')[1] : item.description}
                                     </p>
                                     <p className={`font-mono font-bold text-sm ${item.selected ? 'text-emerald-600' : 'text-slate-500'}`}>
-                                        {item.amount.toLocaleString('es-HN', { style: 'currency', currency: 'HNL' })}
+                                        {item.amount.toLocaleString('es-HN', { minimumFractionDigits: 2 })}
                                     </p>
                                 </div>
                                 
@@ -192,7 +191,7 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
                                     <Calendar size={12}/>
                                     <span>Vence: {item.date}</span>
                                 </div>
-                                <p className="text-[10px] text-slate-500 mt-2 font-mono bg-slate-50 p-2 rounded border border-slate-100 break-words whitespace-normal">
+                                <p className="text-[10px] text-slate-400 mt-2 font-mono bg-slate-50 p-2 rounded border border-slate-100 break-words whitespace-normal">
                                     {item.description}
                                 </p>
                             </div>
@@ -206,8 +205,7 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
         <div className="p-6 bg-white border-t border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-10">
             <div className="flex flex-col items-start">
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Total a Cobrar</span>
-                <span className="text-3xl font-extrabold text-emerald-600 flex items-center gap-1">
-                    <DollarSign size={24} strokeWidth={3} className="text-emerald-500"/> 
+                <span className="text-2xl font-extrabold text-emerald-600 flex items-center gap-1">
                     {totalAmount.toLocaleString('es-HN', {minimumFractionDigits: 2})}
                 </span>
             </div>
@@ -215,20 +213,20 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
             <div className="flex gap-3 w-full sm:w-auto">
                 <button 
                     onClick={onClose}
-                    className="flex-1 sm:flex-none px-6 py-3.5 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors text-sm"
+                    className="flex-1 sm:flex-none px-4 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors text-sm"
                 >
                     Cancelar
                 </button>
                 <button 
                     onClick={handleSubmit}
                     disabled={isSubmitting || selectedCount === 0}
-                    className="flex-1 sm:flex-none px-8 py-3.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-2 transition-all transform active:scale-95 text-sm"
+                    className="flex-1 sm:flex-none px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-md shadow-indigo-200 disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-2 transition-all transform active:scale-95 text-sm"
                 >
                     {isSubmitting ? (
                         <>Procesando...</>
                     ) : (
                         <>
-                            Registrar {selectedCount} Pagos <ArrowRight size={18}/>
+                            Registrar {selectedCount} Pagos <ArrowRight size={16}/>
                         </>
                     )}
                 </button>
