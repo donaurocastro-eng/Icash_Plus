@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Plus, Search, Trash2, ArrowDownCircle, ArrowUpCircle, Calendar, ArrowRightLeft, Edit2, FileSpreadsheet, Upload, Filter } from 'lucide-react';
+import { Plus, Search, Trash2, ArrowDownCircle, ArrowUpCircle, Calendar, ArrowRightLeft, Edit2, FileSpreadsheet, Upload, Filter, Loader } from 'lucide-react';
 import { Transaction, TransactionFormData, Account, Category } from '../types';
 import { TransactionService } from '../services/transactionService';
 import { AccountService } from '../services/accountService';
@@ -26,6 +26,9 @@ const TransactionsPage: React.FC = () => {
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  
+  // Delete State
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -77,14 +80,24 @@ const TransactionsPage: React.FC = () => {
   };
 
   const handleDelete = async (code: string) => {
-    if (!window.confirm(`¿Estás seguro que deseas eliminar la transacción ${code}? Esto revertirá el saldo de la cuenta.`)) return;
+    if (!window.confirm(`¿CONFIRMAR ELIMINACIÓN?\n\nSe borrará la transacción ${code} y se revertirá el saldo de la cuenta afectada (se sumará/restará el dinero de vuelta).`)) {
+        return;
+    }
+
+    setDeletingId(code); // Show spinner
     try {
       await TransactionService.delete(code);
       await loadTransactions();
-      // Success Message added
-      alert("Registro eliminado con éxito y saldo actualizado.");
+      
+      // Use setTimeout to ensure UI renders before alert blocks it
+      setTimeout(() => {
+          alert("✅ Transacción eliminada correctamente.\n\nEl saldo de la cuenta ha sido actualizado.");
+      }, 100);
     } catch (error: any) {
-      alert(`Error al eliminar: ${error.message}`);
+      console.error(error);
+      alert(`❌ Error al eliminar: ${error.message}`);
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -405,6 +418,7 @@ const TransactionsPage: React.FC = () => {
                             onClick={() => { setEditingTransaction(tx); setIsModalOpen(true); }}
                             className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
                             title="Editar"
+                            disabled={!!deletingId}
                         >
                             <Edit2 size={16} />
                         </button>
@@ -412,8 +426,13 @@ const TransactionsPage: React.FC = () => {
                             onClick={() => handleDelete(tx.code)}
                             className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
                             title="Eliminar"
+                            disabled={!!deletingId}
                         >
-                            <Trash2 size={16} />
+                            {deletingId === tx.code ? (
+                                <Loader size={16} className="animate-spin text-red-600"/>
+                            ) : (
+                                <Trash2 size={16} />
+                            )}
                         </button>
                       </div>
                     </td>
