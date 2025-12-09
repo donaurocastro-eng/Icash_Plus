@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { 
   Plus, Search, Edit2, Trash2, Building, Home, Users, FileText, Zap, 
   DollarSign, Calendar, Clock, CheckCircle, TrendingUp, MoreVertical, Key,
-  CreditCard, List, AlertTriangle, ArrowRight
+  CreditCard, List, AlertTriangle, ArrowRight, User
 } from 'lucide-react';
 import { 
   Property, Apartment, Tenant, Contract, PropertyServiceItem, Transaction,
@@ -249,29 +249,13 @@ const RealEstatePage: React.FC = () => {
   };
 
   // Derived Lists
-  const rentTransactions = transactions.filter(t => {
-      if (t.type !== 'INGRESO') return false;
-      
-      // Explicitly linked to a contract
-      if (t.contractCode) return true;
-      
-      // Explicitly linked to a tenant
-      if (t.tenantCode) return true;
-      
-      // Uses a standard Income category or looks like rent
-      const desc = t.description.toLowerCase();
-      if (t.categoryCode?.includes('INC') || desc.includes('alquiler') || desc.includes('renta')) {
-          return true;
-      }
-      return false;
-  }).slice(0, 100);
+  const activeContractsList = contracts.filter(c => c.status === 'ACTIVE');
   
   const delinquentContracts = contracts.filter(c => {
       if (c.status !== 'ACTIVE') return false;
       if (!c.nextPaymentDate) return true;
       const today = new Date();
       const nextPay = new Date(c.nextPaymentDate);
-      // Adjust timezone
       const nextPayAdjusted = new Date(nextPay.valueOf() + nextPay.getTimezoneOffset() * 60000);
       return nextPayAdjusted < new Date(today.getFullYear(), today.getMonth(), today.getDate());
   });
@@ -464,54 +448,104 @@ const RealEstatePage: React.FC = () => {
 
              {/* PAYMENTS TAB (Control de Pagos) */}
              {activeTab === 'PAYMENTS' && (
-                 <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm">
-                        <thead className="bg-slate-50 text-slate-500 font-medium">
-                            <tr>
-                                <th className="px-6 py-3">Fecha</th>
-                                <th className="px-6 py-3">Inquilino</th>
-                                <th className="px-6 py-3">Contrato / Unidad</th>
-                                <th className="px-6 py-3">Descripción</th>
-                                <th className="px-6 py-3 text-right">Monto</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {rentTransactions.length === 0 ? (
+                 <div>
+                    {/* Header with Bulk Action */}
+                    <div className="bg-indigo-50 px-6 py-4 border-b border-indigo-100 flex justify-between items-center">
+                        <div>
+                            <h3 className="text-lg font-bold text-indigo-900">Control de Alquileres</h3>
+                            <p className="text-xs text-indigo-700">Estado actual de todos los contratos activos</p>
+                        </div>
+                        <button 
+                            onClick={() => setShowBulkModal(true)}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold shadow-md flex items-center gap-2 transition-colors"
+                        >
+                            <List size={18}/>
+                            <span>Cobro Masivo</span>
+                        </button>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm">
+                            <thead className="bg-slate-50 text-slate-500 font-medium">
                                 <tr>
-                                    <td colSpan={5} className="p-8 text-center text-slate-400">
-                                        No se encontraron pagos recientes de alquiler.
-                                    </td>
+                                    <th className="px-6 py-3">Inquilino</th>
+                                    <th className="px-6 py-3">Unidad / Propiedad</th>
+                                    <th className="px-6 py-3">Próximo Pago</th>
+                                    <th className="px-6 py-3 text-right">Monto</th>
+                                    <th className="px-6 py-3 text-center">Estado</th>
+                                    <th className="px-6 py-3 text-right">Acciones</th>
                                 </tr>
-                            ) : (
-                                rentTransactions.map(tx => (
-                                    <tr key={tx.code} className="hover:bg-slate-50">
-                                        <td className="px-6 py-3 text-slate-600 font-mono text-xs">
-                                            {tx.date}
-                                            <div className="text-[10px] text-slate-400">{tx.code}</div>
-                                        </td>
-                                        <td className="px-6 py-3">
-                                            {tx.tenantName ? (
-                                                <div>
-                                                    <span className="font-bold text-slate-700">{tx.tenantName}</span>
-                                                    <span className="block text-[10px] text-slate-400 font-mono">{tx.tenantCode}</span>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {activeContractsList.filter(c => getContractLabel(c).toLowerCase().includes(searchTerm.toLowerCase())).map(contract => {
+                                    const t = tenants.find(x => x.code === contract.tenantCode);
+                                    const a = apartments.find(x => x.code === contract.apartmentCode);
+                                    
+                                    // Status Logic
+                                    const today = new Date();
+                                    const nextPay = new Date(contract.nextPaymentDate || contract.startDate);
+                                    const nextPayAdjusted = new Date(nextPay.valueOf() + nextPay.getTimezoneOffset() * 60000);
+                                    
+                                    // Check if overdue: If next pay date is in the past (before current month/year logic essentially)
+                                    // Simple check: Is Next Pay Date < Today?
+                                    // Note: This logic assumes 'nextPaymentDate' is bumped forward after payment.
+                                    const isOverdue = nextPayAdjusted < new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                                    
+                                    return (
+                                        <tr key={contract.code} className="hover:bg-slate-50 group">
+                                            <td className="px-6 py-3">
+                                                <div className="flex flex-col">
+                                                    <div className="font-bold text-slate-800 flex items-center gap-2">
+                                                        <User size={14} className="text-slate-400"/>
+                                                        {t?.fullName || 'Desconocido'}
+                                                    </div>
+                                                    <span className="text-[10px] text-slate-500 font-mono bg-slate-100 px-1.5 py-0.5 rounded w-fit mt-1 border border-slate-200">
+                                                        {contract.tenantCode}
+                                                    </span>
                                                 </div>
-                                            ) : (
-                                                <span className="text-slate-400 italic">Desconocido</span>
-                                            )}
-                                        </td>
-                                        <td className="px-6 py-3">
-                                            {tx.contractCode && <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[10px] font-mono mr-2">{tx.contractCode}</span>}
-                                            {tx.propertyName && <span className="text-xs text-slate-600">{tx.propertyName}</span>}
-                                        </td>
-                                        <td className="px-6 py-3 text-slate-700 truncate max-w-xs">{tx.description}</td>
-                                        <td className="px-6 py-3 text-right font-bold text-emerald-600">
-                                            +{tx.amount.toLocaleString('es-HN', {minimumFractionDigits: 2})}
+                                            </td>
+                                            <td className="px-6 py-3">
+                                                <div className="text-sm text-slate-700 font-medium">{a?.name || contract.apartmentCode}</div>
+                                                <div className="text-[10px] text-slate-400">{contract.code}</div>
+                                            </td>
+                                            <td className="px-6 py-3 text-slate-600 font-mono text-xs">
+                                                {contract.nextPaymentDate}
+                                            </td>
+                                            <td className="px-6 py-3 text-right font-bold text-slate-700">
+                                                {contract.amount.toLocaleString('es-HN', {style:'currency', currency: 'HNL'})}
+                                            </td>
+                                            <td className="px-6 py-3 text-center">
+                                                {isOverdue ? (
+                                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-100 text-rose-700 text-[10px] font-bold">
+                                                        <AlertTriangle size={10}/> Vencido
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold">
+                                                        <CheckCircle size={10}/> Al día
+                                                    </span>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-3 text-right">
+                                                <button 
+                                                    onClick={() => handleOpenPaymentModal(contract)}
+                                                    className="px-4 py-2 bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 rounded-lg text-xs font-bold transition-colors shadow-sm"
+                                                >
+                                                    Registrar Pago
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                                {activeContractsList.length === 0 && (
+                                    <tr>
+                                        <td colSpan={6} className="p-8 text-center text-slate-400">
+                                            No hay contratos activos para mostrar.
                                         </td>
                                     </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
                  </div>
              )}
 
