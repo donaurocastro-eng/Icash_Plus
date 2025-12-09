@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, Save, AlertCircle, FileText, Calendar, DollarSign, User, Home } from 'lucide-react';
+import { X, Save, AlertCircle, FileText, Calendar, DollarSign, User, Home, FastForward } from 'lucide-react';
 import { Contract, ContractFormData, Apartment, Tenant } from '../types';
 import { ApartmentService } from '../services/apartmentService';
 import { TenantService } from '../services/tenantService';
@@ -25,7 +25,8 @@ const ContractModal: React.FC<ContractModalProps> = ({
     startDate: new Date().toISOString().split('T')[0],
     endDate: '',
     amount: 0,
-    paymentDay: 1
+    paymentDay: 1,
+    nextPaymentDate: new Date().toISOString().split('T')[0]
   });
   
   const [apartments, setApartments] = useState<Apartment[]>([]);
@@ -42,16 +43,19 @@ const ContractModal: React.FC<ContractModalProps> = ({
           startDate: editingContract.startDate,
           endDate: editingContract.endDate,
           amount: editingContract.amount,
-          paymentDay: editingContract.paymentDay
+          paymentDay: editingContract.paymentDay,
+          nextPaymentDate: editingContract.nextPaymentDate
         });
       } else {
+        const today = new Date().toISOString().split('T')[0];
         setFormData({
           apartmentCode: '',
           tenantCode: '',
-          startDate: new Date().toISOString().split('T')[0],
+          startDate: today,
           endDate: '',
           amount: 0,
-          paymentDay: 1
+          paymentDay: 1,
+          nextPaymentDate: today
         });
       }
       setError(null);
@@ -122,7 +126,7 @@ const ContractModal: React.FC<ContractModalProps> = ({
                 <div className="relative">
                     <Home className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                     <select
-                        className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none bg-white appearance-none"
+                        className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white appearance-none"
                         value={formData.apartmentCode}
                         onChange={e => setFormData({...formData, apartmentCode: e.target.value})}
                     >
@@ -141,7 +145,7 @@ const ContractModal: React.FC<ContractModalProps> = ({
                 <div className="relative">
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                     <select
-                        className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none bg-white appearance-none"
+                        className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white appearance-none"
                         value={formData.tenantCode}
                         onChange={e => setFormData({...formData, tenantCode: e.target.value})}
                     >
@@ -161,7 +165,7 @@ const ContractModal: React.FC<ContractModalProps> = ({
                     <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                     <input
                         type="date"
-                        className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
+                        className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                         value={formData.startDate}
                         onChange={e => setFormData({...formData, startDate: e.target.value})}
                     />
@@ -174,12 +178,31 @@ const ContractModal: React.FC<ContractModalProps> = ({
                     <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                     <input
                         type="date"
-                        className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
+                        className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                         value={formData.endDate}
                         onChange={e => setFormData({...formData, endDate: e.target.value})}
                     />
                 </div>
             </div>
+          </div>
+
+          {/* Advanced Setting: Next Payment Date */}
+          <div className="space-y-1 bg-amber-50 p-3 rounded-lg border border-amber-100">
+                <label className="block text-sm font-bold text-amber-800 mb-1 flex items-center gap-2">
+                    <FastForward size={16}/> Próximo Pago (Ajuste Manual)
+                </label>
+                <div className="relative">
+                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-amber-500" size={18} />
+                    <input
+                        type="date"
+                        className="w-full pl-10 pr-4 py-2 border border-amber-200 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none bg-white text-sm"
+                        value={formData.nextPaymentDate || ''}
+                        onChange={e => setFormData({...formData, nextPaymentDate: e.target.value})}
+                    />
+                </div>
+                <p className="text-[10px] text-amber-700 mt-1">
+                    Cambia esto solo si necesitas corregir manualmente el calendario de pagos (ej. si el sistema se adelantó o atrasó).
+                </p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -190,7 +213,7 @@ const ContractModal: React.FC<ContractModalProps> = ({
                     <input
                         type="number"
                         step="0.01"
-                        className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none font-mono"
+                        className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
                         placeholder="0.00"
                         value={formData.amount}
                         onChange={e => setFormData({...formData, amount: parseFloat(e.target.value) || 0})}
@@ -203,7 +226,7 @@ const ContractModal: React.FC<ContractModalProps> = ({
                 <input
                     type="number"
                     min="1" max="31"
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none text-center"
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-center"
                     value={formData.paymentDay}
                     onChange={e => setFormData({...formData, paymentDay: parseInt(e.target.value) || 1})}
                 />
@@ -221,7 +244,7 @@ const ContractModal: React.FC<ContractModalProps> = ({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex-1 flex items-center justify-center px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 font-medium shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 flex items-center justify-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? (
                 <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />

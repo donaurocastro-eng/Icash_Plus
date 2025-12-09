@@ -1,4 +1,3 @@
-
 import { Contract, ContractFormData, PaymentFormData, BulkPaymentFormData, ContractPrice } from '../types';
 import { db } from './db';
 import { ApartmentService } from './apartmentService';
@@ -63,6 +62,8 @@ export const ContractService = {
   },
 
   create: async (data: ContractFormData): Promise<Contract> => {
+    const nextPay = data.nextPaymentDate || data.startDate;
+
     if (db.isConfigured()) {
       const rows = await db.query('SELECT code FROM contracts');
       const existing = rows.map(r => ({ code: r.code } as Contract));
@@ -71,7 +72,7 @@ export const ContractService = {
       await db.query(`
         INSERT INTO contracts (code, apartment_code, tenant_code, start_date, end_date, next_payment_date, amount, payment_day, status)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ACTIVE')
-      `, [newCode, data.apartmentCode, data.tenantCode, data.startDate, data.endDate, data.startDate, data.amount, data.paymentDay]);
+      `, [newCode, data.apartmentCode, data.tenantCode, data.startDate, data.endDate, nextPay, data.amount, data.paymentDay]);
 
       try {
         await db.query(`
@@ -87,7 +88,7 @@ export const ContractService = {
       return { 
         code: newCode, 
         ...data, 
-        nextPaymentDate: data.startDate,
+        nextPaymentDate: nextPay,
         status: 'ACTIVE', 
         createdAt: new Date().toISOString() 
       };
@@ -101,7 +102,7 @@ export const ContractService = {
         tenantCode: data.tenantCode,
         startDate: data.startDate,
         endDate: data.endDate,
-        nextPaymentDate: data.startDate,
+        nextPaymentDate: nextPay,
         amount: data.amount,
         paymentDay: data.paymentDay,
         status: 'ACTIVE',
@@ -114,6 +115,8 @@ export const ContractService = {
   },
 
   update: async (code: string, data: ContractFormData): Promise<Contract> => {
+    const nextPay = data.nextPaymentDate || data.startDate;
+
     if (db.isConfigured()) {
       const currentContract = (await db.query(`SELECT amount FROM contracts WHERE code=$1`, [code]))[0];
       const oldAmount = Number(currentContract.amount);
@@ -121,9 +124,9 @@ export const ContractService = {
 
       await db.query(`
         UPDATE contracts 
-        SET apartment_code=$1, tenant_code=$2, start_date=$3, end_date=$4, amount=$5, payment_day=$6
+        SET apartment_code=$1, tenant_code=$2, start_date=$3, end_date=$4, amount=$5, payment_day=$6, next_payment_date=$8
         WHERE code=$7
-      `, [data.apartmentCode, data.tenantCode, data.startDate, data.endDate, data.amount, data.paymentDay, code]);
+      `, [data.apartmentCode, data.tenantCode, data.startDate, data.endDate, data.amount, data.paymentDay, code, nextPay]);
       
       if (oldAmount !== newAmount) {
           const today = new Date().toISOString().split('T')[0];
@@ -139,13 +142,13 @@ export const ContractService = {
           `, [code, newAmount, today]);
       }
 
-      return { code, ...data, nextPaymentDate: data.startDate, status: 'ACTIVE', createdAt: new Date().toISOString() } as Contract;
+      return { code, ...data, nextPaymentDate: nextPay, status: 'ACTIVE', createdAt: new Date().toISOString() } as Contract;
     } else {
       await delay(200);
       const existingList = await ContractService.getAll();
       const index = existingList.findIndex(c => c.code === code);
       if (index === -1) throw new Error("Contract not found");
-      const updated = { ...existingList[index], ...data };
+      const updated = { ...existingList[index], ...data, nextPaymentDate: nextPay };
       existingList[index] = updated;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(existingList));
       return existingList[index];

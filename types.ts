@@ -1,4 +1,3 @@
-
 export type AccountType = 'ACTIVO' | 'PASIVO';
 export type CategoryType = 'GASTO' | 'INGRESO' | 'TRANSFERENCIA';
 export type Currency = 'HNL' | 'USD';
@@ -154,6 +153,7 @@ export interface ContractFormData {
   endDate: string;
   amount: number;
   paymentDay: number;
+  nextPaymentDate?: string; // Manually adjustable next payment date
 }
 
 export interface ContractPrice {
