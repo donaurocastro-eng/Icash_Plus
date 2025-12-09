@@ -37,6 +37,14 @@ interface AccountMonthlyStats {
     finalBalance: number;
 }
 
+interface ComparativePropertyStats {
+    code: string;
+    name: string;
+    income: number;
+    expense: number;
+    net: number;
+}
+
 const ReportsPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ReportTab>('BALANCE');
   const [loading, setLoading] = useState(true);
@@ -177,9 +185,11 @@ const ReportsPage: React.FC = () => {
     };
   };
 
-  // --- PROPERTY REPORT ---
+  // --- PROPERTY REPORTS ---
+  
+  // 1. Single Property History (Month by Month)
   const calculatePropertyReport = () => {
-      if (!selectedPropCode) return [];
+      if (!selectedPropCode || selectedPropCode === 'ALL') return [];
       const months = Array.from({ length: 12 }, (_, i) => ({
           monthIndex: i,
           monthName: new Date(0, i).toLocaleDateString('es-ES', { month: 'long' }),
@@ -203,6 +213,33 @@ const ReportsPage: React.FC = () => {
       return months;
   };
 
+  // 2. Comparative Report (All Properties for One Month)
+  const calculateComparativePropertyReport = (): ComparativePropertyStats[] => {
+      return properties.map(prop => {
+          let income = 0;
+          let expense = 0;
+          
+          transactions.forEach(tx => {
+              if (tx.propertyCode !== prop.code) return;
+              const [y, m] = tx.date.split('-').map(Number);
+              // Check matching month and year
+              if (y === selectedYear && (m - 1) === selectedMonth) {
+                   const amt = Number(tx.amount);
+                   if (tx.type === 'INGRESO') income += amt;
+                   else if (tx.type === 'GASTO') expense += amt;
+              }
+          });
+
+          return {
+              code: prop.code,
+              name: prop.name,
+              income,
+              expense,
+              net: income - expense
+          };
+      });
+  };
+
   // --- ACCOUNT REPORT ---
   const calculateAccountReport = () => {
       if (selectedAccountCodes.length === 0) return [];
@@ -219,9 +256,6 @@ const ReportsPage: React.FC = () => {
               return y === selectedYear && (m - 1) === selectedMonth && tx.accountCode === accCode;
           });
 
-          // Also check transfers IN (where this account is destination)
-          // Assuming 'destinationAccountCode' exists on Transaction type now
-          // If not in type yet, we cast to any or check prop existence safely
           const transferInTx = transactions.filter(tx => {
               const [y, m] = tx.date.split('-').map(Number);
               const destCode = (tx as any).destinationAccountCode; 
@@ -233,42 +267,17 @@ const ReportsPage: React.FC = () => {
           let transfersOut = 0;
           let transfersIn = 0;
 
-          monthTx.forEach(tx => {
-              const amt = Number(tx.amount);
-              if (tx.type === 'INGRESO') income += amt;
-              if (tx.type === 'GASTO') expense += amt;
-              if (tx.type === 'TRANSFERENCIA') transfersOut += amt; // Outgoing transfer is expense from this acc
-          });
-
-          // Logic for transfers IN depends on how we stored them.
-          // If we use the dual-transaction method (CAT-INC-007), they appear as INGRESO in monthTx above.
-          // If we use the single-transaction with destination field method (Fase 2 logic), we sum them here:
-          /* 
-             NOTE: With the latest TransactionService logic (Fase 2), transfers create TWO transactions:
-             1. GASTO (Out) from Source
-             2. INGRESO (In) to Destination
-             So standard filtering of 'monthTx' above ALREADY catches both sides as simple Income/Expense!
-             We don't need special transfer logic here if the service creates 2 records.
-             
-             HOWEVER, if you want to distinguish "Transfer" from "Income", we check category codes.
-          */
-          
-          let realIncome = 0;
-          let realExpense = 0;
-          
+          // Logic for standard transactions
           monthTx.forEach(tx => {
               const amt = Number(tx.amount);
               // Identify Transfers by Category Code logic we agreed on
               if (tx.categoryCode === 'CAT-EXP-013') transfersOut += amt;
               else if (tx.categoryCode === 'CAT-INC-007') transfersIn += amt;
-              else if (tx.type === 'INGRESO') realIncome += amt;
-              else if (tx.type === 'GASTO') realExpense += amt;
+              else if (tx.type === 'INGRESO') income += amt;
+              else if (tx.type === 'GASTO') expense += amt;
           });
 
           // 2. Calculate Initial Balance of the Month
-          // Current Balance (DB) is the balance RIGHT NOW.
-          // We need to reverse all transactions from NOW back to Start of Month.
-          
           let calculatedInitial = acc.initialBalance; // Start with current balance
           
           // Filter ALL transactions that happened AFTER the start of selected month
@@ -281,33 +290,23 @@ const ReportsPage: React.FC = () => {
           // Reverse them to find initial
           futureTx.forEach(tx => {
               const amt = Number(tx.amount);
-              // If it ADDED to account, we SUBTRACT. If it REMOVED, we ADD.
-              
               if (tx.accountCode === accCode) {
-                  // It was source/primary
                   if (tx.type === 'INGRESO') calculatedInitial -= amt; // Reverse income
                   if (tx.type === 'GASTO') calculatedInitial += amt; // Reverse expense
-                  // If it was transfer out (created as Gasto or Transfer type)
                   if (tx.type === 'TRANSFERENCIA') calculatedInitial += amt; 
               }
-              
-              // If dual transaction system is used, the above covers it all (as Ingreso/Gasto).
-              // If single transaction system is used:
-              // if ((tx as any).destinationAccountCode === accCode && tx.type === 'TRANSFERENCIA') {
-              //    calculatedInitial -= amt; // Reverse transfer in
-              // }
           });
 
-          // 3. Final Balance of Month = Initial + Income - Expense
-          const finalBal = calculatedInitial + realIncome - realExpense - transfersOut + transfersIn;
+          // 3. Final Balance of Month
+          const finalBal = calculatedInitial + income - expense - transfersOut + transfersIn;
 
           report.push({
               accountCode: accCode,
               accountName: acc.name,
               currency: acc.currency,
               initialBalance: calculatedInitial,
-              income: realIncome,
-              expense: realExpense,
+              income,
+              expense,
               transfersIn,
               transfersOut,
               finalBalance: finalBal
@@ -321,7 +320,10 @@ const ReportsPage: React.FC = () => {
 
   const balance = calculateConsolidatedBalance();
   const cashflow = calculateCashflow();
+  
   const propertyReport = calculatePropertyReport();
+  const comparativeReport = calculateComparativePropertyReport();
+  
   const accountReport = calculateAccountReport();
   
   const selectedPropName = properties.find(p => p.code === selectedPropCode)?.name || 'Seleccionar Propiedad';
@@ -339,6 +341,13 @@ const ReportsPage: React.FC = () => {
       transfersIn: accountReport.reduce((sum, r) => sum + (r.currency === 'USD' ? r.transfersIn * exchangeRate : r.transfersIn), 0),
       transfersOut: accountReport.reduce((sum, r) => sum + (r.currency === 'USD' ? r.transfersOut * exchangeRate : r.transfersOut), 0),
       final: accountReport.reduce((sum, r) => sum + (r.currency === 'USD' ? r.finalBalance * exchangeRate : r.finalBalance), 0),
+  };
+
+  // Totals for Comparative Report
+  const totalComparative = {
+      income: comparativeReport.reduce((sum, r) => sum + r.income, 0),
+      expense: comparativeReport.reduce((sum, r) => sum + r.expense, 0),
+      net: comparativeReport.reduce((sum, r) => sum + r.net, 0)
   };
 
   return (
@@ -432,12 +441,26 @@ const ReportsPage: React.FC = () => {
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap gap-4 items-center">
                 <div className="flex items-center gap-2 text-slate-600"><Building size={20} /><span className="font-medium text-sm">Propiedad:</span></div>
                 <select className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-sm" value={selectedPropCode} onChange={(e) => setSelectedPropCode(e.target.value)}>
-                    <option value="">Seleccionar...</option>{properties.map(p => (<option key={p.code} value={p.code}>{p.name}</option>))}
+                    <option value="">Seleccionar...</option>
+                    <option value="ALL">TODAS (Comparativo Mensual)</option>
+                    {properties.map(p => (<option key={p.code} value={p.code}>{p.name}</option>))}
                 </select>
+                
+                {selectedPropCode === 'ALL' && (
+                    <div className="flex items-center gap-2 animate-fadeIn">
+                        <div className="flex items-center gap-2 text-slate-600 ml-4"><Calendar size={20} /><span className="font-medium text-sm">Mes:</span></div>
+                        <select className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-sm" value={selectedMonth} onChange={(e) => setSelectedMonth(parseInt(e.target.value))}>
+                            {Array.from({length: 12}, (_, i) => (<option key={i} value={i}>{new Date(0, i).toLocaleDateString('es-ES', {month: 'long'}).toUpperCase()}</option>))}
+                        </select>
+                    </div>
+                )}
+
                 <div className="flex items-center gap-2 text-slate-600 ml-4"><Calendar size={20} /><span className="font-medium text-sm">Año:</span></div>
                 <select className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-sm" value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))}>{[2023, 2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}</select>
             </div>
-            {selectedPropCode ? (
+            
+            {/* VIEW A: SINGLE PROPERTY HISTORY */}
+            {selectedPropCode && selectedPropCode !== 'ALL' && (
                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                     <div className="px-6 py-4 border-b border-slate-100 bg-indigo-50 flex justify-between"><h3 className="font-bold text-indigo-900">Reporte Anual: {selectedPropName}</h3><span className="font-mono text-indigo-600 font-bold">{selectedYear}</span></div>
                     <table className="w-full text-sm text-left"><thead className="bg-slate-50 text-slate-500 font-medium"><tr><th className="px-6 py-3">Mes</th><th className="px-6 py-3 text-right text-emerald-600">Ingresos</th><th className="px-6 py-3 text-right text-rose-600">Gastos</th><th className="px-6 py-3 text-right text-blue-600">Neto</th><th className="px-6 py-3 text-center">Detalle</th></tr></thead>
@@ -447,7 +470,47 @@ const ReportsPage: React.FC = () => {
                         </tbody>
                     </table>
                  </div>
-            ) : (<div className="text-center p-12 bg-slate-50 rounded-xl border border-slate-200 border-dashed"><Building size={48} className="text-slate-300 mx-auto mb-3" /><p className="text-slate-500">Selecciona una propiedad.</p></div>)}
+            )}
+
+            {/* VIEW B: COMPARATIVE MONTHLY REPORT */}
+            {selectedPropCode === 'ALL' && (
+                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="px-6 py-4 border-b border-slate-100 bg-indigo-50 flex justify-between">
+                        <h3 className="font-bold text-indigo-900">Comparativo de Propiedades: {new Date(0, selectedMonth).toLocaleDateString('es-ES', {month: 'long'}).toUpperCase()}</h3>
+                        <span className="font-mono text-indigo-600 font-bold">{selectedYear}</span>
+                    </div>
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-slate-50 text-slate-500 font-medium">
+                            <tr>
+                                <th className="px-6 py-3">Propiedad</th>
+                                <th className="px-6 py-3 text-right text-emerald-600">Ingresos</th>
+                                <th className="px-6 py-3 text-right text-rose-600">Gastos</th>
+                                <th className="px-6 py-3 text-right text-blue-600">Neto</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {comparativeReport.map((p) => (
+                                <tr key={p.code} className="hover:bg-slate-50">
+                                    <td className="px-6 py-3 font-medium text-slate-700">{p.name}</td>
+                                    <td className="px-6 py-3 text-right font-mono text-emerald-600">{p.income > 0 ? formatMoney(p.income) : '-'}</td>
+                                    <td className="px-6 py-3 text-right font-mono text-rose-600">{p.expense > 0 ? formatMoney(p.expense) : '-'}</td>
+                                    <td className="px-6 py-3 text-right font-bold font-mono text-slate-800">{formatMoney(p.net)}</td>
+                                </tr>
+                            ))}
+                            <tr className="bg-slate-50 font-bold border-t-2 border-slate-200">
+                                <td className="px-6 py-3 text-slate-800">TOTAL DEL MES</td>
+                                <td className="px-6 py-3 text-right text-emerald-700">{formatMoney(totalComparative.income)}</td>
+                                <td className="px-6 py-3 text-right text-rose-700">{formatMoney(totalComparative.expense)}</td>
+                                <td className="px-6 py-3 text-right text-blue-800">{formatMoney(totalComparative.net)}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                 </div>
+            )}
+
+            {!selectedPropCode && (
+                <div className="text-center p-12 bg-slate-50 rounded-xl border border-slate-200 border-dashed"><Building size={48} className="text-slate-300 mx-auto mb-3" /><p className="text-slate-500">Selecciona una propiedad o "TODAS".</p></div>
+            )}
         </div>
       )}
 
