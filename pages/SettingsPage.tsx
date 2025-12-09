@@ -8,6 +8,7 @@ import { Contract } from '../types';
 
 interface FixItem {
     contractCode: string;
+    tenantCode: string; // Added Tenant Code
     tenantName: string;
     unitName: string;
     currentDate: string; // YYYY-MM-DD
@@ -138,8 +139,9 @@ const SettingsPage: React.FC = () => {
     addLog("🔍 Iniciando análisis de contratos activos (Día de Pago)...");
 
     try {
+        // Query updated to include tenant_code
         const contracts = await db.query(`
-            SELECT c.code, c.next_payment_date, c.payment_day, t.full_name as tenant_name, a.name as unit_name
+            SELECT c.code, c.tenant_code, c.next_payment_date, c.payment_day, t.full_name as tenant_name, a.name as unit_name
             FROM contracts c
             LEFT JOIN tenants t ON c.tenant_code = t.code
             LEFT JOIN apartments a ON c.apartment_code = a.code
@@ -177,6 +179,7 @@ const SettingsPage: React.FC = () => {
                     if (dateStr !== correctDateStr) {
                         discrepancies.push({
                             contractCode: contract.code,
+                            tenantCode: contract.tenant_code || 'N/A', // Display tenant code
                             tenantName: contract.tenant_name || 'Desconocido',
                             unitName: contract.unit_name || contract.code,
                             currentDate: dateStr,
@@ -356,9 +359,6 @@ const SettingsPage: React.FC = () => {
                       await db.query("UPDATE contracts SET next_payment_date = $1 WHERE code = $2", 
                         [item.calculatedNextDate, item.contract.code]);
                   } else {
-                      // Local Storage Fallback simulation (ContractService update handles it if implemented correctly for partials, 
-                      // but usually needs full object. We can try to force update if service allows)
-                      // For now assuming DB is primary use case for this tool.
                       console.warn("Local storage update for reconciliation not fully supported in this context without full object rewrite.");
                   }
                   success++;
@@ -486,7 +486,10 @@ const SettingsPage: React.FC = () => {
                                         <tr key={item.contract.code} className="hover:bg-slate-50">
                                             <td className="px-4 py-2">
                                                 <div className="font-bold text-slate-700">{item.tenantName}</div>
-                                                <div className="text-xs text-slate-400">{item.unitName}</div>
+                                                <div className="flex gap-2">
+                                                    <span className="text-xs text-slate-400 font-mono bg-slate-100 px-1 rounded">{item.contract.tenantCode}</span>
+                                                    <span className="text-xs text-slate-400">{item.unitName}</span>
+                                                </div>
                                             </td>
                                             <td className="px-4 py-2 text-center">
                                                 <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded text-xs font-bold">{item.foundMonths} meses</span>
@@ -595,7 +598,10 @@ const SettingsPage: React.FC = () => {
                                         <tr key={item.contractCode} className="hover:bg-slate-50">
                                             <td className="px-4 py-2">
                                                 <div className="font-bold text-slate-700">{item.tenantName}</div>
-                                                <div className="text-xs text-slate-400">{item.unitName}</div>
+                                                <div className="flex gap-2">
+                                                    <span className="text-xs text-slate-400 font-mono bg-slate-100 px-1 rounded">{item.tenantCode}</span>
+                                                    <span className="text-xs text-slate-400">{item.unitName}</span>
+                                                </div>
                                             </td>
                                             <td className="px-4 py-2 text-center">
                                                 <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs font-bold">Día {item.paymentDay}</span>
