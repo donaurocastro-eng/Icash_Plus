@@ -390,7 +390,7 @@ const RealEstatePage: React.FC = () => {
                  </div>
              )}
 
-             {/* CONTRACTS TAB */}
+             {/* CONTRACTS TAB - REMOVED PAYMENT ACTIONS */}
              {activeTab === 'CONTRACTS' && (
                  <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm">
@@ -430,9 +430,8 @@ const RealEstatePage: React.FC = () => {
                                         <td className="px-6 py-3 text-center"><span className={`px-2 py-1 rounded text-[10px] font-bold ${contract.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{contract.status === 'ACTIVE' ? 'ACTIVO' : 'INACTIVO'}</span></td>
                                         <td className="px-6 py-3 text-right">
                                             <div className="flex justify-end gap-1">
-                                                <button onClick={() => handleOpenPaymentModal(contract)} className="p-1.5 text-emerald-600 bg-emerald-50 hover:bg-emerald-100 rounded" title="Registrar Pago"><DollarSign size={16}/></button>
+                                                {/* REMOVED: Payment and Bulk buttons */}
                                                 <button onClick={() => { setSelectedContract(contract); setShowHistoryModal(true); }} className="p-1.5 text-slate-500 bg-slate-50 hover:bg-slate-100 rounded" title="Historial"><Clock size={16}/></button>
-                                                <button onClick={() => { setSelectedContract(contract); setShowBulkModal(true); }} className="p-1.5 text-blue-500 bg-blue-50 hover:bg-blue-100 rounded" title="Cobro Masivo"><List size={16}/></button>
                                                 <button onClick={() => { setSelectedContract(contract); setShowPriceHistoryModal(true); }} className="p-1.5 text-amber-500 bg-amber-50 hover:bg-amber-100 rounded" title="Precios"><TrendingUp size={16}/></button>
                                                 <button onClick={() => { setSelectedContract(contract); setShowContractModal(true); }} className="p-1.5 text-slate-400 hover:text-slate-600 rounded"><Edit2 size={16}/></button>
                                                 <button onClick={() => handleDeleteContract(contract.code)} className="p-1.5 text-slate-400 hover:text-red-500 rounded"><Trash2 size={16}/></button>
@@ -449,19 +448,12 @@ const RealEstatePage: React.FC = () => {
              {/* PAYMENTS TAB (Control de Pagos) */}
              {activeTab === 'PAYMENTS' && (
                  <div>
-                    {/* Header with Bulk Action */}
+                    {/* Header with Description */}
                     <div className="bg-indigo-50 px-6 py-4 border-b border-indigo-100 flex justify-between items-center">
                         <div>
                             <h3 className="text-lg font-bold text-indigo-900">Control de Alquileres</h3>
-                            <p className="text-xs text-indigo-700">Estado actual de todos los contratos activos</p>
+                            <p className="text-xs text-indigo-700">Gestión de cobros y estados de cuenta</p>
                         </div>
-                        <button 
-                            onClick={() => setShowBulkModal(true)}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold shadow-md flex items-center gap-2 transition-colors"
-                        >
-                            <List size={18}/>
-                            <span>Cobro Masivo</span>
-                        </button>
                     </div>
 
                     <div className="overflow-x-auto">
@@ -486,9 +478,6 @@ const RealEstatePage: React.FC = () => {
                                     const nextPay = new Date(contract.nextPaymentDate || contract.startDate);
                                     const nextPayAdjusted = new Date(nextPay.valueOf() + nextPay.getTimezoneOffset() * 60000);
                                     
-                                    // Check if overdue: If next pay date is in the past (before current month/year logic essentially)
-                                    // Simple check: Is Next Pay Date < Today?
-                                    // Note: This logic assumes 'nextPaymentDate' is bumped forward after payment.
                                     const isOverdue = nextPayAdjusted < new Date(today.getFullYear(), today.getMonth(), today.getDate());
                                     
                                     return (
@@ -526,12 +515,20 @@ const RealEstatePage: React.FC = () => {
                                                 )}
                                             </td>
                                             <td className="px-6 py-3 text-right">
-                                                <button 
-                                                    onClick={() => handleOpenPaymentModal(contract)}
-                                                    className="px-4 py-2 bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 rounded-lg text-xs font-bold transition-colors shadow-sm"
-                                                >
-                                                    Registrar Pago
-                                                </button>
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <button 
+                                                        onClick={() => handleOpenPaymentModal(contract)}
+                                                        className="px-3 py-1.5 bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 rounded-lg text-xs font-bold transition-colors shadow-sm flex items-center gap-1"
+                                                    >
+                                                        <DollarSign size={14}/> Pago
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => { setSelectedContract(contract); setShowBulkModal(true); }}
+                                                        className="px-3 py-1.5 bg-white border border-blue-200 text-blue-600 hover:bg-blue-50 rounded-lg text-xs font-bold transition-colors shadow-sm flex items-center gap-1"
+                                                    >
+                                                        <List size={14}/> Masivo
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     );
