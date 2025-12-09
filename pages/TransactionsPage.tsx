@@ -398,7 +398,8 @@ const TransactionsPage: React.FC = () => {
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {/* REMOVED: opacity-0 group-hover:opacity-100 transition-opacity */}
+                      <div className="flex items-center justify-end gap-1">
                         <button 
                             onClick={() => { setEditingTransaction(tx); setIsModalOpen(true); }}
                             className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-md transition-colors"
