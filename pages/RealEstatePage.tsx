@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { 
   Plus, Search, Edit2, Trash2, Building, Home, Users, FileText, Zap, 
@@ -61,6 +60,8 @@ const RealEstatePage: React.FC = () => {
   
   // Contract Actions Modals
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentModalDesc, setPaymentModalDesc] = useState(''); // Dynamic description state
+
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [showPriceHistoryModal, setShowPriceHistoryModal] = useState(false);
@@ -161,6 +162,27 @@ const RealEstatePage: React.FC = () => {
   };
 
   // ... Contract Sub-actions
+  const handleOpenPaymentModal = (contract: Contract) => {
+      setSelectedContract(contract);
+      
+      // GENERATE DETAILED DESCRIPTION
+      const t = tenants.find(x => x.code === contract.tenantCode);
+      const tenantName = t ? t.fullName : 'Inquilino';
+      
+      let nextDate = new Date(contract.nextPaymentDate || new Date());
+      // Adjust timezone
+      nextDate = new Date(nextDate.valueOf() + nextDate.getTimezoneOffset() * 60000);
+      
+      const monthName = nextDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+      const label = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+      
+      // FORMAT: Contrato: CTR-060 Inquilino: INQ-016 Juan Pérez - Alquiler Enero 2025
+      const desc = `Contrato: ${contract.code} Inquilino: ${contract.tenantCode} ${tenantName} - Alquiler ${label}`;
+      
+      setPaymentModalDesc(desc);
+      setShowPaymentModal(true);
+  };
+
   const handleRegisterPayment = async (data: PaymentFormData) => {
       setIsSubmitting(true);
       try { 
@@ -171,6 +193,7 @@ const RealEstatePage: React.FC = () => {
       }
       catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
   };
+  
   const handleBulkPayment = async (data: BulkPaymentFormData) => {
       setIsSubmitting(true);
       try { 
@@ -186,7 +209,10 @@ const RealEstatePage: React.FC = () => {
   };
   const handleHistoryRegisterPayment = (date: Date) => {
       setShowHistoryModal(false);
-      setShowPaymentModal(true);
+      // Re-open payment modal with specific date? 
+      // For simplicity, just opening default payment modal which defaults to next payment date
+      // Ideally, pass the specific date to handleOpenPaymentModal logic if needed
+      if (selectedContract) handleOpenPaymentModal(selectedContract);
   };
 
   // ... Services
@@ -223,7 +249,6 @@ const RealEstatePage: React.FC = () => {
   };
 
   // Derived Lists
-  // UPDATED: Broaden filter to catch ANY Income transaction that looks like rent
   const rentTransactions = transactions.filter(t => {
       if (t.type !== 'INGRESO') return false;
       
@@ -233,13 +258,11 @@ const RealEstatePage: React.FC = () => {
       // Explicitly linked to a tenant
       if (t.tenantCode) return true;
       
-      // Uses a standard Income category
-      if (t.categoryCode?.includes('INC')) return true;
-      
-      // Text matching as fallback
+      // Uses a standard Income category or looks like rent
       const desc = t.description.toLowerCase();
-      if (desc.includes('alquiler') || desc.includes('renta') || desc.includes('arriendo')) return true;
-      
+      if (t.categoryCode?.includes('INC') || desc.includes('alquiler') || desc.includes('renta')) {
+          return true;
+      }
       return false;
   }).slice(0, 100);
   
@@ -423,7 +446,7 @@ const RealEstatePage: React.FC = () => {
                                         <td className="px-6 py-3 text-center"><span className={`px-2 py-1 rounded text-[10px] font-bold ${contract.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{contract.status === 'ACTIVE' ? 'ACTIVO' : 'INACTIVO'}</span></td>
                                         <td className="px-6 py-3 text-right">
                                             <div className="flex justify-end gap-1">
-                                                <button onClick={() => { setSelectedContract(contract); setShowPaymentModal(true); }} className="p-1.5 text-emerald-600 bg-emerald-50 hover:bg-emerald-100 rounded" title="Registrar Pago"><DollarSign size={16}/></button>
+                                                <button onClick={() => handleOpenPaymentModal(contract)} className="p-1.5 text-emerald-600 bg-emerald-50 hover:bg-emerald-100 rounded" title="Registrar Pago"><DollarSign size={16}/></button>
                                                 <button onClick={() => { setSelectedContract(contract); setShowHistoryModal(true); }} className="p-1.5 text-slate-500 bg-slate-50 hover:bg-slate-100 rounded" title="Historial"><Clock size={16}/></button>
                                                 <button onClick={() => { setSelectedContract(contract); setShowBulkModal(true); }} className="p-1.5 text-blue-500 bg-blue-50 hover:bg-blue-100 rounded" title="Cobro Masivo"><List size={16}/></button>
                                                 <button onClick={() => { setSelectedContract(contract); setShowPriceHistoryModal(true); }} className="p-1.5 text-amber-500 bg-amber-50 hover:bg-amber-100 rounded" title="Precios"><TrendingUp size={16}/></button>
@@ -453,12 +476,14 @@ const RealEstatePage: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {rentTransactions.filter(t => 
-                                (t.description.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                                 (t.tenantName || '').toLowerCase().includes(searchTerm.toLowerCase()))
-                            ).map(tx => {
-                                const contract = contracts.find(c => c.code === tx.contractCode);
-                                return (
+                            {rentTransactions.length === 0 ? (
+                                <tr>
+                                    <td colSpan={5} className="p-8 text-center text-slate-400">
+                                        No se encontraron pagos recientes de alquiler.
+                                    </td>
+                                </tr>
+                            ) : (
+                                rentTransactions.map(tx => (
                                     <tr key={tx.code} className="hover:bg-slate-50">
                                         <td className="px-6 py-3 text-slate-600 font-mono text-xs">
                                             {tx.date}
@@ -483,14 +508,7 @@ const RealEstatePage: React.FC = () => {
                                             +{tx.amount.toLocaleString('es-HN', {minimumFractionDigits: 2})}
                                         </td>
                                     </tr>
-                                );
-                            })}
-                            {rentTransactions.length === 0 && (
-                                <tr>
-                                    <td colSpan={5} className="p-8 text-center text-slate-400">
-                                        No se encontraron pagos recientes de alquiler.
-                                    </td>
-                                </tr>
+                                ))
                             )}
                         </tbody>
                     </table>
@@ -545,7 +563,7 @@ const RealEstatePage: React.FC = () => {
                                             </td>
                                             <td className="px-6 py-3 text-center">
                                                 <button 
-                                                    onClick={() => { setSelectedContract(c); setShowPaymentModal(true); }}
+                                                    onClick={() => handleOpenPaymentModal(c)}
                                                     className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 shadow-md flex items-center gap-2 mx-auto"
                                                 >
                                                     <DollarSign size={14}/> Cobrar Ahora
@@ -599,7 +617,15 @@ const RealEstatePage: React.FC = () => {
           
           <ServicePaymentModal isOpen={showServicePaymentModal} onClose={() => setShowServicePaymentModal(false)} onSubmit={handleServicePayment} serviceItem={selectedService} isSubmitting={isSubmitting} />
           
-          <PaymentModal isOpen={showPaymentModal} onClose={() => setShowPaymentModal(false)} onSubmit={handleRegisterPayment} contract={selectedContract} contractLabel={selectedContract ? getContractLabel(selectedContract) : ''} initialDescription={selectedContract ? `Alquiler ${new Date().toLocaleDateString('es-ES', {month: 'long', year: 'numeric'})}` : ''} isSubmitting={isSubmitting} />
+          <PaymentModal 
+            isOpen={showPaymentModal} 
+            onClose={() => setShowPaymentModal(false)} 
+            onSubmit={handleRegisterPayment} 
+            contract={selectedContract} 
+            contractLabel={selectedContract ? getContractLabel(selectedContract) : ''} 
+            initialDescription={paymentModalDesc} 
+            isSubmitting={isSubmitting} 
+          />
           
           <PaymentHistoryModal isOpen={showHistoryModal} onClose={() => setShowHistoryModal(false)} contract={selectedContract} contractLabel={selectedContract ? getContractLabel(selectedContract) : ''} tenantName={tenants.find(t => t.code === selectedContract?.tenantCode)?.fullName} unitName={apartments.find(a => a.code === selectedContract?.apartmentCode)?.name} onRegisterPayment={handleHistoryRegisterPayment} onDeleteTransaction={handleDeleteContractTransaction} />
           
