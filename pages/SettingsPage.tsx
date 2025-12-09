@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Save, CheckCircle, XCircle, AlertTriangle, Database, RefreshCw, ShieldAlert, Activity, Terminal, Trash2, Building, Wrench, FileText, Search, Play, ArrowRight, Check, Scale, Rewind } from 'lucide-react';
 import { db } from '../services/db';
@@ -36,12 +35,6 @@ const SettingsPage: React.FC = () => {
   const [hasAnalyzed, setHasAnalyzed] = useState(false);
   const [isFixing, setIsFixing] = useState(false);
   const [showConfirmFix, setShowConfirmFix] = useState(false);
-
-  // States for Reconciliation
-  const [reconResults, setReconResults] = useState<ReconItem[]>([]);
-  const [hasAnalyzedRecon, setHasAnalyzedRecon] = useState(false);
-  const [isReconFixing, setIsReconFixing] = useState(false);
-  const [showConfirmRecon, setShowConfirmRecon] = useState(false);
 
   // States for Purge Tool
   const [categories, setCategories] = useState<Category[]>([]);
@@ -92,6 +85,7 @@ const SettingsPage: React.FC = () => {
     } catch (error: any) {
       console.error(error);
       addLog(`❌ ERROR: ${error.message}`);
+      alert(`Error al inicializar: ${error.message}`);
     } finally {
       setInitLoading(false);
     }
@@ -99,7 +93,10 @@ const SettingsPage: React.FC = () => {
 
   // --- REPAIR TOOL 1: PURGE ---
   const handleAnalyzePurge = async () => {
-      if (!selectedPurgeCategory) return;
+      if (!selectedPurgeCategory) {
+          alert("Por favor selecciona una categoría primero.");
+          return;
+      }
       setInitLoading(true);
       try {
           // Count only
@@ -107,8 +104,12 @@ const SettingsPage: React.FC = () => {
           const count = txs.filter(t => t.categoryCode === selectedPurgeCategory).length;
           setPurgeCount(count);
           addLog(`🔍 Análisis purga: Encontradas ${count} transacciones en la categoría.`);
+          if (count === 0) {
+              alert("No se encontraron transacciones en esta categoría.");
+          }
       } catch (e: any) {
           addLog(`❌ Error: ${e.message}`);
+          alert(`Error al analizar: ${e.message}`);
       } finally {
           setInitLoading(false);
       }
@@ -116,16 +117,29 @@ const SettingsPage: React.FC = () => {
 
   const handleExecutePurge = async () => {
       if (!selectedPurgeCategory || !purgeCount) return;
-      if (!confirm(`PELIGRO: ¿Estás seguro de eliminar ${purgeCount} transacciones? Esto afectará tus saldos pero NO eliminará los contratos.`)) return;
+      
+      const confirmMsg = `PELIGRO: ¿Estás seguro de eliminar ${purgeCount} transacciones?\n\nEsta acción es irreversible y afectará los saldos de tus cuentas.`;
+      if (!window.confirm(confirmMsg)) return;
       
       setIsPurging(true);
       try {
+          // Perform Delete
           const deleted = await TransactionService.deleteByCategory(selectedPurgeCategory);
+          
           addLog(`🗑️ ELIMINADAS ${deleted} transacciones correctamente.`);
-          setPurgeCount(0);
-          alert(`Se eliminaron ${deleted} registros.`);
+          
+          // Reset UI
+          setPurgeCount(null); 
+          setSelectedPurgeCategory(''); // Clear selection to force re-selection
+          
+          // Success Alert
+          alert(`✅ ÉXITO: Se eliminaron ${deleted} registros correctamente.`);
+          
+          // Optional: Refresh page data logic here if needed, but alerting is key
       } catch (e: any) {
+          console.error(e);
           addLog(`❌ Error eliminando: ${e.message}`);
+          alert(`❌ ERROR CRÍTICO: ${e.message}`);
       } finally {
           setIsPurging(false);
       }
@@ -145,12 +159,13 @@ const SettingsPage: React.FC = () => {
                 WHERE status = 'ACTIVE'
               `);
               addLog("✅ Contratos reiniciados a su fecha de inicio.");
-              alert("Contratos reiniciados.");
+              alert("✅ Contratos reiniciados correctamente.");
           } else {
               alert("Función disponible solo en modo base de datos.");
           }
       } catch (e: any) {
           addLog(`❌ Error: ${e.message}`);
+          alert(`Error: ${e.message}`);
       } finally {
           setIsResettingContracts(false);
       }
@@ -216,6 +231,7 @@ const SettingsPage: React.FC = () => {
 
     } catch (error: any) {
         addLog(`❌ Error CRÍTICO en análisis: ${error.message}`);
+        alert(`Error en análisis: ${error.message}`);
     } finally {
         setInitLoading(false);
     }
@@ -233,8 +249,10 @@ const SettingsPage: React.FC = () => {
           }
           setAnalysisResults([]); 
           addLog(`✅ ${success} fechas corregidas.`);
+          alert(`Se corrigieron ${success} contratos.`);
       } catch (err: any) {
           addLog(`❌ Error: ${err.message}`);
+          alert(`Error al corregir: ${err.message}`);
       } finally {
           setIsFixing(false);
       }
@@ -283,7 +301,7 @@ const SettingsPage: React.FC = () => {
                   <label className="text-sm font-bold text-slate-700">1. Borrar Transacciones por Categoría</label>
                   <div className="flex flex-col sm:flex-row gap-3">
                       <select 
-                        className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                        className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
                         value={selectedPurgeCategory}
                         onChange={e => { setSelectedPurgeCategory(e.target.value); setPurgeCount(null); }}
                       >
@@ -322,7 +340,7 @@ const SettingsPage: React.FC = () => {
                   <button 
                     onClick={handleResetContracts}
                     disabled={isResettingContracts}
-                    className="px-4 py-2 bg-amber-500 text-white font-bold rounded-lg hover:bg-amber-600 shadow-sm text-sm flex items-center gap-2 whitespace-nowrap"
+                    className="px-4 py-2 bg-amber-50 text-white font-bold rounded-lg hover:bg-amber-600 shadow-sm text-sm flex items-center gap-2 whitespace-nowrap"
                   >
                       {isResettingContracts ? <Activity size={16} className="animate-spin"/> : <Rewind size={16}/>}
                       Resetear Fechas
