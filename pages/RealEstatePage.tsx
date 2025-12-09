@@ -162,12 +162,22 @@ const RealEstatePage: React.FC = () => {
   // ... Contract Sub-actions
   const handleRegisterPayment = async (data: PaymentFormData) => {
       setIsSubmitting(true);
-      try { await ContractService.registerPayment(data); await loadData(); setShowPaymentModal(false); alert("Pago registrado"); }
+      try { 
+          await ContractService.registerPayment(data); 
+          await loadData(); 
+          setShowPaymentModal(false); 
+          alert("Registro guardado con éxito"); 
+      }
       catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
   };
   const handleBulkPayment = async (data: BulkPaymentFormData) => {
       setIsSubmitting(true);
-      try { await ContractService.processBulkPayment(data); await loadData(); setShowBulkModal(false); alert("Pagos registrados"); }
+      try { 
+          await ContractService.processBulkPayment(data); 
+          await loadData(); 
+          setShowBulkModal(false); 
+          alert("Registro guardado con éxito"); 
+      }
       catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
   };
   const handleDeleteContractTransaction = async (txCode: string) => {
@@ -196,7 +206,11 @@ const RealEstatePage: React.FC = () => {
   };
   const handleServicePayment = async (data: ServicePaymentFormData) => {
       setIsSubmitting(true);
-      try { await ServiceItemService.registerPayment(data); setShowServicePaymentModal(false); alert("Pago de servicio registrado"); }
+      try { 
+          await ServiceItemService.registerPayment(data); 
+          setShowServicePaymentModal(false); 
+          alert("Registro guardado con éxito"); 
+      }
       catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
   };
 

@@ -42,8 +42,6 @@ export const TransactionService = {
     if (db.isConfigured()) {
       try {
         // LEVEL 1: Full Query (Latest Schema)
-        // Uses COALESCE to prefer the snapshot tenant_code on the transaction, 
-        // falling back to the current contract owner if snapshot is missing (legacy data)
         const rows = await db.query(`
           SELECT 
             t.code, t.date, t.description, t.amount, t.type, 
@@ -120,7 +118,6 @@ export const TransactionService = {
       const data = localStorage.getItem(STORAGE_KEY);
       let transactions: Transaction[] = data ? JSON.parse(data) : [];
       
-      // Enrich with names for local storage
       const accData = localStorage.getItem('icash_plus_accounts');
       const accounts: Account[] = accData ? JSON.parse(accData) : [];
       
@@ -142,10 +139,9 @@ export const TransactionService = {
           const prop = properties.find(p => p.code === t.propertyCode);
           const destAcc = t.destinationAccountCode ? accounts.find(a => a.code === t.destinationAccountCode) : null;
           
-          let tenantCode = t.tenantCode; // Use stored code first
+          let tenantCode = t.tenantCode; 
           let tenantName = t.tenantName;
 
-          // Fallback to contract current tenant
           if (!tenantCode && t.contractCode) {
               const contract = contracts.find(c => c.code === t.contractCode);
               if (contract) {
@@ -177,8 +173,10 @@ export const TransactionService = {
        const existing = rows.map(r => ({ code: r.code } as Transaction));
        const newCode = generateNextCode(existing);
        
-       // Try Insert with all fields including TENANT_CODE
+       // STRATEGY: Try Most Complete -> Fallback to Real Estate Safe -> Fallback to Basic
+       
        try {
+           // ATTEMPT 1: FULL INSERT (Includes Loan, Transfers, Tenant, Contract)
            await db.query(`
              INSERT INTO transactions (
                code, date, description, amount, type, category_code, account_code, 
@@ -193,16 +191,35 @@ export const TransactionService = {
              data.loanId || null, data.loanCode || null, data.paymentNumber || null
            ]);
        } catch (e: any) {
-           console.warn("Full Insert failed, trying basic insert...", e.message);
-           // Fallback Insert (Basic columns only)
-           await db.query(`
-             INSERT INTO transactions (
-               code, date, description, amount, type, category_code, account_code, property_code
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           `, [
-             newCode, data.date, data.description, data.amount, data.type, 
-             data.categoryCode, data.accountCode, data.propertyCode || null
-           ]);
+           console.warn("Full Insert failed, trying Real Estate safe insert...", e.message);
+           
+           try {
+               // ATTEMPT 2: REAL ESTATE SAFE INSERT
+               // Preserves Contract & Tenant info (Critical for Real Estate Module)
+               // Drops Loan/DestinationAccount columns which might be missing in older schemas
+               await db.query(`
+                 INSERT INTO transactions (
+                   code, date, description, amount, type, category_code, account_code, 
+                   property_code, contract_code, tenant_code
+                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+               `, [
+                 newCode, data.date, data.description, data.amount, data.type, 
+                 data.categoryCode, data.accountCode, data.propertyCode || null,
+                 data.contractCode || null, data.tenantCode || null
+               ]);
+           } catch (e2: any) {
+               console.warn("Real Estate Insert failed, trying basic insert...", e2.message);
+               
+               // ATTEMPT 3: BARE MINIMUM (Last Resort)
+               await db.query(`
+                 INSERT INTO transactions (
+                   code, date, description, amount, type, category_code, account_code, property_code
+                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+               `, [
+                 newCode, data.date, data.description, data.amount, data.type, 
+                 data.categoryCode, data.accountCode, data.propertyCode || null
+               ]);
+           }
        }
        
        return { 
@@ -264,7 +281,6 @@ export const TransactionService = {
           try {
               const result = await db.query('DELETE FROM transactions WHERE category_code=$1 RETURNING code', [categoryCode]);
               console.log("TransactionService: DB Delete Result:", result);
-              // Returns array of deleted rows
               return result.length;
           } catch (e: any) {
               console.error("TransactionService: DB Delete Error:", e);
