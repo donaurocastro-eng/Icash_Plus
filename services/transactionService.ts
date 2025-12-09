@@ -1,4 +1,3 @@
-
 import { Transaction, TransactionFormData, Account, Category, Property, Contract, Tenant } from '../types';
 import { db } from './db';
 
@@ -260,15 +259,23 @@ export const TransactionService = {
   },
 
   deleteByCategory: async (categoryCode: string): Promise<number> => {
+      console.log(`TransactionService: Deleting transactions with category '${categoryCode}'...`);
       if (db.isConfigured()) {
-          const result = await db.query('DELETE FROM transactions WHERE category_code=$1 RETURNING code', [categoryCode]);
-          // Returns array of deleted rows
-          return result.length;
+          try {
+              const result = await db.query('DELETE FROM transactions WHERE category_code=$1 RETURNING code', [categoryCode]);
+              console.log("TransactionService: DB Delete Result:", result);
+              // Returns array of deleted rows
+              return result.length;
+          } catch (e: any) {
+              console.error("TransactionService: DB Delete Error:", e);
+              throw new Error(`Error en base de datos: ${e.message}`);
+          }
       } else {
           let existing = await TransactionService.getAll();
           const initialLen = existing.length;
           existing = existing.filter(t => t.categoryCode !== categoryCode);
           localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+          console.log(`TransactionService: Local delete. Removed ${initialLen - existing.length} items.`);
           return initialLen - existing.length;
       }
   }

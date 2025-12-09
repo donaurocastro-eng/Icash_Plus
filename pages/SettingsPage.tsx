@@ -1,5 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Save, CheckCircle, XCircle, AlertTriangle, Database, RefreshCw, ShieldAlert, Activity, Terminal, Trash2, Building, Wrench, FileText, Search, Play, ArrowRight, Check, Scale, Rewind } from 'lucide-react';
+import { 
+  Save, CheckCircle, XCircle, AlertTriangle, Database, RefreshCw, 
+  ShieldAlert, Activity, Terminal, Trash2, Building, Wrench, 
+  FileText, Search, Play, ArrowRight, Check, Scale, Rewind,
+  Settings, ChevronRight
+} from 'lucide-react';
 import { db } from '../services/db';
 import { ContractService } from '../services/contractService';
 import { TransactionService } from '../services/transactionService';
@@ -16,17 +21,7 @@ interface FixItem {
     paymentDay: number;
 }
 
-interface ReconItem {
-    contract: Contract;
-    tenantName: string;
-    unitName: string;
-    foundMonths: number;
-    currentNextDate: string;
-    calculatedNextDate: string;
-}
-
 const SettingsPage: React.FC = () => {
-  const [dbUrl, setDbUrl] = useState('');
   const [initLoading, setInitLoading] = useState(false);
   const [initLogs, setInitLogs] = useState<string[]>([]);
   
@@ -46,8 +41,6 @@ const SettingsPage: React.FC = () => {
   const [isResettingContracts, setIsResettingContracts] = useState(false);
 
   useEffect(() => {
-    const current = db.getUrl();
-    if (current) setDbUrl(current);
     loadCategories();
   }, []);
 
@@ -58,12 +51,12 @@ const SettingsPage: React.FC = () => {
       } catch (e) { console.error(e); }
   };
 
-  const addLog = (msg: string) => setInitLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
+  const addLog = (msg: string) => setInitLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev]);
 
   const handleInitializeStepByStep = async () => {
     if (!window.confirm("Se actualizará la estructura de la base de datos. ¿Continuar?")) return;
     setInitLoading(true);
-    setInitLogs(["🚀 INICIANDO ACTUALIZACIÓN..."]); 
+    setInitLogs(["🚀 INICIANDO ACTUALIZACIÓN DE ESTRUCTURA..."]); 
     
     try {
         await db.query("SELECT 1");
@@ -72,14 +65,14 @@ const SettingsPage: React.FC = () => {
         await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS tenant_code text NULL;`); 
         await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS contract_code text NULL;`);
         
-        addLog("🔧 Verificando otras columnas...");
+        addLog("🔧 Verificando columnas financieras...");
         await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS loan_id uuid NULL;`);
         await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS loan_code text NULL;`);
         await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS payment_number integer NULL;`);
         await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS destination_account_code text NULL;`);
         await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS destination_account_name text NULL;`);
 
-        addLog("✨ ¡Proceso completado! Recargando...");
+        addLog("✨ ¡Proceso completado exitosamente! Recargando sistema...");
         setTimeout(() => window.location.reload(), 1500);
 
     } catch (error: any) {
@@ -103,7 +96,7 @@ const SettingsPage: React.FC = () => {
           const txs = await TransactionService.getAll();
           const count = txs.filter(t => t.categoryCode === selectedPurgeCategory).length;
           setPurgeCount(count);
-          addLog(`🔍 Análisis purga: Encontradas ${count} transacciones en la categoría.`);
+          addLog(`🔍 Análisis de purga: Encontradas ${count} transacciones para eliminar.`);
           if (count === 0) {
               alert("No se encontraron transacciones en esta categoría.");
           }
@@ -116,41 +109,54 @@ const SettingsPage: React.FC = () => {
   };
 
   const handleExecutePurge = async () => {
-      if (!selectedPurgeCategory || !purgeCount) return;
+      addLog(`🏁 Iniciando solicitud de eliminación para categoría: ${selectedPurgeCategory}`);
+      
+      if (!selectedPurgeCategory || !purgeCount) {
+          addLog("❌ Proceso cancelado: Categoría no válida o contador en cero.");
+          return;
+      }
       
       const confirmMsg = `PELIGRO: ¿Estás seguro de eliminar ${purgeCount} transacciones?\n\nEsta acción es irreversible y afectará los saldos de tus cuentas.`;
-      if (!window.confirm(confirmMsg)) return;
+      if (!window.confirm(confirmMsg)) {
+          addLog("🛑 Cancelado por el usuario.");
+          return;
+      }
       
       setIsPurging(true);
       try {
+          addLog("⏳ Enviando comando DELETE a la base de datos...");
+          
           // Perform Delete
           const deleted = await TransactionService.deleteByCategory(selectedPurgeCategory);
           
-          addLog(`🗑️ ELIMINADAS ${deleted} transacciones correctamente.`);
+          addLog(`✅ RESPUESTA DB: ${deleted} registros eliminados.`);
+          
+          if (deleted > 0) {
+              alert(`✅ ÉXITO: Se eliminaron ${deleted} registros correctamente.`);
+          } else {
+              alert(`⚠️ AVISO: El sistema reportó 0 eliminaciones. Es posible que los datos ya no existan.`);
+          }
           
           // Reset UI
           setPurgeCount(null); 
-          setSelectedPurgeCategory(''); // Clear selection to force re-selection
+          setSelectedPurgeCategory(''); 
           
-          // Success Alert
-          alert(`✅ ÉXITO: Se eliminaron ${deleted} registros correctamente.`);
-          
-          // Optional: Refresh page data logic here if needed, but alerting is key
       } catch (e: any) {
           console.error(e);
-          addLog(`❌ Error eliminando: ${e.message}`);
+          addLog(`❌ ERROR CRÍTICO EXCEPTION: ${e.message}`);
           alert(`❌ ERROR CRÍTICO: ${e.message}`);
       } finally {
           setIsPurging(false);
+          addLog("🏁 Proceso de purga finalizado.");
       }
   };
 
   // --- REPAIR TOOL 2: RESET CONTRACTS ---
   const handleResetContracts = async () => {
-      if (!confirm("PELIGRO: Esto pondrá la 'Fecha de Próximo Pago' de TODOS los contratos activos igual a su 'Fecha de Inicio'.\n\nÚsala solo si borraste todos los pagos y quieres empezar de cero a registrarlos uno por uno.")) return;
+      if (!confirm("PELIGRO: Esto pondrá la 'Fecha de Próximo Pago' de TODOS los contratos activos igual a su 'Fecha de Inicio'.\n\nÚsala solo si borraste todos los pagos y quieres empezar de cero.")) return;
       
       setIsResettingContracts(true);
-      addLog("⏳ Reseteando fechas de contratos...");
+      addLog("⏳ Rebobinando fechas de contratos al inicio...");
       try {
           if (db.isConfigured()) {
               await db.query(`
@@ -158,7 +164,7 @@ const SettingsPage: React.FC = () => {
                 SET next_payment_date = start_date 
                 WHERE status = 'ACTIVE'
               `);
-              addLog("✅ Contratos reiniciados a su fecha de inicio.");
+              addLog("✅ Contratos reiniciados a su fecha de inicio original.");
               alert("✅ Contratos reiniciados correctamente.");
           } else {
               alert("Función disponible solo en modo base de datos.");
@@ -177,7 +183,7 @@ const SettingsPage: React.FC = () => {
     setAnalysisResults([]);
     setHasAnalyzed(false);
     setShowConfirmFix(false);
-    addLog("🔍 Iniciando análisis de contratos activos (Día de Pago)...");
+    addLog("🔍 Analizando consistencia de fechas en contratos activos...");
 
     try {
         const contracts = await db.query(`
@@ -227,7 +233,11 @@ const SettingsPage: React.FC = () => {
 
         setAnalysisResults(discrepancies);
         setHasAnalyzed(true);
-        addLog(`✅ Análisis completado. ${discrepancies.length} discrepancias.`);
+        if (discrepancies.length > 0) {
+            addLog(`⚠️ Se encontraron ${discrepancies.length} contratos con días de pago desalineados.`);
+        } else {
+            addLog(`✅ Todos los contratos están perfectamente alineados.`);
+        }
 
     } catch (error: any) {
         addLog(`❌ Error CRÍTICO en análisis: ${error.message}`);
@@ -248,8 +258,8 @@ const SettingsPage: React.FC = () => {
               success++;
           }
           setAnalysisResults([]); 
-          addLog(`✅ ${success} fechas corregidas.`);
-          alert(`Se corrigieron ${success} contratos.`);
+          addLog(`✅ CORRECCIÓN APLICADA: ${success} contratos actualizados.`);
+          alert(`Se corrigieron ${success} contratos exitosamente.`);
       } catch (err: any) {
           addLog(`❌ Error: ${err.message}`);
           alert(`Error al corregir: ${err.message}`);
@@ -259,142 +269,200 @@ const SettingsPage: React.FC = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 pb-12">
+    <div className="max-w-6xl mx-auto space-y-8 pb-20">
       
-      {/* 1. INITIALIZATION SECTION */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-6">
-          <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-              <Database size={20} className="text-brand-600"/> Mantenimiento Base de Datos
-          </h2>
-          <div className="flex flex-col sm:flex-row items-center gap-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
-             <div className="flex-1">
-                 <p className="text-sm font-bold text-blue-900">Inicializar / Reparar Estructura</p>
-                 <p className="text-xs text-blue-700 mt-1">Agrega las columnas necesarias (Inquilino, Contrato) para que el sistema funcione bien.</p>
-             </div>
-             <button 
-                onClick={handleInitializeStepByStep}
-                disabled={initLoading}
-                className="flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm whitespace-nowrap"
-            >
-                {initLoading ? <RefreshCw size={16} className="animate-spin" /> : <Play size={16} />}
-                <span>Ejecutar</span>
-            </button>
-          </div>
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-6">
+        <div>
+            <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-3">
+                <Settings className="text-slate-400" size={32}/>
+                Configuración y Mantenimiento
+            </h1>
+            <p className="text-slate-500 mt-2 text-lg">Herramientas avanzadas para la gestión de la base de datos.</p>
         </div>
       </div>
 
-      {/* DANGER ZONE: DATA PURGE */}
-      <div className="bg-white rounded-xl border border-rose-200 shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-rose-100 bg-rose-50">
-            <h3 className="text-lg font-bold text-rose-800 flex items-center gap-2">
-                <ShieldAlert size={20}/> Zona de Peligro: Depuración
-            </h3>
-            <p className="text-xs text-rose-600 mt-1">
-                Herramientas para eliminar datos erróneos masivamente. Úsalo con precaución.
-            </p>
-          </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           
-          <div className="p-6 space-y-6">
-              {/* Purge Transactions */}
-              <div className="flex flex-col gap-3">
-                  <label className="text-sm font-bold text-slate-700">1. Borrar Transacciones por Categoría</label>
-                  <div className="flex flex-col sm:flex-row gap-3">
-                      <select 
-                        className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
-                        value={selectedPurgeCategory}
-                        onChange={e => { setSelectedPurgeCategory(e.target.value); setPurgeCount(null); }}
-                      >
-                          <option value="">Selecciona categoría...</option>
-                          {categories.map(c => <option key={c.code} value={c.code}>{c.name} ({c.type})</option>)}
-                      </select>
+          {/* COLUMN 1: SAFE TOOLS */}
+          <div className="space-y-8">
+              
+              {/* DATABASE HEALTH */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow overflow-hidden group">
+                  <div className="p-6 border-b border-slate-100 bg-slate-50 group-hover:bg-blue-50/50 transition-colors">
+                      <div className="flex items-center gap-3">
+                          <div className="p-3 bg-blue-100 text-blue-600 rounded-xl">
+                              <Database size={24} />
+                          </div>
+                          <div>
+                              <h3 className="font-bold text-slate-800 text-lg">Salud de Base de Datos</h3>
+                              <p className="text-sm text-slate-500">Estructura y tablas</p>
+                          </div>
+                      </div>
+                  </div>
+                  <div className="p-6">
+                      <p className="text-slate-600 mb-6 text-sm leading-relaxed">
+                          Utiliza esta herramienta si experimentas errores de "columna no encontrada" o después de una actualización del sistema. No borra datos, solo agrega estructuras faltantes.
+                      </p>
                       <button 
-                        onClick={handleAnalyzePurge}
-                        disabled={!selectedPurgeCategory || initLoading}
-                        className="px-4 py-2 bg-slate-100 text-slate-700 font-bold rounded-lg hover:bg-slate-200 text-sm"
+                          onClick={handleInitializeStepByStep}
+                          disabled={initLoading}
+                          className="w-full py-3 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-700 disabled:opacity-50 transition-all shadow-lg shadow-slate-200 flex justify-center items-center gap-2"
                       >
-                          Analizar
+                          {initLoading ? <RefreshCw size={20} className="animate-spin" /> : <Play size={20} />}
+                          <span>Ejecutar Diagnóstico y Reparación</span>
                       </button>
-                      {purgeCount !== null && purgeCount > 0 && (
+                  </div>
+              </div>
+
+              {/* DATE FIXER */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow overflow-hidden group">
+                  <div className="p-6 border-b border-slate-100 bg-slate-50 group-hover:bg-amber-50/50 transition-colors">
+                      <div className="flex items-center gap-3">
+                          <div className="p-3 bg-amber-100 text-amber-600 rounded-xl">
+                              <Wrench size={24} />
+                          </div>
+                          <div>
+                              <h3 className="font-bold text-slate-800 text-lg">Corrector de Fechas</h3>
+                              <p className="text-sm text-slate-500">Alineación de días de pago</p>
+                          </div>
+                      </div>
+                  </div>
+                  <div className="p-6">
+                      <p className="text-slate-600 mb-4 text-sm">
+                          Detecta contratos donde la "Fecha de Próximo Pago" no coincide con el "Día de Pago" configurado (ej. dice día 15 pero el contrato es día 1).
+                      </p>
+                      
+                      <div className="flex gap-3">
                           <button 
-                            onClick={handleExecutePurge}
-                            disabled={isPurging}
-                            className="px-4 py-2 bg-rose-600 text-white font-bold rounded-lg hover:bg-rose-700 shadow-sm text-sm flex items-center gap-2"
+                              onClick={handleAnalyzeDates}
+                              className="flex-1 py-3 bg-white border-2 border-slate-200 text-slate-700 rounded-xl font-bold hover:border-amber-400 hover:text-amber-600 transition-colors flex justify-center items-center gap-2"
                           >
-                              {isPurging ? <Activity size={16} className="animate-spin"/> : <Trash2 size={16}/>}
-                              Eliminar {purgeCount} registros
+                              <Search size={20}/> <span>Analizar</span>
                           </button>
+
+                          {showConfirmFix ? (
+                              <button onClick={handleApplyFixes} className="flex-1 py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 shadow-md animate-pulse flex justify-center items-center gap-2">
+                                  <Check size={20}/> Confirmar ({analysisResults.length})
+                              </button>
+                          ) : (
+                              <button 
+                                  onClick={() => setShowConfirmFix(true)} 
+                                  disabled={analysisResults.length === 0} 
+                                  className={`flex-1 py-3 rounded-xl font-bold text-white flex justify-center items-center gap-2 transition-all ${analysisResults.length > 0 ? 'bg-amber-500 hover:bg-amber-600 shadow-md' : 'bg-slate-200 cursor-not-allowed text-slate-400'}`}
+                              >
+                                  <Wrench size={20}/> <span>Corregir</span>
+                              </button>
+                          )}
+                      </div>
+                      
+                      {hasAnalyzed && analysisResults.length === 0 && (
+                          <div className="mt-4 p-3 bg-emerald-50 text-emerald-700 rounded-lg text-sm flex items-center gap-2 border border-emerald-100">
+                              <CheckCircle size={16}/> Todo está en orden.
+                          </div>
                       )}
                   </div>
-                  <p className="text-[10px] text-slate-400">Esto eliminará el dinero de tus cuentas (revierte los ingresos).</p>
               </div>
 
-              <div className="border-t border-slate-100 my-4"></div>
+          </div>
 
-              {/* Reset Contracts */}
-              <div className="flex items-center justify-between gap-4">
-                  <div>
-                      <p className="text-sm font-bold text-slate-700">2. Reiniciar Contratos (Rebobinar Fechas)</p>
-                      <p className="text-xs text-slate-500">Devuelve la "Próxima Fecha de Pago" al inicio del contrato para todos los activos.</p>
+          {/* COLUMN 2: DANGER ZONE & LOGS */}
+          <div className="space-y-8">
+              
+              {/* DANGER ZONE */}
+              <div className="bg-white rounded-2xl border-2 border-rose-100 shadow-sm overflow-hidden relative">
+                  <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
+                      <ShieldAlert size={120} className="text-rose-500"/>
                   </div>
-                  <button 
-                    onClick={handleResetContracts}
-                    disabled={isResettingContracts}
-                    className="px-4 py-2 bg-amber-50 text-white font-bold rounded-lg hover:bg-amber-600 shadow-sm text-sm flex items-center gap-2 whitespace-nowrap"
-                  >
-                      {isResettingContracts ? <Activity size={16} className="animate-spin"/> : <Rewind size={16}/>}
-                      Resetear Fechas
-                  </button>
+                  
+                  <div className="p-6 border-b border-rose-100 bg-rose-50">
+                      <h3 className="font-bold text-rose-800 text-lg flex items-center gap-2">
+                          <AlertTriangle size={24}/> Zona de Peligro
+                      </h3>
+                      <p className="text-sm text-rose-600 mt-1">Acciones destructivas e irreversibles.</p>
+                  </div>
+
+                  <div className="p-6 space-y-8">
+                      {/* PURGE TOOL */}
+                      <div>
+                          <label className="block text-sm font-bold text-slate-700 mb-2">1. Purga Selectiva de Transacciones</label>
+                          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-4">
+                              <p className="text-xs text-slate-500">Elimina masivamente registros de una categoría específica (ej. borrar todos los "Alquileres" erróneos).</p>
+                              <div className="flex flex-col gap-2">
+                                  <select 
+                                      className="w-full px-4 py-3 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-rose-500 outline-none"
+                                      value={selectedPurgeCategory}
+                                      onChange={e => { setSelectedPurgeCategory(e.target.value); setPurgeCount(null); }}
+                                  >
+                                      <option value="">Selecciona categoría a purgar...</option>
+                                      {categories.map(c => <option key={c.code} value={c.code}>{c.name} ({c.type})</option>)}
+                                  </select>
+                                  
+                                  <div className="flex gap-2">
+                                      <button 
+                                          onClick={handleAnalyzePurge}
+                                          disabled={!selectedPurgeCategory || initLoading}
+                                          className="flex-1 py-2 bg-white border border-slate-300 text-slate-700 font-bold rounded-lg hover:bg-slate-50 text-xs uppercase tracking-wider"
+                                      >
+                                          Escanear
+                                      </button>
+                                      {purgeCount !== null && purgeCount > 0 && (
+                                          <button 
+                                              onClick={handleExecutePurge}
+                                              disabled={isPurging}
+                                              className="flex-[2] py-2 bg-rose-600 text-white font-bold rounded-lg hover:bg-rose-700 shadow-md text-xs uppercase tracking-wider flex items-center justify-center gap-2"
+                                          >
+                                              {isPurging ? <Activity size={16} className="animate-spin"/> : <Trash2 size={16}/>}
+                                              Eliminar {purgeCount} Registros
+                                          </button>
+                                      )}
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+
+                      <div className="w-full h-px bg-rose-100"></div>
+
+                      {/* RESET CONTRACTS */}
+                      <div>
+                          <div className="flex justify-between items-start mb-2">
+                              <label className="block text-sm font-bold text-slate-700">2. Rebobinar Contratos</label>
+                          </div>
+                          <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200 gap-4">
+                              <p className="text-xs text-slate-500 flex-1">
+                                  Regresa la "Próxima Fecha de Pago" al inicio original del contrato. Útil para reiniciar cobros.
+                              </p>
+                              <button 
+                                  onClick={handleResetContracts}
+                                  disabled={isResettingContracts}
+                                  className="px-4 py-2 bg-amber-500 text-white font-bold rounded-lg hover:bg-amber-600 shadow-sm text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap"
+                              >
+                                  {isResettingContracts ? <Activity size={16} className="animate-spin"/> : <Rewind size={16}/>}
+                                  Resetear
+                              </button>
+                          </div>
+                      </div>
+                  </div>
               </div>
+
+              {/* CONSOLE */}
+              <div className="bg-slate-900 rounded-2xl shadow-lg border border-slate-800 overflow-hidden flex flex-col h-64">
+                  <div className="px-4 py-2 bg-slate-800 border-b border-slate-700 flex items-center gap-2 text-slate-400 text-xs font-mono uppercase tracking-widest">
+                      <Terminal size={14}/> Terminal de Sistema
+                  </div>
+                  <div className="flex-1 p-4 overflow-y-auto font-mono text-xs space-y-1">
+                      {initLogs.length === 0 && <span className="text-slate-600 italic">Esperando comandos...</span>}
+                      {initLogs.map((log, i) => (
+                          <div key={i} className="text-emerald-400 border-l-2 border-slate-700 pl-2 py-0.5 animate-fadeIn">
+                              <span className="text-slate-500 mr-2">$</span>
+                              {log}
+                          </div>
+                      ))}
+                  </div>
+              </div>
+
           </div>
       </div>
-
-      {/* REPAIR TOOL 3: DATE FIXER */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-slate-100">
-            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                <Wrench size={20} className="text-amber-500"/>
-                Corrector de Días (Día de Pago)
-            </h3>
-            <p className="text-sm text-slate-500 mt-1">
-                Alinea el día del mes de la fecha de pago con la configuración del contrato.
-            </p>
-        </div>
-
-        <div className="p-6 bg-slate-50 space-y-6">
-            <div className="flex flex-col sm:flex-row items-center gap-4">
-                <button 
-                    onClick={handleAnalyzeDates}
-                    className="flex-1 w-full sm:w-auto flex justify-center items-center gap-2 px-5 py-3 bg-white border border-slate-300 text-slate-700 font-bold rounded-xl hover:bg-slate-100 hover:text-amber-600 transition-colors shadow-sm"
-                >
-                    <Search size={18}/> <span>Analizar</span>
-                </button>
-
-                {showConfirmFix ? (
-                    <button onClick={handleApplyFixes} className="flex-1 flex justify-center items-center gap-2 px-4 py-3 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 shadow-md animate-pulse">
-                        <Check size={18}/> Confirmar Corrección
-                    </button>
-                ) : (
-                    <button onClick={() => setShowConfirmFix(true)} disabled={analysisResults.length === 0} className={`flex-1 w-full sm:w-auto flex justify-center items-center gap-2 px-5 py-3 rounded-xl font-bold text-white shadow-md transition-all ${analysisResults.length > 0 ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-slate-300 cursor-not-allowed'}`}>
-                        <CheckCircle size={18}/> <span>Corregir ({analysisResults.length})</span>
-                    </button>
-                )}
-            </div>
-        </div>
-      </div>
-
-      {/* CONSOLE */}
-      {initLogs.length > 0 && (
-          <div className="bg-slate-900 rounded-xl p-4 font-mono text-xs text-emerald-400 overflow-y-auto max-h-64 shadow-inner border border-slate-700">
-              <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-700 text-slate-400 sticky top-0 bg-slate-900">
-                  <Terminal size={14}/> <span>Consola de Actividad</span>
-              </div>
-              {initLogs.map((log, i) => (
-                  <div key={i} className="mb-1 whitespace-pre-wrap border-l-2 border-transparent hover:border-slate-600 pl-2">{log}</div>
-              ))}
-          </div>
-      )}
-
     </div>
   );
 };
