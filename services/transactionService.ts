@@ -1,12 +1,9 @@
-
-import { Transaction, TransactionFormData, Account } from '../types';
-import { AccountService } from './accountService';
-import { CategoryService } from './categoryService';
+import { Transaction, TransactionFormData, Account, Category, Property, Contract, Tenant } from '../types';
 import { db } from './db';
 
 const STORAGE_KEY = 'icash_plus_transactions';
-const ACCOUNTS_KEY = 'icash_plus_accounts';
 
+// Helpers
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const generateNextCode = (existing: Transaction[]): string => {
@@ -24,303 +21,179 @@ const generateNextCode = (existing: Transaction[]): string => {
   return `TR-${nextId.toString().padStart(5, '0')}`;
 };
 
-const toDateString = (val: any): string => {
-  if (val instanceof Date) return val.toISOString().split('T')[0];
-  return String(val);
-};
-
-// Helper for local storage balance updates
-const updateLocalAccountBalance = async (accountCode: string, amount: number, type: 'INGRESO' | 'GASTO' | 'TRANSFERENCIA', isReversal: boolean = false, destinationCode?: string) => {
-  const accountsData = localStorage.getItem(ACCOUNTS_KEY);
-  if (!accountsData) return;
-  let accounts: Account[] = JSON.parse(accountsData);
-  
-  const updateBalance = (code: string, adj: number) => {
-      const idx = accounts.findIndex(a => a.code === code);
-      if (idx !== -1) accounts[idx].initialBalance += adj;
-  };
-
-  // Logic for Local Transfers (No DB)
-  if (type === 'TRANSFERENCIA' && destinationCode) {
-      // Create: Source -amount, Dest +amount
-      // Reversal: Source +amount, Dest -amount
-      let sourceAdj = -amount;
-      let destAdj = amount;
-
-      if (isReversal) {
-          sourceAdj = amount;
-          destAdj = -amount;
-      }
-      updateBalance(accountCode, sourceAdj);
-      updateBalance(destinationCode, destAdj);
-  } else {
-      // Standard Logic
-      let adjustment = amount;
-      if (type === 'GASTO') adjustment = -amount;
-      if (isReversal) adjustment = -adjustment;
-      
-      updateBalance(accountCode, adjustment);
-  }
-  
-  localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
-};
-
 export const TransactionService = {
   getAll: async (): Promise<Transaction[]> => {
     if (db.isConfigured()) {
       try {
         const rows = await db.query(`
           SELECT 
-            code, date, description, amount, type,
-            category_code as "categoryCode", category_name as "categoryName",
-            account_code as "accountCode", account_name as "accountName",
-            property_code as "propertyCode", property_name as "propertyName",
-            contract_code as "contractCode",
-            destination_account_code as "destinationAccountCode",
-            destination_account_name as "destinationAccountName",
-            loan_id as "loanId", loan_code as "loanCode", payment_number as "paymentNumber",
-            created_at as "createdAt"
-          FROM transactions
-          ORDER BY date DESC, created_at DESC
+            t.code, t.date, t.description, t.amount, t.type, 
+            t.category_code as "categoryCode", c.name as "categoryName",
+            t.account_code as "accountCode", a.name as "accountName",
+            t.property_code as "propertyCode", p.name as "propertyName",
+            t.contract_code as "contractCode",
+            t.destination_account_code as "destinationAccountCode",
+            da.name as "destinationAccountName",
+            t.created_at as "createdAt",
+            t.loan_id as "loanId", t.loan_code as "loanCode", t.payment_number as "paymentNumber",
+            con.tenant_code as "tenantCode",
+            ten.full_name as "tenantName"
+          FROM transactions t
+          LEFT JOIN categories c ON t.category_code = c.code
+          LEFT JOIN accounts a ON t.account_code = a.code
+          LEFT JOIN accounts da ON t.destination_account_code = da.code
+          LEFT JOIN properties p ON t.property_code = p.code
+          LEFT JOIN contracts con ON t.contract_code = con.code
+          LEFT JOIN tenants ten ON con.tenant_code = ten.code
+          ORDER BY t.date DESC, t.created_at DESC
         `);
-        return rows.map(r => ({ 
-          ...r, 
-          amount: Number(r.amount),
-          date: toDateString(r.date)
-        }));
+        return rows.map(r => ({ ...r, amount: Number(r.amount) }));
       } catch (error: any) {
-        // Fallback for missing columns (Schema Mismatch)
-        if (error.message && (error.message.includes('does not exist') || error.message.includes('undefined'))) {
-           console.warn("DB Schema mismatch detected. Using fallback query.");
+        // Fallback for schema mismatch (missing columns like contract_code)
+        if (error.message && (error.message.includes('does not exist') || error.message.includes('column'))) {
+           console.warn("Schema mismatch in TransactionService, falling back to basic query:", error.message);
            const rows = await db.query(`
             SELECT 
-              code, date, description, amount, type,
-              category_code as "categoryCode", category_name as "categoryName",
-              account_code as "accountCode", account_name as "accountName",
-              property_code as "propertyCode", property_name as "propertyName",
-              created_at as "createdAt"
-            FROM transactions
-            ORDER BY date DESC, created_at DESC
+              t.code, t.date, t.description, t.amount, t.type, 
+              t.category_code as "categoryCode", c.name as "categoryName",
+              t.account_code as "accountCode", a.name as "accountName",
+              t.property_code as "propertyCode", p.name as "propertyName",
+              t.destination_account_code as "destinationAccountCode",
+              da.name as "destinationAccountName",
+              t.created_at as "createdAt",
+              t.loan_id as "loanId", t.loan_code as "loanCode", t.payment_number as "paymentNumber"
+            FROM transactions t
+            LEFT JOIN categories c ON t.category_code = c.code
+            LEFT JOIN accounts a ON t.account_code = a.code
+            LEFT JOIN accounts da ON t.destination_account_code = da.code
+            LEFT JOIN properties p ON t.property_code = p.code
+            ORDER BY t.date DESC, t.created_at DESC
           `);
-          return rows.map(r => ({ 
-            ...r, 
-            amount: Number(r.amount),
-            date: toDateString(r.date),
-            contractCode: undefined, // Explicitly undefined
-            destinationAccountCode: undefined
-          }));
+          return rows.map(r => ({ ...r, amount: Number(r.amount) }));
         }
         throw error;
       }
     } else {
       await delay(300);
       const data = localStorage.getItem(STORAGE_KEY);
-      return data ? JSON.parse(data) : [];
+      let transactions: Transaction[] = data ? JSON.parse(data) : [];
+      
+      // Enrich with names for local storage
+      const accData = localStorage.getItem('icash_plus_accounts');
+      const accounts: Account[] = accData ? JSON.parse(accData) : [];
+      
+      const catData = localStorage.getItem('icash_plus_categories');
+      const categories: Category[] = catData ? JSON.parse(catData) : [];
+      
+      const propData = localStorage.getItem('icash_plus_properties');
+      const properties: Property[] = propData ? JSON.parse(propData) : [];
+
+      const conData = localStorage.getItem('icash_plus_contracts');
+      const contracts: Contract[] = conData ? JSON.parse(conData) : [];
+
+      const tenData = localStorage.getItem('icash_plus_tenants');
+      const tenants: Tenant[] = tenData ? JSON.parse(tenData) : [];
+
+      return transactions.map(t => {
+          const acc = accounts.find(a => a.code === t.accountCode);
+          const cat = categories.find(c => c.code === t.categoryCode);
+          const prop = properties.find(p => p.code === t.propertyCode);
+          const destAcc = t.destinationAccountCode ? accounts.find(a => a.code === t.destinationAccountCode) : null;
+          
+          let tenantCode = t.tenantCode;
+          let tenantName = t.tenantName;
+
+          if (t.contractCode) {
+              const contract = contracts.find(c => c.code === t.contractCode);
+              if (contract) {
+                  tenantCode = contract.tenantCode;
+                  const tenant = tenants.find(te => te.code === tenantCode);
+                  if (tenant) tenantName = tenant.fullName;
+              }
+          }
+
+          return {
+              ...t,
+              accountName: acc ? acc.name : t.accountCode,
+              categoryName: cat ? cat.name : t.categoryCode,
+              propertyName: prop ? prop.name : '',
+              destinationAccountName: destAcc ? destAcc.name : '',
+              tenantCode,
+              tenantName
+          };
+      }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }
   },
 
   create: async (data: TransactionFormData): Promise<Transaction> => {
-    // --- AUTOMATED TRANSFER LOGIC (Using existing categories) ---
-    if (data.type === 'TRANSFERENCIA') {
-        if (!data.destinationAccountCode) throw new Error("Cuenta destino requerida para transferencia.");
-        if (data.accountCode === data.destinationAccountCode) throw new Error("Origen y destino deben ser diferentes.");
-
-        // 1. Create OUT Transaction (Gasto / Salida)
-        await TransactionService.create({
-            ...data,
-            type: 'GASTO',
-            categoryCode: 'CAT-EXP-013', 
-            description: `Transferencia Saliente: ${data.description}`
-        });
-
-        // 2. Create IN Transaction (Ingreso / Entrada)
-        const inTx = await TransactionService.create({
-            ...data,
-            type: 'INGRESO',
-            accountCode: data.destinationAccountCode,
-            categoryCode: 'CAT-INC-007', 
-            description: `Transferencia Entrante: ${data.description}`
-        });
-        
-        return inTx; 
-    }
-
-    // --- STANDARD LOGIC ---
-    const accounts = await AccountService.getAll();
-    const cleanAccCode = data.accountCode.trim();
-    const account = accounts.find(a => a.code === cleanAccCode);
-    if (!account) throw new Error(`La cuenta '${cleanAccCode}' no existe.`);
-
-    const categories = await CategoryService.getAll();
-    const cleanCatCode = data.categoryCode.trim();
-    const category = categories.find(c => c.code === cleanCatCode);
-    
-    const categoryName = category ? category.name : 'General'; 
-    const finalCatCode = category ? category.code : cleanCatCode;
-
-    let destAccountName = null;
-    if (data.destinationAccountCode) {
-        const destAccount = accounts.find(a => a.code === data.destinationAccountCode);
-        if (destAccount) destAccountName = destAccount.name;
-    }
-
     if (db.isConfigured()) {
-      const rows = await db.query('SELECT code FROM transactions');
-      const existing = rows.map(r => ({ code: r.code } as Transaction));
-      const newCode = generateNextCode(existing);
-
-      // We wrap insert in try/catch to handle missing column gracefully by ignoring new fields
-      try {
-          await db.query(`
-            INSERT INTO transactions (
-              code, date, description, amount, type,
-              category_code, category_name,
-              account_code, account_name,
-              property_code, property_name,
-              contract_code,
-              destination_account_code, destination_account_name,
-              loan_id, loan_code, payment_number
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-          `, [
-            newCode, data.date, data.description, data.amount, data.type,
-            finalCatCode, categoryName,
-            account.code, account.name,
-            data.propertyCode, data.propertyName,
-            data.contractCode || null,
-            data.destinationAccountCode, destAccountName,
-            data.loanId || null, data.loanCode || null, data.paymentNumber || null
-          ]);
-      } catch (e: any) {
-          if (e.message && e.message.includes('does not exist')) {
-             console.warn("DB Schema mismatch on INSERT. Falling back to legacy insert.");
-             // Fallback INSERT without new columns
-             await db.query(`
-                INSERT INTO transactions (
-                  code, date, description, amount, type,
-                  category_code, category_name,
-                  account_code, account_name,
-                  property_code, property_name
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-              `, [
-                newCode, data.date, data.description, data.amount, data.type,
-                finalCatCode, categoryName,
-                account.code, account.name,
-                data.propertyCode, data.propertyName
-              ]);
-          } else {
-              throw e;
-          }
-      }
-
-      // Update Balance in DB
-      let adjustment = data.amount;
-      if (data.type === 'GASTO') adjustment = -adjustment;
-      await db.query(`UPDATE accounts SET initial_balance = initial_balance + $1 WHERE code = $2`, [adjustment, account.code]);
-
-      return {
-        code: newCode,
-        ...data,
-        categoryName: categoryName,
-        accountName: account.name,
-        destinationAccountName: destAccountName || undefined,
-        createdAt: new Date().toISOString()
-      } as Transaction;
-
+       const rows = await db.query('SELECT code FROM transactions');
+       const existing = rows.map(r => ({ code: r.code } as Transaction));
+       const newCode = generateNextCode(existing);
+       
+       await db.query(`
+         INSERT INTO transactions (
+           code, date, description, amount, type, category_code, account_code, 
+           property_code, contract_code, destination_account_code, destination_account_name,
+           loan_id, loan_code, payment_number
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+       `, [
+         newCode, data.date, data.description, data.amount, data.type, 
+         data.categoryCode, data.accountCode, data.propertyCode || null, data.contractCode || null,
+         data.destinationAccountCode || null, null, 
+         data.loanId || null, data.loanCode || null, data.paymentNumber || null
+       ]);
+       
+       return { 
+           code: newCode, 
+           ...data, 
+           categoryName: '', accountName: '', // populated on refetch
+           createdAt: new Date().toISOString() 
+       };
     } else {
-      // Local Storage Logic
-      await delay(300);
-      const existing = await TransactionService.getAll();
-      const newCode = generateNextCode(existing);
-      const newTransaction: Transaction = {
-        code: newCode,
-        date: data.date,
-        description: data.description,
-        amount: Number(data.amount),
-        type: data.type,
-        categoryCode: finalCatCode,
-        categoryName: categoryName,
-        accountCode: account.code,
-        accountName: account.name,
-        propertyCode: data.propertyCode || '',
-        propertyName: data.propertyName || '',
-        contractCode: data.contractCode,
-        destinationAccountCode: data.destinationAccountCode,
-        destinationAccountName: destAccountName || undefined,
-        createdAt: new Date().toISOString()
-      };
-      const updatedList = [newTransaction, ...existing];
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
-      
-      await updateLocalAccountBalance(account.code, newTransaction.amount, data.type as 'GASTO'|'INGRESO', false);
-      
-      return newTransaction;
+        await delay(300);
+        const existing = await TransactionService.getAll();
+        const newCode = generateNextCode(existing);
+        const newTx: Transaction = {
+            code: newCode,
+            ...data,
+            categoryName: '',
+            accountName: '',
+            createdAt: new Date().toISOString()
+        };
+        const updated = [newTx, ...existing];
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+        return newTx;
     }
   },
 
   update: async (code: string, data: TransactionFormData): Promise<Transaction> => {
-    // Editing Transfer "parts" individually is allowed, but full Transfer editing is restricted for simplicity
-    if (data.type === 'TRANSFERENCIA') throw new Error("No se pueden editar transferencias completas. Elimine y cree de nuevo.");
-
-    const accounts = await AccountService.getAll();
-    const account = accounts.find(a => a.code === data.accountCode);
-    if (!account) throw new Error(`Cuenta inválida.`);
-
-    const categories = await CategoryService.getAll();
-    const category = categories.find(c => c.code === data.categoryCode);
-    const categoryName = category ? category.name : 'General';
-
-    if (db.isConfigured()) {
-        const oldTxRows = await db.query('SELECT amount, type, account_code FROM transactions WHERE code=$1', [code]);
-        if (oldTxRows.length === 0) throw new Error("Transacción no encontrada");
-        const oldTx = oldTxRows[0];
-        
-        // Reverse Old Balance
-        let reverseAdj = Number(oldTx.amount);
-        if (oldTx.type === 'GASTO') reverseAdj = -reverseAdj;
-        reverseAdj = -reverseAdj; // Invert to undo
-        await db.query(`UPDATE accounts SET initial_balance = initial_balance + $1 WHERE code = $2`, [reverseAdj, oldTx.account_code]);
-
-        // Apply New Balance
-        let newAdj = data.amount;
-        if (data.type === 'GASTO') newAdj = -newAdj;
-        await db.query(`UPDATE accounts SET initial_balance = initial_balance + $1 WHERE code = $2`, [newAdj, account.code]);
-
-        await db.query(`
+      if (db.isConfigured()) {
+          await db.query(`
             UPDATE transactions 
-            SET date=$1, description=$2, amount=$3, type=$4, category_code=$5, category_name=$6, account_code=$7, account_name=$8, property_code=$9, property_name=$10
-            WHERE code=$11
-        `, [data.date, data.description, data.amount, data.type, data.categoryCode, categoryName, account.code, account.name, data.propertyCode, data.propertyName, code]);
-
-        return { code, ...data, categoryName, accountName: account.name, createdAt: new Date().toISOString() } as Transaction;
-    } else {
-         throw new Error("Edición local limitada. Elimina y crea de nuevo.");
-    }
+            SET date=$1, description=$2, amount=$3, type=$4, category_code=$5, account_code=$6, property_code=$7
+            WHERE code=$8
+          `, [data.date, data.description, data.amount, data.type, data.categoryCode, data.accountCode, data.propertyCode, code]);
+          return { code, ...data } as Transaction;
+      } else {
+          const existing = await TransactionService.getAll();
+          const index = existing.findIndex(t => t.code === code);
+          if (index !== -1) {
+              existing[index] = { ...existing[index], ...data };
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+              return existing[index];
+          }
+          throw new Error("Transaction not found");
+      }
   },
 
   delete: async (code: string): Promise<void> => {
-    if (db.isConfigured()) {
-       const rows = await db.query('SELECT amount, type, account_code FROM transactions WHERE code=$1', [code]);
-       if (rows.length === 0) return;
-       const tx = rows[0];
-       const amount = Number(tx.amount);
-
-       // Reverse Balance
-       let adjustment = amount;
-       if (tx.type === 'GASTO') adjustment = -adjustment;
-       adjustment = -adjustment; // Invert
-       await db.query(`UPDATE accounts SET initial_balance = initial_balance + $1 WHERE code = $2`, [adjustment, tx.account_code]);
-
-       await db.query('DELETE FROM transactions WHERE code=$1', [code]);
-    } else {
-      await delay(200);
-      let existing = await TransactionService.getAll();
-      const txToDelete = existing.find(t => t.code === code);
-      if (!txToDelete) throw new Error("Transacción no encontrada");
-      
-      await updateLocalAccountBalance(txToDelete.accountCode, txToDelete.amount, txToDelete.type as any, true);
-      
-      existing = existing.filter(t => t.code !== code);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
-    }
+      if (db.isConfigured()) {
+          await db.query('DELETE FROM transactions WHERE code=$1', [code]);
+      } else {
+          let existing = await TransactionService.getAll();
+          existing = existing.filter(t => t.code !== code);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+      }
   }
 };

@@ -399,7 +399,10 @@ const RealEstatePage: React.FC = () => {
                             return (
                                 <tr key={contract.code} className="hover:bg-slate-50 group">
                                     <td className="px-6 py-3">
-                                        <div className="font-bold text-slate-800">{t?.fullName || contract.tenantCode}</div>
+                                        <div className="font-bold text-slate-800 flex items-center gap-2">
+                                            <span>{t?.fullName || contract.tenantCode}</span>
+                                            <span className="text-[10px] font-mono font-normal text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">{contract.tenantCode}</span>
+                                        </div>
                                         <div className="text-xs text-slate-500">{a?.name || contract.apartmentCode}</div>
                                     </td>
                                     <td className="px-6 py-3 text-xs text-slate-500">
@@ -457,7 +460,10 @@ const RealEstatePage: React.FC = () => {
                                         <PaymentStatusBadge contract={contract} />
                                     </td>
                                     <td className="px-6 py-3">
-                                        <div className="font-bold text-slate-800">{t?.fullName}</div>
+                                        <div className="font-bold text-slate-800 flex items-center gap-2">
+                                            <span>{t?.fullName}</span>
+                                            <span className="text-[10px] font-mono font-normal text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">{contract.tenantCode}</span>
+                                        </div>
                                         <div className="text-xs text-slate-500">{a?.name}</div>
                                     </td>
                                     <td className="px-6 py-3 text-center font-mono text-slate-600">
@@ -505,7 +511,10 @@ const RealEstatePage: React.FC = () => {
                                 const a = apartments.find(x => x.code === contract.apartmentCode);
                                 return (
                                     <tr key={contract.code} className="hover:bg-rose-50/30">
-                                        <td className="px-6 py-3 font-bold text-slate-800">{t?.fullName}</td>
+                                        <td className="px-6 py-3">
+                                            <div className="font-bold text-slate-800">{t?.fullName}</div>
+                                            <div className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 w-fit mt-0.5">{contract.tenantCode}</div>
+                                        </td>
                                         <td className="px-6 py-3 text-slate-600">{a?.name}</td>
                                         <td className="px-6 py-3 text-xs text-slate-500">
                                             {t?.phone && <div>{t.phone}</div>}

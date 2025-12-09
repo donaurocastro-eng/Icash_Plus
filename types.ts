@@ -60,6 +60,10 @@ export interface Transaction {
   loanCode?: string;
   paymentNumber?: number;
   
+  // Derived fields for display (fetched via joins)
+  tenantCode?: string;
+  tenantName?: string;
+
   createdAt: string;
 }
 
