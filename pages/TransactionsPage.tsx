@@ -398,7 +398,7 @@ const TransactionsPage: React.FC = () => {
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {/* REMOVED: opacity-0 group-hover:opacity-100 transition-opacity */}
+                      {/* FIXED: Removed opacity-0 to make buttons always visible */}
                       <div className="flex items-center justify-end gap-1">
                         <button 
                             onClick={() => { setEditingTransaction(tx); setIsModalOpen(true); }}
