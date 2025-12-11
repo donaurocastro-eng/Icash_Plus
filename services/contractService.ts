@@ -265,6 +265,13 @@ export const ContractService = {
     if (!cat) cat = categories.find(c => c.type === 'INGRESO');
     if (!cat) throw new Error("No hay categoría de Ingresos disponible.");
 
+    // IMPORTANT: Use the passed billablePeriod or fallback to extracting YYYY-MM from the payment date
+    // Note: The UI should ideally pass billablePeriod. If not, we infer it from data.date.
+    let targetPeriod = data.billablePeriod;
+    if (!targetPeriod && data.date) {
+        targetPeriod = data.date.substring(0, 7); // YYYY-MM
+    }
+
     await TransactionService.create({
        date: data.date,
        amount: data.amount,
@@ -275,9 +282,14 @@ export const ContractService = {
        propertyCode: propertyCode,
        propertyName: propertyName,
        contractCode: contract.code, // Link transaction to contract
+       billablePeriod: targetPeriod, // NEW: Link to specific month
        tenantCode: contract.tenantCode // Link transaction to specific tenant (Snapshot)
     });
 
+    // Advance Next Payment Date Logic (Simplistic - just advances one month)
+    // In a full partial payment implementation, we would query the balance first.
+    // For now, we assume if payment is registered, we move the pointer.
+    
     let nextDate = new Date(contract.nextPaymentDate || contract.startDate);
     // Adjust for timezone to ensure we are operating on the date part
     nextDate = new Date(nextDate.valueOf() + nextDate.getTimezoneOffset() * 60000);
@@ -306,11 +318,15 @@ export const ContractService = {
           const historicalAmount = await ContractService.getPriceAtDate(data.contractCode, item.date);
           const finalAmount = historicalAmount > 0 ? historicalAmount : item.amount;
 
+          // Determine period from the Item Date (which is the due date of that month)
+          const period = item.date.substring(0, 7); 
+
           await ContractService.registerPayment({
               contractCode: data.contractCode,
               accountCode: data.accountCode,
               amount: finalAmount, 
-              date: item.date, // This date is the "Payment Date" for the record
+              date: item.date, // Payment Date recorded as Due Date for bulk
+              billablePeriod: period,
               description: item.description
           });
       }

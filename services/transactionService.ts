@@ -46,6 +46,7 @@ export const TransactionService = {
             t.account_code as "accountCode", a.name as "accountName",
             t.property_code as "propertyCode", p.name as "propertyName",
             t.contract_code as "contractCode",
+            t.billable_period as "billablePeriod",
             t.tenant_code as "storedTenantCode",
             t.destination_account_code as "destinationAccountCode",
             da.name as "destinationAccountName",
@@ -64,49 +65,8 @@ export const TransactionService = {
         `);
         return rows.map(normalizeRow);
       } catch (error: any) {
-        console.warn("Level 1 Query failed (Schema Mismatch). Trying Level 2...", error.message);
-        
-        try {
-            const rows = await db.query(`
-                SELECT 
-                  t.code, t.date, t.description, t.amount, t.type, 
-                  t.category_code as "categoryCode", c.name as "categoryName",
-                  t.account_code as "accountCode", a.name as "accountName",
-                  t.property_code as "propertyCode", p.name as "propertyName",
-                  t.destination_account_code as "destinationAccountCode",
-                  da.name as "destinationAccountName",
-                  t.created_at as "createdAt",
-                  t.loan_id as "loanId", t.loan_code as "loanCode", t.payment_number as "paymentNumber"
-                FROM transactions t
-                LEFT JOIN categories c ON t.category_code = c.code
-                LEFT JOIN accounts a ON t.account_code = a.code
-                LEFT JOIN accounts da ON t.destination_account_code = da.code
-                LEFT JOIN properties p ON t.property_code = p.code
-                ORDER BY t.date DESC, t.created_at DESC
-            `);
-            return rows.map(normalizeRow);
-        } catch (error2: any) {
-            console.warn("Level 2 Query failed. Trying Level 3 (Bare Minimum)...", error2.message);
-            
-            try {
-                const rows = await db.query(`
-                    SELECT 
-                      t.code, t.date, t.description, t.amount, t.type, 
-                      t.category_code as "categoryCode", c.name as "categoryName",
-                      t.account_code as "accountCode", a.name as "accountName",
-                      t.property_code as "propertyCode", p.name as "propertyName"
-                    FROM transactions t
-                    LEFT JOIN categories c ON t.category_code = c.code
-                    LEFT JOIN accounts a ON t.account_code = a.code
-                    LEFT JOIN properties p ON t.property_code = p.code
-                    ORDER BY t.date DESC
-                `);
-                return rows.map(normalizeRow);
-            } catch (error3: any) {
-                console.error("CRITICAL: All query attempts failed.", error3);
-                return [];
-            }
-        }
+        console.warn("Transaction Fetch Error:", error.message);
+        return [];
       }
     } else {
       await delay(300);
@@ -165,251 +125,145 @@ export const TransactionService = {
   create: async (data: TransactionFormData): Promise<Transaction> => {
     let transactionData: any = { ...data };
     
-    // FETCH NAMES TO SATISFY NOT-NULL CONSTRAINTS
-    let categoryName = data.categoryCode;
-    let accountName = data.accountCode;
-    let destinationAccountName = null;
-
     if (db.isConfigured()) {
-       try {
-           if (data.categoryCode) {
-               const catRes = await db.query('SELECT name FROM categories WHERE code=$1', [data.categoryCode]);
-               if (catRes.length > 0) categoryName = catRes[0].name;
-           }
-           if (data.accountCode) {
-               const accRes = await db.query('SELECT name FROM accounts WHERE code=$1', [data.accountCode]);
-               if (accRes.length > 0) accountName = accRes[0].name;
-           }
-           if (data.destinationAccountCode) {
-               const destRes = await db.query('SELECT name FROM accounts WHERE code=$1', [data.destinationAccountCode]);
-               if (destRes.length > 0) destinationAccountName = destRes[0].name;
-           }
-       } catch (e) {
-           console.warn("Could not fetch names for snapshot:", e);
-       }
+      const rows = await db.query('SELECT code FROM transactions');
+      const existing = rows.map(r => ({ code: r.code } as Transaction));
+      const newCode = generateNextCode(existing);
 
-       // --- 1. UPDATE ACCOUNT BALANCE ---
-       const amount = Number(data.amount);
-       if (data.type === 'INGRESO') {
-           await db.query('UPDATE accounts SET initial_balance = initial_balance + $1 WHERE code=$2', [amount, data.accountCode]);
-       } else if (data.type === 'GASTO') {
-           await db.query('UPDATE accounts SET initial_balance = initial_balance - $1 WHERE code=$2', [amount, data.accountCode]);
-       } else if (data.type === 'TRANSFERENCIA' && data.destinationAccountCode) {
-           await db.query('UPDATE accounts SET initial_balance = initial_balance - $1 WHERE code=$2', [amount, data.accountCode]);
-           await db.query('UPDATE accounts SET initial_balance = initial_balance + $1 WHERE code=$2', [amount, data.destinationAccountCode]);
-       }
+      if (data.type === 'TRANSFERENCIA' && data.destinationAccountCode) {
+          // 1. Withdrawal
+          await db.query(`
+            INSERT INTO transactions (
+                code, date, description, amount, type, category_code, account_code, 
+                property_code, contract_code, tenant_code, 
+                destination_account_code, loan_id, loan_code, payment_number
+            )
+            VALUES ($1, $2, $3, $4, 'GASTO', $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          `, [newCode, data.date, data.description, data.amount, 'CAT-EXP-013', data.accountCode, 
+              data.propertyCode || null, data.contractCode || null, data.tenantCode || null, 
+              data.destinationAccountCode, data.loanId || null, data.loanCode || null, data.paymentNumber || null]);
 
-       // --- 2. INSERT TRANSACTION ---
-       const rows = await db.query('SELECT code FROM transactions');
-       const existing = rows.map(r => ({ code: r.code } as Transaction));
-       const newCode = generateNextCode(existing);
-       
-       try {
-           // ATTEMPT 1: FULL INSERT
-           await db.query(`
-             INSERT INTO transactions (
-               code, date, description, amount, type, category_code, category_name, account_code, account_name,
-               property_code, contract_code, tenant_code, destination_account_code, destination_account_name,
-               loan_id, loan_code, payment_number
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-           `, [
-             newCode, data.date, data.description, data.amount, data.type, 
-             data.categoryCode, categoryName, 
-             data.accountCode, accountName,
-             data.propertyCode || null, 
-             data.contractCode || null, data.tenantCode || null,
-             data.destinationAccountCode || null, destinationAccountName, 
-             data.loanId || null, data.loanCode || null, data.paymentNumber || null
-           ]);
-       } catch (e: any) {
-           console.warn("Full Insert failed, trying Real Estate safe insert...", e.message);
-           
-           try {
-               // ATTEMPT 2: REAL ESTATE SAFE INSERT (Includes category_name)
-               await db.query(`
-                 INSERT INTO transactions (
-                   code, date, description, amount, type, category_code, category_name, account_code, account_name,
-                   property_code, contract_code, tenant_code
-                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-               `, [
-                 newCode, data.date, data.description, data.amount, data.type, 
-                 data.categoryCode, categoryName,
-                 data.accountCode, accountName,
-                 data.propertyCode || null,
-                 data.contractCode || null, data.tenantCode || null
-               ]);
-           } catch (e2: any) {
-               console.warn("Real Estate Insert failed, trying basic insert...", e2.message);
-               // ATTEMPT 3: BARE MINIMUM (Includes category_name)
-               await db.query(`
-                 INSERT INTO transactions (
-                   code, date, description, amount, type, category_code, category_name, account_code, account_name, property_code
-                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-               `, [
-                 newCode, data.date, data.description, data.amount, data.type, 
-                 data.categoryCode, categoryName,
-                 data.accountCode, accountName,
-                 data.propertyCode || null
-               ]);
-           }
-       }
-       
-       return { 
-           code: newCode, 
-           ...data, 
-           categoryName: categoryName || '', 
-           accountName: accountName || '',
-           createdAt: new Date().toISOString() 
-       };
+          // 2. Deposit
+          const newCodeIn = newCode + '-IN';
+          await db.query(`
+            INSERT INTO transactions (
+                code, date, description, amount, type, category_code, account_code,
+                property_code, contract_code, tenant_code, 
+                destination_account_code, loan_id, loan_code, payment_number
+            )
+            VALUES ($1, $2, $3, $4, 'INGRESO', $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          `, [newCodeIn, data.date, data.description, data.amount, 'CAT-INC-007', data.destinationAccountCode, 
+              data.propertyCode || null, data.contractCode || null, data.tenantCode || null, 
+              data.accountCode, data.loanId || null, data.loanCode || null, data.paymentNumber || null]);
+
+          return { code: newCode, ...data, createdAt: new Date().toISOString() } as Transaction;
+
+      } else {
+          // Normal Transaction
+          await db.query(`
+            INSERT INTO transactions (
+                code, date, description, amount, type, category_code, account_code, 
+                property_code, contract_code, billable_period, tenant_code, 
+                destination_account_code, loan_id, loan_code, payment_number
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+          `, [newCode, data.date, data.description, data.amount, data.type, data.categoryCode, data.accountCode, 
+              data.propertyCode || null, data.contractCode || null, data.billablePeriod || null, data.tenantCode || null, 
+              data.destinationAccountCode || null, data.loanId || null, data.loanCode || null, data.paymentNumber || null]);
+
+          return { code: newCode, ...data, createdAt: new Date().toISOString() } as Transaction;
+      }
+
     } else {
-        // LOCAL STORAGE LOGIC
-        await delay(300);
-        
-        // Update Account Balance Local
-        const accData = localStorage.getItem('icash_plus_accounts');
-        const accounts: Account[] = accData ? JSON.parse(accData) : [];
-        const accIdx = accounts.findIndex(a => a.code === data.accountCode);
-        
-        if (accIdx !== -1) {
-            if (data.type === 'INGRESO') accounts[accIdx].initialBalance += Number(data.amount);
-            else if (data.type === 'GASTO') accounts[accIdx].initialBalance -= Number(data.amount);
-            else if (data.type === 'TRANSFERENCIA') {
-                accounts[accIdx].initialBalance -= Number(data.amount);
-                if (data.destinationAccountCode) {
-                    const destIdx = accounts.findIndex(a => a.code === data.destinationAccountCode);
-                    if (destIdx !== -1) accounts[destIdx].initialBalance += Number(data.amount);
-                }
-            }
-            localStorage.setItem('icash_plus_accounts', JSON.stringify(accounts));
-        }
-
-        const existing = await TransactionService.getAll();
-        const newCode = generateNextCode(existing);
-        const newTx: Transaction = {
-            code: newCode,
-            ...data,
-            categoryName: categoryName || '',
-            accountName: accountName || '',
-            createdAt: new Date().toISOString()
-        };
-        const updated = [newTx, ...existing];
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-        return newTx;
+      // Local Storage Logic
+      await delay(300);
+      const existing = await TransactionService.getAll();
+      const newCode = generateNextCode(existing);
+      
+      if (data.type === 'TRANSFERENCIA' && data.destinationAccountCode) {
+          const outTx: Transaction = {
+              code: newCode,
+              ...data,
+              type: 'GASTO',
+              categoryCode: 'CAT-EXP-013', // Transferencia Enviada
+              categoryName: 'Transferencia Enviada',
+              accountName: '',
+              createdAt: new Date().toISOString()
+          };
+          const inTx: Transaction = {
+              code: newCode + '-IN',
+              ...data,
+              type: 'INGRESO',
+              categoryCode: 'CAT-INC-007', // Transferencia Recibida
+              categoryName: 'Transferencia Recibida',
+              accountCode: data.destinationAccountCode,
+              destinationAccountCode: data.accountCode,
+              accountName: '',
+              createdAt: new Date().toISOString()
+          };
+          
+          localStorage.setItem(STORAGE_KEY, JSON.stringify([...existing, outTx, inTx]));
+          return outTx;
+      } else {
+          const newTx: Transaction = {
+              code: newCode,
+              ...data,
+              accountName: '', // Populated on read
+              categoryName: '',
+              createdAt: new Date().toISOString()
+          };
+          localStorage.setItem(STORAGE_KEY, JSON.stringify([...existing, newTx]));
+          return newTx;
+      }
     }
   },
 
   update: async (code: string, data: TransactionFormData): Promise<Transaction> => {
-      // NOTE: Updating amounts and reversing balances correctly in update is complex.
-      // For now, we only update the record description/date/meta without touching balances
-      // to avoid accounting errors. A better approach is Delete + Create New.
       if (db.isConfigured()) {
           await db.query(`
             UPDATE transactions 
-            SET date=$1, description=$2, category_code=$3, property_code=$4
-            WHERE code=$5
-          `, [data.date, data.description, data.categoryCode, data.propertyCode, code]);
-          return { code, ...data } as Transaction;
+            SET date=$1, description=$2, amount=$3, type=$4, category_code=$5, account_code=$6, property_code=$7
+            WHERE code=$8
+          `, [data.date, data.description, data.amount, data.type, data.categoryCode, data.accountCode, data.propertyCode || null, code]);
+          return { code, ...data, createdAt: new Date().toISOString() } as Transaction;
       } else {
+          await delay(200);
           const existing = await TransactionService.getAll();
           const index = existing.findIndex(t => t.code === code);
-          if (index !== -1) {
-              existing[index] = { ...existing[index], ...data };
-              localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
-              return existing[index];
-          }
-          throw new Error("Transaction not found");
+          if (index === -1) throw new Error("Transaction not found");
+          
+          existing[index] = { ...existing[index], ...data };
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+          return existing[index];
       }
   },
 
   delete: async (code: string): Promise<void> => {
-      if (db.isConfigured()) {
-          // 1. Get Transaction Details BEFORE Deleting to reverse balance
-          const txs = await db.query('SELECT amount, type, account_code, destination_account_code FROM transactions WHERE code=$1', [code]);
-          
-          if (txs.length > 0) {
-              const tx = txs[0];
-              const amount = Number(tx.amount);
-              
-              // 2. Reverse Balance
-              if (tx.type === 'INGRESO') {
-                  // Was added, so subtract
-                  await db.query('UPDATE accounts SET initial_balance = initial_balance - $1 WHERE code=$2', [amount, tx.account_code]);
-              } else if (tx.type === 'GASTO') {
-                  // Was subtracted, so add back
-                  await db.query('UPDATE accounts SET initial_balance = initial_balance + $1 WHERE code=$2', [amount, tx.account_code]);
-              } else if (tx.type === 'TRANSFERENCIA') {
-                  // Was subtracted from Origin, Add back
-                  await db.query('UPDATE accounts SET initial_balance = initial_balance + $1 WHERE code=$2', [amount, tx.account_code]);
-                  // Was added to Dest, Subtract
-                  if (tx.destination_account_code) {
-                      await db.query('UPDATE accounts SET initial_balance = initial_balance - $1 WHERE code=$2', [amount, tx.destination_account_code]);
-                  }
-              }
-          }
-
-          // 3. Delete Record
-          await db.query('DELETE FROM transactions WHERE code=$1', [code]);
-      } else {
-          // LOCAL STORAGE LOGIC
-          await delay(200);
-          let existing = await TransactionService.getAll();
-          const tx = existing.find(t => t.code === code);
-          
-          if (tx) {
-              const accData = localStorage.getItem('icash_plus_accounts');
-              const accounts: Account[] = accData ? JSON.parse(accData) : [];
-              const accIdx = accounts.findIndex(a => a.code === tx.accountCode);
-              const amount = Number(tx.amount);
-
-              if (accIdx !== -1) {
-                  if (tx.type === 'INGRESO') accounts[accIdx].initialBalance -= amount;
-                  else if (tx.type === 'GASTO') accounts[accIdx].initialBalance += amount;
-                  else if (tx.type === 'TRANSFERENCIA') {
-                      accounts[accIdx].initialBalance += amount;
-                      if (tx.destinationAccountCode) {
-                          const destIdx = accounts.findIndex(a => a.code === tx.destinationAccountCode);
-                          if (destIdx !== -1) accounts[destIdx].initialBalance -= amount;
-                      }
-                  }
-                  localStorage.setItem('icash_plus_accounts', JSON.stringify(accounts));
-              }
-          }
-
-          existing = existing.filter(t => t.code !== code);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
-      }
+    if (db.isConfigured()) {
+        await db.query('DELETE FROM transactions WHERE code=$1', [code]);
+    } else {
+        await delay(200);
+        let existing = await TransactionService.getAll();
+        existing = existing.filter(t => t.code !== code);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+    }
   },
 
   deleteByCategory: async (categoryCode: string): Promise<number> => {
-      console.log(`TransactionService: Requesting delete for category '${categoryCode}'...`);
+      if (!categoryCode) return 0;
       if (db.isConfigured()) {
-          try {
-              // STEP 1: Get Transactions to reverse balances (Batch logic is hard, simplifying to just delete for bulk purge)
-              // NOTE: For Mass Purge (Repair Tool), we usually accept that balances might be wonky or manually adjusted.
-              // However, user specifically asked for balance adjustment on delete.
-              // Ideally we loop, but for mass delete performance might be an issue.
-              // Assuming this tool is for "Repair", let's strictly just DELETE to avoid timeout, 
-              // BUT the user specifically asked for balance update on individual delete.
-              // For MASS DELETE via SettingsPage, we will just DELETE rows as it's a repair tool.
-              
-              const countRes = await db.query('SELECT count(*) as count FROM transactions WHERE category_code=$1', [categoryCode]);
-              const count = parseInt(countRes[0].count || '0');
-              
-              if (count === 0) return 0;
-
-              // STEP 2: Execute Delete
-              await db.query('DELETE FROM transactions WHERE category_code=$1', [categoryCode]);
-              return count;
-          } catch (e: any) {
-              console.error("TransactionService: DB Delete Error:", e);
-              throw new Error(`DB Error: ${e.message}`);
-          }
+          const result = await db.query(`
+            WITH deleted AS (
+                DELETE FROM transactions WHERE category_code = $1 RETURNING code
+            ) SELECT count(*) FROM deleted;
+          `, [categoryCode]);
+          return parseInt(result[0].count);
       } else {
-          let existing = await TransactionService.getAll();
+          const existing = await TransactionService.getAll();
           const initialLen = existing.length;
-          existing = existing.filter(t => t.categoryCode !== categoryCode);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
-          return initialLen - existing.length;
+          const filtered = existing.filter(t => t.categoryCode !== categoryCode);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+          return initialLen - filtered.length;
       }
   }
 };

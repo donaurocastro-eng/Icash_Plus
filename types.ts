@@ -51,6 +51,7 @@ export interface Transaction {
   propertyCode?: string;  
   propertyName?: string;
   contractCode?: string; // Linked contract
+  billablePeriod?: string; // YYYY-MM for rental payments
 
   destinationAccountCode?: string;
   destinationAccountName?: string;
@@ -77,6 +78,7 @@ export interface TransactionFormData {
   propertyCode?: string;
   propertyName?: string;
   contractCode?: string;
+  billablePeriod?: string; // Explicitly set period (YYYY-MM)
   tenantCode?: string; // Explicitly store tenant for history
   loanId?: string;
   loanCode?: string;
@@ -199,6 +201,7 @@ export interface PaymentFormData {
   amount: number;
   accountCode: string; 
   description: string;
+  billablePeriod?: string; // YYYY-MM
 }
 
 export interface BulkPaymentItem {
@@ -206,6 +209,7 @@ export interface BulkPaymentItem {
     amount: number;
     description: string;
     selected: boolean;
+    billablePeriod?: string; // YYYY-MM
 }
 
 export interface BulkPaymentFormData {

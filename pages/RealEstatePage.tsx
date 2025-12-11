@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { 
   Plus, Search, Edit2, Trash2, Building, Home, Users, FileText, Zap, 
   DollarSign, Calendar, Clock, CheckCircle, TrendingUp, MoreVertical, Key,
-  CreditCard, List, AlertTriangle, ArrowRight, User
+  CreditCard, List, AlertTriangle, ArrowRight, User, Loader, X
 } from 'lucide-react';
 import { 
   Property, Apartment, Tenant, Contract, PropertyServiceItem, Transaction,
@@ -65,6 +65,10 @@ const RealEstatePage: React.FC = () => {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [showPriceHistoryModal, setShowPriceHistoryModal] = useState(false);
+
+  // Delete Confirmation States (Tenants)
+  const [tenantToDelete, setTenantToDelete] = useState<Tenant | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -139,9 +143,21 @@ const RealEstatePage: React.FC = () => {
       try { await TenantService.update(selectedTenant.code, data); await loadData(); setShowTenantModal(false); }
       catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
   };
-  const handleDeleteTenant = async (code: string) => {
-      if(!confirm("¿Eliminar inquilino?")) return;
-      try { await TenantService.delete(code); await loadData(); } catch(e: any) { alert(e.message); }
+  
+  // NEW: Secure Delete Handler for Tenants
+  const handleConfirmDeleteTenant = async () => {
+      if(!tenantToDelete) return;
+      setIsDeleting(true);
+      try { 
+          await TenantService.delete(tenantToDelete.code); 
+          await loadData(); 
+          setTenantToDelete(null);
+          setTimeout(() => alert("✅ Inquilino eliminado correctamente."), 100);
+      } catch(e: any) { 
+          alert(`Error: ${e.message}`); 
+      } finally { 
+          setIsDeleting(false); 
+      }
   };
 
   // ... Contracts
@@ -165,18 +181,15 @@ const RealEstatePage: React.FC = () => {
   const handleOpenPaymentModal = (contract: Contract) => {
       setSelectedContract(contract);
       
-      // GENERATE DETAILED DESCRIPTION
       const t = tenants.find(x => x.code === contract.tenantCode);
       const tenantName = t ? t.fullName : 'Inquilino';
       
       let nextDate = new Date(contract.nextPaymentDate || new Date());
-      // Adjust timezone
       nextDate = new Date(nextDate.valueOf() + nextDate.getTimezoneOffset() * 60000);
       
       const monthName = nextDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
       const label = monthName.charAt(0).toUpperCase() + monthName.slice(1);
       
-      // FORMAT: Contrato: CTR-060 Inquilino: INQ-016 Juan Pérez - Alquiler Enero 2025
       const desc = `Contrato: ${contract.code} Inquilino: ${contract.tenantCode} ${tenantName} - Alquiler ${label}`;
       
       setPaymentModalDesc(desc);
@@ -209,9 +222,6 @@ const RealEstatePage: React.FC = () => {
   };
   const handleHistoryRegisterPayment = (date: Date) => {
       setShowHistoryModal(false);
-      // Re-open payment modal with specific date? 
-      // For simplicity, just opening default payment modal which defaults to next payment date
-      // Ideally, pass the specific date to handleOpenPaymentModal logic if needed
       if (selectedContract) handleOpenPaymentModal(selectedContract);
   };
 
@@ -242,13 +252,21 @@ const RealEstatePage: React.FC = () => {
   };
 
   // Helper
+  const formatDateDisplay = (dateStr: string | undefined) => {
+      if (!dateStr) return '-';
+      const parts = dateStr.split('-');
+      if (parts.length === 3) {
+          return `${parts[2]}/${parts[1]}/${parts[0]}`;
+      }
+      return dateStr;
+  };
+
   const getContractLabel = (c: Contract) => {
       const t = tenants.find(x => x.code === c.tenantCode);
       const a = apartments.find(x => x.code === c.apartmentCode);
       return `${t?.fullName || c.tenantCode} - ${a?.name || c.apartmentCode}`;
   };
 
-  // Derived Lists
   const activeContractsList = contracts.filter(c => c.status === 'ACTIVE');
   
   const delinquentContracts = contracts.filter(c => {
@@ -257,13 +275,59 @@ const RealEstatePage: React.FC = () => {
       const today = new Date();
       const nextPay = new Date(c.nextPaymentDate);
       const nextPayAdjusted = new Date(nextPay.valueOf() + nextPay.getTimezoneOffset() * 60000);
-      return nextPayAdjusted < new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const todayZero = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      return nextPayAdjusted < todayZero;
   });
 
   if(loading) return <div className="flex justify-center items-center h-full"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div></div>;
 
   return (
-      <div className="space-y-6">
+      <div className="space-y-6 relative">
+          
+          {/* TENANT DELETE MODAL */}
+          {tenantToDelete && (
+              <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+                  <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => !isDeleting && setTenantToDelete(null)} />
+                  <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden p-6 animate-fadeIn">
+                      <div className="flex flex-col items-center text-center space-y-4">
+                          <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center">
+                              {isDeleting ? <Loader size={32} className="animate-spin"/> : <Trash2 size={32}/>}
+                          </div>
+                          
+                          <h3 className="text-xl font-bold text-slate-800">
+                              {isDeleting ? 'Eliminando...' : '¿Eliminar Inquilino?'}
+                          </h3>
+                          
+                          {!isDeleting && (
+                              <div className="text-sm text-slate-600">
+                                  <p className="mb-2">Vas a eliminar a: <strong>{tenantToDelete.fullName}</strong></p>
+                                  <p className="text-xs bg-amber-50 border border-amber-100 text-amber-800 p-2 rounded">
+                                      Esto no borrará su historial de pagos, pero desaparecerá de la lista de activos.
+                                  </p>
+                              </div>
+                          )}
+
+                          <div className="flex gap-3 w-full pt-2">
+                              <button 
+                                  onClick={() => setTenantToDelete(null)}
+                                  disabled={isDeleting}
+                                  className="flex-1 py-3 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold hover:bg-slate-50 transition-colors disabled:opacity-50"
+                              >
+                                  Cancelar
+                              </button>
+                              <button 
+                                  onClick={handleConfirmDeleteTenant}
+                                  disabled={isDeleting}
+                                  className="flex-1 py-3 bg-rose-600 text-white rounded-xl font-bold hover:bg-rose-700 shadow-md disabled:opacity-50 flex justify-center items-center gap-2"
+                              >
+                                  {isDeleting ? 'Procesando...' : 'Sí, Eliminar'}
+                              </button>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          )}
+
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
               <div>
                   <h1 className="text-2xl font-bold text-slate-800">Bienes Raíces</h1>
@@ -381,7 +445,7 @@ const RealEstatePage: React.FC = () => {
                                     </td>
                                     <td className="px-6 py-3 text-right">
                                         <button onClick={() => { setSelectedTenant(t); setShowTenantModal(true); }} className="p-1.5 text-slate-400 hover:text-indigo-600"><Edit2 size={16}/></button>
-                                        <button onClick={() => handleDeleteTenant(t.code)} className="p-1.5 text-slate-400 hover:text-red-600"><Trash2 size={16}/></button>
+                                        <button onClick={() => setTenantToDelete(t)} className="p-1.5 text-slate-400 hover:text-red-600"><Trash2 size={16}/></button>
                                     </td>
                                 </tr>
                             ))}
@@ -390,7 +454,7 @@ const RealEstatePage: React.FC = () => {
                  </div>
              )}
 
-             {/* CONTRACTS TAB - REMOVED PAYMENT ACTIONS */}
+             {/* CONTRACTS TAB */}
              {activeTab === 'CONTRACTS' && (
                  <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm">
@@ -409,6 +473,16 @@ const RealEstatePage: React.FC = () => {
                             {contracts.filter(c => getContractLabel(c).toLowerCase().includes(searchTerm.toLowerCase())).map(contract => {
                                 const t = tenants.find(x => x.code === contract.tenantCode);
                                 const a = apartments.find(x => x.code === contract.apartmentCode);
+                                
+                                const today = new Date();
+                                today.setHours(0, 0, 0, 0);
+                                const endObj = contract.endDate ? new Date(contract.endDate) : null;
+                                let isExpired = false;
+                                if (endObj) {
+                                    const endAdjusted = new Date(endObj.valueOf() + endObj.getTimezoneOffset() * 60000);
+                                    isExpired = endAdjusted < today;
+                                }
+
                                 return (
                                     <tr key={contract.code} className="hover:bg-slate-50 group">
                                         <td className="px-6 py-3">
@@ -422,15 +496,20 @@ const RealEstatePage: React.FC = () => {
                                             <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-1"><Home size={10} className="text-slate-400"/><span>{a?.name || contract.apartmentCode}</span></div>
                                         </td>
                                         <td className="px-6 py-3 text-xs text-slate-500">
-                                            <div className="flex items-center gap-1"><Calendar size={10} className="text-emerald-500"/> {contract.startDate}</div>
-                                            <div className="flex items-center gap-1 mt-1"><Calendar size={10} className="text-rose-400"/> {contract.endDate || 'Indefinido'}</div>
+                                            <div className="flex items-center gap-1"><Calendar size={10} className="text-emerald-500"/> {formatDateDisplay(contract.startDate)}</div>
+                                            <div className="flex items-center gap-1 mt-1"><Calendar size={10} className="text-rose-400"/> {contract.endDate ? formatDateDisplay(contract.endDate) : 'Indefinido'}</div>
                                         </td>
                                         <td className="px-6 py-3 text-right font-mono font-bold text-slate-700">{contract.amount.toLocaleString('es-HN', {style:'currency', currency: 'HNL'})}</td>
                                         <td className="px-6 py-3 text-center"><span className="px-2 py-1 bg-slate-100 text-slate-600 rounded font-bold text-xs">Día {contract.paymentDay}</span></td>
-                                        <td className="px-6 py-3 text-center"><span className={`px-2 py-1 rounded text-[10px] font-bold ${contract.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{contract.status === 'ACTIVE' ? 'ACTIVO' : 'INACTIVO'}</span></td>
+                                        <td className="px-6 py-3 text-center">
+                                            {isExpired ? (
+                                                <span className="px-2 py-1 rounded text-[10px] font-bold bg-rose-100 text-rose-700">VENCIDO</span>
+                                            ) : (
+                                                <span className={`px-2 py-1 rounded text-[10px] font-bold ${contract.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{contract.status === 'ACTIVE' ? 'ACTIVO' : 'INACTIVO'}</span>
+                                            )}
+                                        </td>
                                         <td className="px-6 py-3 text-right">
                                             <div className="flex justify-end gap-1">
-                                                {/* REMOVED: Payment and Bulk buttons */}
                                                 <button onClick={() => { setSelectedContract(contract); setShowHistoryModal(true); }} className="p-1.5 text-slate-500 bg-slate-50 hover:bg-slate-100 rounded" title="Historial"><Clock size={16}/></button>
                                                 <button onClick={() => { setSelectedContract(contract); setShowPriceHistoryModal(true); }} className="p-1.5 text-amber-500 bg-amber-50 hover:bg-amber-100 rounded" title="Precios"><TrendingUp size={16}/></button>
                                                 <button onClick={() => { setSelectedContract(contract); setShowContractModal(true); }} className="p-1.5 text-slate-400 hover:text-slate-600 rounded"><Edit2 size={16}/></button>
@@ -445,10 +524,9 @@ const RealEstatePage: React.FC = () => {
                  </div>
              )}
 
-             {/* PAYMENTS TAB (Control de Pagos) */}
+             {/* PAYMENTS TAB */}
              {activeTab === 'PAYMENTS' && (
                  <div>
-                    {/* Header with Description */}
                     <div className="bg-indigo-50 px-6 py-4 border-b border-indigo-100 flex justify-between items-center">
                         <div>
                             <h3 className="text-lg font-bold text-indigo-900">Control de Alquileres</h3>
@@ -473,12 +551,11 @@ const RealEstatePage: React.FC = () => {
                                     const t = tenants.find(x => x.code === contract.tenantCode);
                                     const a = apartments.find(x => x.code === contract.apartmentCode);
                                     
-                                    // Status Logic
                                     const today = new Date();
                                     const nextPay = new Date(contract.nextPaymentDate || contract.startDate);
                                     const nextPayAdjusted = new Date(nextPay.valueOf() + nextPay.getTimezoneOffset() * 60000);
-                                    
-                                    const isOverdue = nextPayAdjusted < new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                                    const todayZero = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                                    const isOverdue = nextPayAdjusted < todayZero;
                                     
                                     return (
                                         <tr key={contract.code} className="hover:bg-slate-50 group">
@@ -498,7 +575,7 @@ const RealEstatePage: React.FC = () => {
                                                 <div className="text-[10px] text-slate-400">{contract.code}</div>
                                             </td>
                                             <td className="px-6 py-3 text-slate-600 font-mono text-xs">
-                                                {contract.nextPaymentDate}
+                                                {formatDateDisplay(contract.nextPaymentDate)}
                                             </td>
                                             <td className="px-6 py-3 text-right font-bold text-slate-700">
                                                 {contract.amount.toLocaleString('es-HN', {style:'currency', currency: 'HNL'})}
@@ -533,20 +610,13 @@ const RealEstatePage: React.FC = () => {
                                         </tr>
                                     );
                                 })}
-                                {activeContractsList.length === 0 && (
-                                    <tr>
-                                        <td colSpan={6} className="p-8 text-center text-slate-400">
-                                            No hay contratos activos para mostrar.
-                                        </td>
-                                    </tr>
-                                )}
                             </tbody>
                         </table>
                     </div>
                  </div>
              )}
 
-             {/* DELINQUENT TAB (En Mora) */}
+             {/* DELINQUENT TAB */}
              {activeTab === 'DELINQUENT' && (
                  <div className="overflow-x-auto">
                     {delinquentContracts.length === 0 ? (
@@ -585,7 +655,7 @@ const RealEstatePage: React.FC = () => {
                                             <td className="px-6 py-3">
                                                 <div className="flex items-center gap-2 text-rose-600 font-bold">
                                                     <AlertTriangle size={16}/>
-                                                    {c.nextPaymentDate}
+                                                    {formatDateDisplay(c.nextPaymentDate)}
                                                 </div>
                                                 <span className="text-xs text-rose-400">Vencido</span>
                                             </td>
