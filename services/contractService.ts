@@ -130,16 +130,18 @@ export const ContractService = {
       
       if (oldAmount !== newAmount) {
           const today = new Date().toISOString().split('T')[0];
-          await db.query(`
-            UPDATE contract_prices 
-            SET end_date = $1 
-            WHERE contract_code = $2 AND end_date IS NULL
-          `, [today, code]);
-          
-          await db.query(`
-            INSERT INTO contract_prices (contract_code, amount, start_date)
-            VALUES ($1, $2, $3)
-          `, [code, newAmount, today]);
+          try {
+            await db.query(`
+                UPDATE contract_prices 
+                SET end_date = $1 
+                WHERE contract_code = $2 AND end_date IS NULL
+            `, [today, code]);
+            
+            await db.query(`
+                INSERT INTO contract_prices (contract_code, amount, start_date)
+                VALUES ($1, $2, $3)
+            `, [code, newAmount, today]);
+          } catch (e) { console.warn("Price history update failed", e); }
       }
 
       return { code, ...data, nextPaymentDate: nextPay, status: 'ACTIVE', createdAt: new Date().toISOString() } as Contract;
@@ -167,28 +169,17 @@ export const ContractService = {
   },
 
   getPriceAtDate: async (contractCode: string, dateStr: string): Promise<number> => {
+      // Simplified: Just return current amount if historical fails or not needed
+      // Keeping basic implementation for compatibility
       if (!db.isConfigured()) {
           const contracts = await ContractService.getAll();
           const c = contracts.find(x => x.code === contractCode);
           return c ? c.amount : 0;
       }
-
       try {
-          const rows = await db.query(`
-            SELECT amount FROM contract_prices
-            WHERE contract_code = $1
-            AND start_date <= $2
-            AND (end_date >= $2 OR end_date IS NULL)
-            ORDER BY start_date DESC
-            LIMIT 1
-          `, [contractCode, dateStr]);
-
-          if (rows.length > 0) return Number(rows[0].amount);
-          
-          const cRows = await db.query(`SELECT amount FROM contracts WHERE code=$1`, [contractCode]);
-          return cRows.length > 0 ? Number(cRows[0].amount) : 0;
+          const rows = await db.query(`SELECT amount FROM contracts WHERE code=$1`, [contractCode]);
+          return rows.length > 0 ? Number(rows[0].amount) : 0;
       } catch (e) {
-          console.error("Error fetching historical price", e);
           return 0;
       }
   },
@@ -208,25 +199,14 @@ export const ContractService = {
             startDate: toDateString(r.startDate),
             endDate: r.endDate ? toDateString(r.endDate) : undefined
         }));
-      } catch (e) {
-          console.error(e);
-          return [];
-      }
+      } catch (e) { return []; }
     }
     return [];
   },
 
   addPriceHistory: async (contractCode: string, amount: number, startDate: string): Promise<void> => {
       if (db.isConfigured()) {
-          await db.query(`
-            INSERT INTO contract_prices (contract_code, amount, start_date)
-            VALUES ($1, $2, $3)
-          `, [contractCode, amount, startDate]);
-          
-          const today = new Date().toISOString().split('T')[0];
-          if (startDate <= today) {
-             await db.query(`UPDATE contracts SET amount=$1 WHERE code=$2`, [amount, contractCode]);
-          }
+          await db.query(`INSERT INTO contract_prices (contract_code, amount, start_date) VALUES ($1, $2, $3)`, [contractCode, amount, startDate]);
       }
   },
 
@@ -236,89 +216,7 @@ export const ContractService = {
       }
   },
 
-  // --- NEW LOGIC: Calculate Outstanding Balance per month ---
-  getContractStatus: async (contractCode: string) => {
-      const contract = (await ContractService.getAll()).find(c => c.code === contractCode);
-      if (!contract) return { months: [], totalDebt: 0 };
-
-      const allTx = await TransactionService.getAll();
-      const contractTx = allTx.filter(t => t.contractCode === contractCode && t.type === 'INGRESO');
-
-      // Loop from Start Date until "Next Month" relative to today
-      const startDate = new Date(contract.startDate);
-      const today = new Date();
-      // Adjust start date timezone
-      const startAdjusted = new Date(startDate.valueOf() + startDate.getTimezoneOffset() * 60000);
-      
-      const statusList = [];
-      let pointer = new Date(startAdjusted);
-      let totalDebt = 0;
-
-      // Limit loop to avoid infinite loops in bad data, max 5 years
-      let safety = 0;
-      // We check until we reach a month that is > today + 1 month (future)
-      const futureLimit = new Date(today.getFullYear(), today.getMonth() + 2, 1);
-
-      while (pointer < futureLimit && safety < 60) {
-          const year = pointer.getFullYear();
-          const month = pointer.getMonth(); // 0-11
-          
-          // Construct period YYYY-MM
-          const period = `${year}-${String(month + 1).padStart(2, '0')}`;
-          
-          // Get Price for this specific month (Due Date = contract payment day)
-          // We construct a "Due Date" for this month to query the price history
-          const paymentDay = contract.paymentDay || 1;
-          const maxDays = new Date(year, month + 1, 0).getDate();
-          const checkDay = Math.min(paymentDay, maxDays);
-          const checkDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(checkDay).padStart(2, '0')}`;
-          
-          const dueAmount = await ContractService.getPriceAtDate(contractCode, checkDateStr);
-
-          // Get Paid Amount for this period
-          // Logic: Sum all transactions that have this billablePeriod OR (fallback) fall in this month if no period set
-          const paidAmount = contractTx
-              .filter(t => {
-                  if (t.billablePeriod) return t.billablePeriod === period;
-                  // Legacy fallback
-                  const tDate = new Date(t.date);
-                  return tDate.getFullYear() === year && tDate.getMonth() === month;
-              })
-              .reduce((sum, t) => sum + t.amount, 0);
-
-          const balance = dueAmount - paidAmount;
-          
-          // Determine status
-          let status = 'PAID';
-          if (balance > 0.01) {
-              // Check if it's strictly in the past (overdue)
-              const monthEnd = new Date(year, month + 1, 0);
-              if (today > monthEnd) {
-                  status = 'OVERDUE'; // Full or Partial Debt
-                  totalDebt += balance;
-              } else {
-                  status = 'CURRENT'; // This month
-              }
-          }
-
-          if (status !== 'PAID') {
-              statusList.push({
-                  period,
-                  monthName: pointer.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }),
-                  dueAmount,
-                  paidAmount,
-                  balance,
-                  status // OVERDUE (Debt) or CURRENT (Current Month)
-              });
-          }
-
-          pointer.setMonth(pointer.getMonth() + 1);
-          safety++;
-      }
-
-      return { months: statusList, totalDebt };
-  },
-
+  // --- SIMPLIFIED PAYMENT REGISTRATION ---
   registerPayment: async (data: PaymentFormData): Promise<void> => {
     const contracts = await ContractService.getAll();
     const contract = contracts.find(c => c.code === data.contractCode);
@@ -342,147 +240,36 @@ export const ContractService = {
        } catch(e) { console.error(e); }
     }
 
-    // 2. Fetch Category
+    // 2. Fetch Category (Income)
     const categories = await CategoryService.getAll();
-    let cat = categories.find(c => c.code === 'CAT-INC-003');
-    if (!cat) cat = categories.find(c => (c.name.toLowerCase().includes('alquiler') || c.name.toLowerCase().includes('renta')) && c.type === 'INGRESO');
-    if (!cat) cat = categories.find(c => c.type === 'INGRESO');
-    if (!cat) throw new Error("No hay categoría de Ingresos disponible.");
-
-    // --- WATERFALL LOGIC ---
-    // Instead of just paying the "Current Period", we must satisfy older debts first.
+    let cat = categories.find(c => c.code === 'CAT-INC-003'); // Renta code if exists
+    if (!cat) cat = categories.find(c => c.type === 'INGRESO' && (c.name.toLowerCase().includes('alquiler') || c.name.toLowerCase().includes('renta')));
+    if (!cat) cat = categories.find(c => c.type === 'INGRESO'); // Fallback
     
-    // Get current status map
-    const { months } = await ContractService.getContractStatus(contract.code);
-    // Sort months ascending (oldest first)
-    const pendingMonths = months.sort((a, b) => a.period.localeCompare(b.period));
+    // 3. Create Transaction
+    await TransactionService.create({
+        date: data.date,
+        amount: data.amount,
+        description: data.description,
+        type: 'INGRESO',
+        categoryCode: cat ? cat.code : '',
+        categoryName: cat ? cat.name : 'Alquiler',
+        accountCode: data.accountCode,
+        propertyCode: propertyCode,
+        propertyName: propertyName,
+        contractCode: contract.code,
+        billablePeriod: data.billablePeriod, // Optional: store if provided, but don't depend logic on it
+        tenantCode: contract.tenantCode
+    });
 
-    let remainingPayment = data.amount;
-    const paymentDate = data.date;
-    const accountCode = data.accountCode;
-    const descriptionBase = data.description; // "Pago Alquiler Julio..."
-
-    // If no pending months detected (e.g. advance payment or system sync issue), 
-    // fall back to simple payment for the provided/current period
-    if (pendingMonths.length === 0) {
-        let period = data.billablePeriod;
-        if (!period && data.date) period = data.date.substring(0, 7);
-        
-        await TransactionService.create({
-            date: paymentDate, amount: remainingPayment, description: descriptionBase,
-            type: 'INGRESO', categoryCode: cat.code, categoryName: cat.name,
-            accountCode: accountCode, propertyCode: propertyCode, propertyName: propertyName,
-            contractCode: contract.code, billablePeriod: period, tenantCode: contract.tenantCode
-        });
-        // Advance date logic (simple)
-        await ContractService.advanceContractDate(contract);
-        return;
-    }
-
-    // Distribute payment
-    let monthsProcessed = 0;
-    
-    for (const month of pendingMonths) {
-        if (remainingPayment <= 0.01) break;
-
-        // How much is owed for this specific month?
-        const debt = month.balance;
-        
-        // How much can we pay?
-        const payAmount = Math.min(remainingPayment, debt);
-        
-        if (payAmount > 0) {
-            // Determine description suffix based on whether it's full or partial coverage of THIS month's debt
-            let descSuffix = ` (${month.period})`;
-            if (payAmount < debt) descSuffix += " - Parcial";
-            else if (month.paidAmount > 0) descSuffix += " - Saldo";
-
-            await TransactionService.create({
-                date: paymentDate,
-                amount: payAmount,
-                description: `${descriptionBase}${descSuffix}`,
-                type: 'INGRESO',
-                categoryCode: cat.code,
-                categoryName: cat.name,
-                accountCode: accountCode,
-                propertyCode: propertyCode,
-                propertyName: propertyName,
-                contractCode: contract.code,
-                billablePeriod: month.period, // Tag correctly to the OLD month
-                tenantCode: contract.tenantCode
-            });
-
-            remainingPayment -= payAmount;
-            monthsProcessed++;
-        }
-    }
-
-    // Surplus? (If paid more than total debt)
-    if (remainingPayment > 0.01) {
-        // Find the month AFTER the last pending one
-        const lastPending = pendingMonths[pendingMonths.length - 1];
-        // Calculate next period string
-        const [y, m] = lastPending.period.split('-').map(Number);
-        let nextDate = new Date(y, m, 1); // This is month + 1 because month is 0-indexed in Date but 1-based in string? No. 
-        // period "2025-06" -> y=2025, m=6. new Date(2025, 6, 1) is July 1st. Correct.
-        const nextPeriod = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}`;
-
-        await TransactionService.create({
-            date: paymentDate,
-            amount: remainingPayment,
-            description: `${descriptionBase} (Adelanto ${nextPeriod})`,
-            type: 'INGRESO',
-            categoryCode: cat.code,
-            categoryName: cat.name,
-            accountCode: accountCode,
-            propertyCode: propertyCode,
-            propertyName: propertyName,
-            contractCode: contract.code,
-            billablePeriod: nextPeriod,
-            tenantCode: contract.tenantCode
-        });
-    }
-
-    // Advance Contract "Next Payment Date" if necessary
-    // We check the status again. If the oldest month is now fully paid, we move the date.
-    // Actually, for robustness, we should recalculate the "Next Payment Date" based on the first UNPAID month.
-    // However, to keep it simple and performant, we stick to the existing logic or just trigger the Sync tool logic if possible.
-    // Let's implement a smart "Update Next Date" here.
-    
-    // Re-fetch status after transactions
-    const newStatus = await ContractService.getContractStatus(contract.code);
-    // The first month in the list is the first month with a balance > 0
-    // If list is empty, all paid up to the future limit.
-    if (newStatus.months.length > 0) {
-        // Set next payment date to the first month with debt
-        const firstUnpaid = newStatus.months[0]; // ordered ascending
-        const [y, m] = firstUnpaid.period.split('-').map(Number);
-        const day = contract.paymentDay || 1;
-        // Careful with days > 28
-        const maxDays = new Date(y, m, 0).getDate();
-        const finalDay = Math.min(day, maxDays);
-        const nextDateStr = `${y}-${String(m).padStart(2, '0')}-${String(finalDay).padStart(2, '0')}`;
-        
-        await ContractService.updateNextPaymentDate(contract.code, nextDateStr);
-    } else {
-        // Everything paid. Set to next month relative to last transaction or today?
-        // Let's rely on standard logic: simply advance one month from current 'nextPaymentDate' is the naive way,
-        // but since we did waterfall, we might have advanced multiple months.
-        // Let's assume the user pays chronologically. 
-        // If we paid off June and July, status list is empty (for past).
-        // Let's just advance the date based on how many FULL months were paid in this batch?
-        // Simpler: Just rely on the user or the "Sync" tool in Settings for complex edge cases.
-        // But to be helpful:
-        await ContractService.advanceContractDate(contract); 
-    }
+    // 4. Simple Date Advancement (Next Month)
+    await ContractService.advanceContractDate(contract);
   },
 
-  // Helper to update specific field
   updateNextPaymentDate: async (code: string, dateStr: string) => {
       if (db.isConfigured()) {
           await db.query('UPDATE contracts SET next_payment_date=$1 WHERE code=$2', [dateStr, code]);
       } else {
-          // Local storage update...
           const data = localStorage.getItem(STORAGE_KEY);
           if (data) {
               const list = JSON.parse(data);
@@ -497,8 +284,12 @@ export const ContractService = {
 
   advanceContractDate: async (contract: Contract) => {
       let nextDate = new Date(contract.nextPaymentDate || contract.startDate);
+      // Adjust timezone
       nextDate = new Date(nextDate.valueOf() + nextDate.getTimezoneOffset() * 60000);
+      
+      // Simple logic: Add 1 month
       nextDate.setMonth(nextDate.getMonth() + 1);
+      
       const nextDateStr = nextDate.toISOString().split('T')[0];
       await ContractService.updateNextPaymentDate(contract.code, nextDateStr);
   },
@@ -507,26 +298,14 @@ export const ContractService = {
       const paymentsToProcess = data.items.filter(i => i.selected);
       if (paymentsToProcess.length === 0) return;
       
+      // Bulk is just looping the simple registration
       for (const item of paymentsToProcess) {
-          const historicalAmount = await ContractService.getPriceAtDate(data.contractCode, item.date);
-          const finalAmount = historicalAmount > 0 ? historicalAmount : item.amount;
-
-          // Determine period from the Item Date (which is the due date of that month)
           const period = item.date.substring(0, 7); 
-
-          // Here we use simple creation because Bulk is explicit about periods
-          // However, ideally we should route through registerPayment if we want waterfall.
-          // But bulk is usually manual override. Let's keep strict period assignment for bulk.
-          
-          // Re-implement simplified version of registerPayment's core without waterfall for Bulk
-          // ... (Existing bulk logic is fine as it targets specific periods explicitly)
-          // Actually, let's just allow the direct creation as before, but ensure bills link correctly.
-          
           await ContractService.registerPayment({
               contractCode: data.contractCode,
               accountCode: data.accountCode,
-              amount: finalAmount, 
-              date: item.date, // Payment Date recorded as Due Date for bulk
+              amount: item.amount, 
+              date: item.date, 
               billablePeriod: period,
               description: item.description
           });
