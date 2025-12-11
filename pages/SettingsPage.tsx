@@ -151,45 +151,74 @@ const SettingsPage: React.FC = () => {
 
   // --- REPAIR TOOL 2: RESET CONTRACTS ---
   const handleResetContracts = async () => {
-      if (!confirm("PELIGRO: Esto pondrá la 'Fecha de Próximo Pago' de TODOS los contratos activos igual a su 'Fecha de Inicio'.\n\nÚsala solo si borraste todos los pagos y quieres empezar de cero.")) return;
+      addLog("🛑 SISTEMA: Solicitando confirmación al usuario...");
+      
+      // Small delay to allow UI to render the log before confirm blocks
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      if (!confirm("PELIGRO: Esto cambiará la 'Fecha de Próximo Pago' de TODOS los contratos activos para que sea igual a su 'Fecha de Inicio'.\n\n¿Estás seguro de que quieres reiniciar el calendario de cobros?")) {
+          addLog("🚫 Acción cancelada por el usuario.");
+          return;
+      }
       
       setIsResettingContracts(true);
-      addLog("⏳ Rebobinando fechas de contratos al inicio...");
+      addLog("⏳ Iniciando rebobinado de contratos...");
+      
       try {
           if (db.isConfigured()) {
-              await db.query(`
+              addLog("☁️ Conectando a Base de Datos Nube (Neon)...");
+              const result = await db.query(`
                 UPDATE contracts 
                 SET next_payment_date = start_date 
                 WHERE status = 'ACTIVE'
+                RETURNING code
               `);
-              addLog("✅ Contratos reiniciados a su fecha de inicio original (DB).");
-              alert("✅ Contratos reiniciados correctamente.");
+              addLog(`✅ DB UPDATE: Se actualizaron ${result.length} contratos en la nube.`);
+              alert("✅ Contratos reiniciados correctamente en la nube.");
           } else {
-              // LOCAL STORAGE LOGIC
+              // LOCAL STORAGE LOGIC - VERBOSE
+              addLog("💾 Modo Local detectado. Accediendo a 'icash_plus_contracts'...");
               const contractsStr = localStorage.getItem('icash_plus_contracts');
+              
               if (contractsStr) {
                   let contracts: Contract[] = JSON.parse(contractsStr);
+                  addLog(`📊 Análisis: Se encontraron ${contracts.length} contratos totales en memoria.`);
+                  
                   let count = 0;
-                  contracts = contracts.map(c => {
+                  const updatedContracts = contracts.map(c => {
                       if (c.status === 'ACTIVE') {
+                          addLog(`✏️ Modificando contrato ${c.code}: ${c.nextPaymentDate} -> ${c.startDate}`);
                           count++;
                           return { ...c, nextPaymentDate: c.startDate };
+                      } else {
+                          addLog(`⏭️ Omitiendo contrato ${c.code} (Estado: ${c.status})`);
                       }
                       return c;
                   });
-                  localStorage.setItem('icash_plus_contracts', JSON.stringify(contracts));
-                  addLog(`✅ ${count} contratos reiniciados a su fecha de inicio original (Local).`);
-                  alert(`✅ ${count} contratos reiniciados correctamente.`);
+
+                  if (count > 0) {
+                      localStorage.setItem('icash_plus_contracts', JSON.stringify(updatedContracts));
+                      addLog(`💾 Guardando cambios en LocalStorage...`);
+                      addLog(`✅ ÉXITO: ${count} contratos fueron reiniciados a su fecha original.`);
+                      alert(`✅ ÉXITO: ${count} contratos reiniciados.`);
+                      // Force event to update other components
+                      window.dispatchEvent(new Event('storage'));
+                  } else {
+                      addLog("⚠️ ALERTA: No se encontraron contratos con estado 'ACTIVE' para reiniciar.");
+                      alert("No hay contratos Activos para reiniciar.");
+                  }
               } else {
-                  addLog("⚠️ No se encontraron contratos en memoria local.");
-                  alert("No hay contratos para reiniciar.");
+                  addLog("❌ ERROR: No existen datos de contratos en la memoria local.");
+                  alert("No hay contratos guardados.");
               }
           }
       } catch (e: any) {
-          addLog(`❌ Error: ${e.message}`);
+          addLog(`❌ EXCEPCIÓN: ${e.message}`);
+          console.error(e);
           alert(`Error: ${e.message}`);
       } finally {
           setIsResettingContracts(false);
+          addLog("🏁 Operación de rebobinado finalizada.");
       }
   };
 
