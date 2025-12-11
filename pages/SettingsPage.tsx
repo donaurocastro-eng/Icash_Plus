@@ -36,10 +36,11 @@ const SettingsPage: React.FC = () => {
   const [selectedPurgeCategory, setSelectedPurgeCategory] = useState('');
   const [purgeCount, setPurgeCount] = useState<number | null>(null);
   const [isPurging, setIsPurging] = useState(false);
-  const [showPurgeConfirmUI, setShowPurgeConfirmUI] = useState(false); // New explicit UI state
+  const [showPurgeConfirmUI, setShowPurgeConfirmUI] = useState(false); 
 
   // States for Contract Reset
   const [isResettingContracts, setIsResettingContracts] = useState(false);
+  const [showResetConfirmUI, setShowResetConfirmUI] = useState(false); // New explicit UI state for reset
 
   useEffect(() => {
     loadCategories();
@@ -92,7 +93,7 @@ const SettingsPage: React.FC = () => {
           return;
       }
       setInitLoading(true);
-      setShowPurgeConfirmUI(false); // Reset confirm UI
+      setShowPurgeConfirmUI(false); 
       try {
           // Count only
           const txs = await TransactionService.getAll();
@@ -150,17 +151,12 @@ const SettingsPage: React.FC = () => {
   };
 
   // --- REPAIR TOOL 2: RESET CONTRACTS ---
-  const handleResetContracts = async () => {
-      addLog("🛑 SISTEMA: Solicitando confirmación al usuario...");
-      
-      // Small delay to allow UI to render the log before confirm blocks
-      await new Promise(resolve => setTimeout(resolve, 100));
+  const handleRequestReset = () => {
+      setShowResetConfirmUI(true);
+      addLog("🛑 SISTEMA: Esperando confirmación del usuario para rebobinar...");
+  };
 
-      if (!confirm("PELIGRO: Esto cambiará la 'Fecha de Próximo Pago' de TODOS los contratos activos para que sea igual a su 'Fecha de Inicio'.\n\n¿Estás seguro de que quieres reiniciar el calendario de cobros?")) {
-          addLog("🚫 Acción cancelada por el usuario.");
-          return;
-      }
-      
+  const handleExecuteResetContracts = async () => {
       setIsResettingContracts(true);
       addLog("⏳ Iniciando rebobinado de contratos...");
       
@@ -218,6 +214,7 @@ const SettingsPage: React.FC = () => {
           alert(`Error: ${e.message}`);
       } finally {
           setIsResettingContracts(false);
+          setShowResetConfirmUI(false);
           addLog("🏁 Operación de rebobinado finalizada.");
       }
   };
@@ -500,18 +497,51 @@ const SettingsPage: React.FC = () => {
                           <div className="flex justify-between items-start mb-2">
                               <label className="block text-sm font-bold text-slate-700">2. Rebobinar Contratos</label>
                           </div>
-                          <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200 gap-4">
-                              <p className="text-xs text-slate-500 flex-1">
-                                  Regresa la "Próxima Fecha de Pago" al inicio original del contrato. Útil para reiniciar cobros.
-                              </p>
-                              <button 
-                                  onClick={handleResetContracts}
-                                  disabled={isResettingContracts}
-                                  className="px-4 py-2 bg-amber-500 text-white font-bold rounded-lg hover:bg-amber-600 shadow-sm text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap"
-                              >
-                                  {isResettingContracts ? <Activity size={16} className="animate-spin"/> : <Rewind size={16}/>}
-                                  Resetear
-                              </button>
+                          
+                          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-4">
+                              <div className="flex items-center justify-between gap-4">
+                                  <p className="text-xs text-slate-500 flex-1">
+                                      Regresa la "Próxima Fecha de Pago" al inicio original del contrato. Útil si borraste pagos y quieres empezar de nuevo.
+                                  </p>
+                                  {!showResetConfirmUI && (
+                                      <button 
+                                          onClick={handleRequestReset}
+                                          disabled={isResettingContracts}
+                                          className="px-4 py-2 bg-amber-500 text-white font-bold rounded-lg hover:bg-amber-600 shadow-sm text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap"
+                                      >
+                                          {isResettingContracts ? <Activity size={16} className="animate-spin"/> : <Rewind size={16}/>}
+                                          Resetear
+                                      </button>
+                                  )}
+                              </div>
+
+                              {/* CONFIRMATION UI FOR RESET */}
+                              {showResetConfirmUI && (
+                                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 animate-fadeIn">
+                                      <div className="flex items-center gap-2 text-amber-800 font-bold mb-2">
+                                          <AlertTriangle size={20}/>
+                                          Confirmar Rebobinado
+                                      </div>
+                                      <p className="text-xs text-amber-800 mb-4 leading-relaxed">
+                                          Estás a punto de cambiar la fecha de cobro de <strong>TODOS los contratos activos</strong> a su fecha de inicio original.<br/><br/>
+                                          <strong>Ejemplo:</strong> Si el contrato inició en Enero y ya pagaron hasta Marzo, al resetear, el sistema volverá a cobrar Enero.
+                                      </p>
+                                      <div className="flex gap-2">
+                                          <button 
+                                              onClick={() => { setShowResetConfirmUI(false); addLog("🚫 Acción cancelada por el usuario."); }}
+                                              className="flex-1 py-2 bg-white border border-amber-200 text-amber-800 rounded-lg text-xs font-bold hover:bg-amber-100"
+                                          >
+                                              Cancelar
+                                          </button>
+                                          <button 
+                                              onClick={handleExecuteResetContracts}
+                                              className="flex-[2] py-2 bg-amber-600 text-white rounded-lg text-xs font-bold hover:bg-amber-700 shadow-sm flex justify-center items-center gap-2"
+                                          >
+                                              <Rewind size={14}/> SÍ, REINICIAR FECHAS
+                                          </button>
+                                      </div>
+                                  </div>
+                              )}
                           </div>
                       </div>
                   </div>
