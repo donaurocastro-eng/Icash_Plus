@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, AlertCircle, Calendar, CreditCard } from 'lucide-react';
+import { X, Save, AlertCircle, Calendar, CreditCard, Clock, FileText } from 'lucide-react';
 import { Contract, PaymentFormData, Account } from '../types';
 import { AccountService } from '../services/accountService';
 
@@ -27,34 +27,58 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     date: new Date().toISOString().split('T')[0],
     amount: 0,
     accountCode: '',
-    description: ''
+    description: '',
+    billablePeriod: ''
   });
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [periodDisplay, setPeriodDisplay] = useState('');
 
   useEffect(() => {
     if (isOpen && contract) {
       loadAccounts();
       
-      // LOGIC: Use contract next payment date as default, fallback to today
+      // LOGIC: Use contract next payment date as default reference for the PERIOD
       let defaultDate = new Date().toISOString().split('T')[0];
+      let billablePeriod = '';
+      let displayMonth = '';
+
       if (contract.nextPaymentDate) {
-          // Ensure we handle the string YYYY-MM-DD correctly without timezone shifts
-          // If the string is already YYYY-MM-DD, we use it directly.
-          if (contract.nextPaymentDate.length === 10) {
-              defaultDate = contract.nextPaymentDate;
-          } else {
-              // If it's a full ISO string
-              defaultDate = contract.nextPaymentDate.split('T')[0];
-          }
+          // 1. Resolve exact date string YYYY-MM-DD
+          const nextPayStr = contract.nextPaymentDate.length >= 10 
+              ? contract.nextPaymentDate.substring(0, 10) 
+              : new Date().toISOString().split('T')[0];
+          
+          defaultDate = nextPayStr;
+          
+          // 2. Set Billable Period (YYYY-MM) strictly from Contract Schedule
+          // This ensures that even if user changes the date to next month, 
+          // the payment is recorded for THIS schedule month.
+          billablePeriod = nextPayStr.substring(0, 7);
+
+          // 3. Create readable display
+          // Create date object adjusting for timezone to prevent month shifting
+          const dateObj = new Date(nextPayStr);
+          const userTimezoneOffset = dateObj.getTimezoneOffset() * 60000;
+          const offsetDate = new Date(dateObj.getTime() + userTimezoneOffset);
+          
+          const monthName = offsetDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+          displayMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+      } else {
+          // Fallback if no next date
+          billablePeriod = new Date().toISOString().substring(0, 7);
+          displayMonth = 'Periodo Actual';
       }
+
+      setPeriodDisplay(displayMonth);
 
       setFormData({
         contractCode: contract.code,
-        date: defaultDate,
+        date: defaultDate, // Initially set transaction date to due date, user can change it
         amount: contract.amount,
         accountCode: '',
-        description: initialDescription
+        description: initialDescription,
+        billablePeriod: billablePeriod // LOCKED to the schedule
       });
       setError(null);
     }
@@ -63,7 +87,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const loadAccounts = async () => {
     try {
       const data = await AccountService.getAll();
-      setAccounts(data);
+      setAccounts(data.filter(a => a.type === 'ACTIVO')); // Only show active accounts for receiving payment
     } catch (e) {
       console.error(e);
     }
@@ -83,96 +107,119 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all scale-100">
-        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all scale-100 max-h-[95vh] flex flex-col">
+        
+        {/* HEADER */}
+        <div className="px-5 py-3 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
           <div>
-            <h3 className="text-lg font-bold text-slate-800">Registrar Pago</h3>
-            <p className="text-xs text-slate-500">{contractLabel}</p>
+            <h3 className="text-base font-bold text-slate-800">Registrar Pago</h3>
+            <p className="text-[10px] text-slate-500 truncate max-w-[250px]">{contractLabel}</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={20} /></button>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={18} /></button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
-           {error && (
-            <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg flex items-center"><AlertCircle size={16} className="mr-2 shrink-0" />{error}</div>
-          )}
+        <div className="overflow-y-auto p-5">
+            <form onSubmit={handleSubmit} className="space-y-4">
+            {error && (
+                <div className="bg-red-50 text-red-600 text-xs p-2.5 rounded-lg flex items-center"><AlertCircle size={14} className="mr-2 shrink-0" />{error}</div>
+            )}
 
-          <div className="space-y-1">
-            <label className="block text-sm font-bold text-slate-700">Fecha de Pago (Vencimiento)</label>
-            <div className="relative">
-              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-              <input 
-                type="date" 
-                className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-700"
-                value={formData.date} 
-                onChange={e => setFormData({...formData, date: e.target.value})} 
-              />
+            {/* PERIOD INFO BOX (COMPACT) */}
+            <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3 flex items-center gap-3">
+                <div className="bg-white p-1.5 rounded-full text-indigo-600 shadow-sm shrink-0">
+                    <Clock size={16} />
+                </div>
+                <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-baseline">
+                        <span className="text-[10px] text-indigo-500 font-bold uppercase tracking-wide">Periodo a Cancelar</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <p className="text-sm font-bold text-indigo-900 leading-tight truncate">{periodDisplay}</p>
+                        <span className="text-[9px] text-indigo-400 bg-indigo-100/50 px-1.5 rounded border border-indigo-100 truncate">
+                            Mes del Contrato
+                        </span>
+                    </div>
+                </div>
             </div>
-          </div>
 
-          <div className="space-y-1">
-            <label className="block text-sm font-bold text-slate-700">Monto a Pagar</label>
-            <div className="relative">
-               {/* Removed DollarSign icon as requested */}
-               <input 
-                 type="number" 
-                 step="0.01" 
-                 className="w-full px-4 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-xl font-bold text-slate-800"
-                 value={formData.amount} 
-                 onChange={e => setFormData({...formData, amount: parseFloat(e.target.value)})} 
-               />
+            <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                    <label className="block text-xs font-bold text-slate-700">Fecha Recibo</label>
+                    <div className="relative">
+                    <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                    <input 
+                        type="date" 
+                        className="w-full pl-8 pr-2 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-700 text-sm"
+                        value={formData.date} 
+                        onChange={e => setFormData({...formData, date: e.target.value})} 
+                    />
+                    </div>
+                </div>
+
+                <div className="space-y-1">
+                    <label className="block text-xs font-bold text-slate-700">Monto</label>
+                    <div className="relative">
+                    <input 
+                        type="number" 
+                        step="0.01" 
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-lg font-bold text-slate-800 text-right"
+                        value={formData.amount} 
+                        onChange={e => setFormData({...formData, amount: parseFloat(e.target.value)})} 
+                    />
+                    </div>
+                </div>
             </div>
-          </div>
 
-          <div className="space-y-1">
-            <label className="block text-sm font-bold text-slate-700">Cuenta de Destino</label>
-             <div className="relative">
-               <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-               <select 
-                 className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 bg-white font-medium text-slate-700"
-                 value={formData.accountCode} 
-                 onChange={e => setFormData({...formData, accountCode: e.target.value})}
-               >
-                 <option value="">Seleccionar Cuenta...</option>
-                 {accounts.map(acc => (
-                   <option key={acc.code} value={acc.code}>{acc.name} ({acc.currency})</option>
-                 ))}
-               </select>
-             </div>
-          </div>
+            <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-700">Cuenta de Destino</label>
+                <div className="relative">
+                <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <select 
+                    className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 bg-white font-medium text-slate-700 text-sm"
+                    value={formData.accountCode} 
+                    onChange={e => setFormData({...formData, accountCode: e.target.value})}
+                >
+                    <option value="">Seleccionar Cuenta...</option>
+                    {accounts.map(acc => (
+                    <option key={acc.code} value={acc.code}>{acc.name} ({acc.currency})</option>
+                    ))}
+                </select>
+                </div>
+            </div>
 
-          <div className="space-y-1">
-            <label className="block text-sm font-bold text-slate-700">Descripción</label>
-            <textarea 
-              className="w-full px-4 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 h-24 resize-none text-sm"
-              value={formData.description} 
-              onChange={e => setFormData({...formData, description: e.target.value})} 
-            />
-          </div>
+            <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-700">Nota / Descripción</label>
+                <textarea 
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 h-16 resize-none text-xs leading-relaxed"
+                value={formData.description} 
+                onChange={e => setFormData({...formData, description: e.target.value})} 
+                />
+            </div>
 
-          <div className="pt-4 flex gap-3">
-            <button 
-                type="button" 
-                onClick={onClose} 
-                className="flex-1 px-4 py-3 bg-white border-2 border-slate-200 rounded-xl text-slate-600 font-bold hover:bg-slate-50 transition-colors"
-            >
-                Cancelar
-            </button>
-            <button 
-                type="submit" 
-                disabled={isSubmitting} 
-                className="flex-1 px-4 py-3 bg-indigo-600 text-white rounded-xl shadow-lg shadow-indigo-200 font-bold hover:bg-indigo-700 transition-all flex justify-center items-center disabled:opacity-70 disabled:shadow-none"
-            >
-               {isSubmitting ? (
-                   <span className="animate-spin h-5 w-5 border-2 border-white/30 border-t-white rounded-full" />
-               ) : (
-                   <>
-                       <Save size={18} className="mr-2"/> Registrar
-                   </>
-               )}
-            </button>
-          </div>
-        </form>
+            <div className="pt-2 flex gap-3">
+                <button 
+                    type="button" 
+                    onClick={onClose} 
+                    className="flex-1 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-600 font-bold hover:bg-slate-50 transition-colors text-sm"
+                >
+                    Cancelar
+                </button>
+                <button 
+                    type="submit" 
+                    disabled={isSubmitting} 
+                    className="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-xl shadow-lg shadow-indigo-200 font-bold hover:bg-indigo-700 transition-all flex justify-center items-center disabled:opacity-70 disabled:shadow-none text-sm"
+                >
+                {isSubmitting ? (
+                    <span className="animate-spin h-4 w-4 border-2 border-white/30 border-t-white rounded-full" />
+                ) : (
+                    <>
+                        <Save size={16} className="mr-2"/> Confirmar
+                    </>
+                )}
+                </button>
+            </div>
+            </form>
+        </div>
       </div>
     </div>
   );

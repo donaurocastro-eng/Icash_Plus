@@ -109,6 +109,13 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
 
   const findTransactionForMonth = (monthIndex: number, currentYear: number) => {
       const found = transactions.find(t => {
+          // PRIORITY: Check billablePeriod first (e.g. "2025-08")
+          if (t.billablePeriod && /^\d{4}-\d{2}$/.test(t.billablePeriod)) {
+              const [bY, bM] = t.billablePeriod.split('-');
+              return parseInt(bY) === currentYear && (parseInt(bM) - 1) === monthIndex;
+          }
+          
+          // FALLBACK: Transaction Date (Legacy behavior or missing period)
           const [tYStr, tMStr] = t.date.split('-');
           const tYear = parseInt(tYStr);
           const tMonth = parseInt(tMStr) - 1;
@@ -169,7 +176,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
             <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-500"><X size={24}/></button>
         </div>
 
-        {/* DEBUG INFO BAR - REQUESTED BY USER */}
+        {/* DEBUG INFO BAR */}
         <div className="bg-slate-800 text-slate-200 px-6 py-2 text-xs font-mono flex flex-wrap gap-4 items-center border-b border-slate-700">
             <div className="flex items-center gap-2">
                 <FileText size={12} className="text-blue-400"/>
