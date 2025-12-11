@@ -54,6 +54,13 @@ const SettingsPage: React.FC = () => {
 
   const addLog = (msg: string) => setInitLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev]);
 
+  // Helper to safely convert DB dates (Date obj or String) to YYYY-MM-DD string
+  const toDateStr = (d: any): string => {
+      if (!d) return '';
+      if (d instanceof Date) return d.toISOString().split('T')[0];
+      return String(d).split('T')[0];
+  };
+
   const handleInitializeStepByStep = async () => {
     if (!window.confirm("Se actualizará la estructura de la base de datos. ¿Continuar?")) return;
     setInitLoading(true);
@@ -194,7 +201,9 @@ const SettingsPage: React.FC = () => {
                   
                   const lastPeriod = txRes[0]?.last_period; // "YYYY-MM" or null
                   const paymentDay = parseInt(contract.payment_day) || 1;
-                  let newNextDate = contract.start_date; // Default to start date if no payments
+                  
+                  // Handle possibly null/Date object start_date
+                  let newNextDate = toDateStr(contract.start_date); // Default to start date if no payments
 
                   if (lastPeriod && /^\d{4}-\d{2}$/.test(lastPeriod)) {
                       const [y, m] = lastPeriod.split('-').map(Number);
@@ -205,9 +214,9 @@ const SettingsPage: React.FC = () => {
                       if (!newNextDate) newNextDate = new Date().toISOString().split('T')[0];
                   }
                   
-                  // Clean dates for comparison (remove T time part if exists)
-                  const currentNextDate = contract.next_payment_date ? contract.next_payment_date.split('T')[0] : '';
-                  const calculatedNextDate = newNextDate.split('T')[0];
+                  // Safe convert existing next payment date from DB (Date obj) to string
+                  const currentNextDate = toDateStr(contract.next_payment_date);
+                  const calculatedNextDate = toDateStr(newNextDate);
 
                   if (currentNextDate !== calculatedNextDate) {
                       await db.query(`UPDATE contracts SET next_payment_date = $1 WHERE code = $2`, [calculatedNextDate, contract.code]);
@@ -312,9 +321,7 @@ const SettingsPage: React.FC = () => {
         for (const contract of contracts) {
             try {
                 if (!contract.next_payment_date) continue;
-                let dateStr = '';
-                if (contract.next_payment_date instanceof Date) dateStr = contract.next_payment_date.toISOString().split('T')[0];
-                else if (typeof contract.next_payment_date === 'string') dateStr = contract.next_payment_date.split('T')[0];
+                const dateStr = toDateStr(contract.next_payment_date);
                 
                 if (!dateStr) continue;
 
