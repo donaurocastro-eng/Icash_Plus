@@ -1,15 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Save, CheckCircle, XCircle, AlertTriangle, Database, RefreshCw, 
-  ShieldAlert, Activity, Terminal, Trash2, Building, Wrench, 
-  FileText, Search, Play, ArrowRight, Check, Scale, Rewind,
-  Settings, ChevronRight, X
+  CheckCircle, AlertTriangle, Database, RefreshCw, 
+  ShieldAlert, Activity, Terminal, Trash2, Wrench, 
+  Search, Play, Check, Calculator,
+  Settings
 } from 'lucide-react';
 import { db } from '../services/db';
-import { ContractService } from '../services/contractService';
 import { TransactionService } from '../services/transactionService';
 import { CategoryService } from '../services/categoryService';
-import { Contract, Category } from '../types';
+import { Category, Contract, Transaction } from '../types';
 
 interface FixItem {
     contractCode: string;
@@ -38,9 +37,9 @@ const SettingsPage: React.FC = () => {
   const [isPurging, setIsPurging] = useState(false);
   const [showPurgeConfirmUI, setShowPurgeConfirmUI] = useState(false); 
 
-  // States for Contract Reset
-  const [isResettingContracts, setIsResettingContracts] = useState(false);
-  const [showResetConfirmUI, setShowResetConfirmUI] = useState(false); // New explicit UI state for reset
+  // States for Contract Sync
+  const [isSyncingContracts, setIsSyncingContracts] = useState(false);
+  const [showSyncConfirmUI, setShowSyncConfirmUI] = useState(false);
 
   useEffect(() => {
     loadCategories();
@@ -66,6 +65,7 @@ const SettingsPage: React.FC = () => {
         addLog("🔧 Verificando columnas de rastreo (Transaction History)...");
         await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS tenant_code text NULL;`); 
         await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS contract_code text NULL;`);
+        await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS billable_period text NULL;`);
         
         addLog("🔧 Verificando columnas financieras...");
         await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS loan_id uuid NULL;`);
@@ -150,72 +150,143 @@ const SettingsPage: React.FC = () => {
       }
   };
 
-  // --- REPAIR TOOL 2: RESET CONTRACTS ---
-  const handleRequestReset = () => {
-      setShowResetConfirmUI(true);
-      addLog("🛑 SISTEMA: Esperando confirmación del usuario para rebobinar...");
+  // --- REPAIR TOOL 2: SYNC CONTRACTS (LOGICA BASADA EN PERIODOS) ---
+  const handleRequestSync = () => {
+      setShowSyncConfirmUI(true);
+      addLog("⚖️ SISTEMA: Preparando sincronización de fechas basada en historial de periodos (billable_period)...");
   };
 
-  const handleExecuteResetContracts = async () => {
-      setIsResettingContracts(true);
-      addLog("⏳ Iniciando rebobinado de contratos...");
+  const getNextMonthDate = (year: number, month: number, targetDay: number): string => {
+      // month is 1-12
+      let nextYear = year;
+      let nextMonth = month + 1;
+      if (nextMonth > 12) {
+          nextMonth = 1;
+          nextYear++;
+      }
+      // Handle end of month overflow (e.g. 31st of Feb)
+      const maxDays = new Date(nextYear, nextMonth, 0).getDate();
+      const finalDay = Math.min(targetDay, maxDays);
+      return `${nextYear}-${String(nextMonth).padStart(2, '0')}-${String(finalDay).padStart(2, '0')}`;
+  };
+
+  const handleExecuteSyncContracts = async () => {
+      setIsSyncingContracts(true);
+      addLog("⏳ Buscando último mes pagado por contrato...");
       
       try {
           if (db.isConfigured()) {
-              addLog("☁️ Conectando a Base de Datos Nube (Neon)...");
-              const result = await db.query(`
-                UPDATE contracts 
-                SET next_payment_date = start_date 
-                WHERE status = 'ACTIVE'
-                RETURNING code
-              `);
-              addLog(`✅ DB UPDATE: Se actualizaron ${result.length} contratos en la nube.`);
-              alert("✅ Contratos reiniciados correctamente en la nube.");
-          } else {
-              // LOCAL STORAGE LOGIC - VERBOSE
-              addLog("💾 Modo Local detectado. Accediendo a 'icash_plus_contracts'...");
-              const contractsStr = localStorage.getItem('icash_plus_contracts');
+              addLog("☁️ Modo Nube: Obteniendo contratos activos...");
+              const contracts = await db.query(`SELECT * FROM contracts WHERE status = 'ACTIVE'`);
+              addLog(`📊 Procesando ${contracts.length} contratos...`);
+
+              let updatedCount = 0;
+
+              for (const contract of contracts) {
+                  // New Logic: Find Max Billable Period (YYYY-MM)
+                  // Ignora montos, solo busca la etiqueta del mes más reciente
+                  const txRes = await db.query(`
+                      SELECT MAX(billable_period) as last_period 
+                      FROM transactions 
+                      WHERE type = 'INGRESO' 
+                      AND contract_code = $1
+                  `, [contract.code]);
+                  
+                  const lastPeriod = txRes[0]?.last_period; // "YYYY-MM" or null
+                  const paymentDay = parseInt(contract.payment_day) || 1;
+                  let newNextDate = contract.start_date; // Default to start date if no payments
+
+                  if (lastPeriod && /^\d{4}-\d{2}$/.test(lastPeriod)) {
+                      const [y, m] = lastPeriod.split('-').map(Number);
+                      newNextDate = getNextMonthDate(y, m, paymentDay);
+                  } else {
+                      // No explicit billable periods found. 
+                      // Reset to start date.
+                      if (!newNextDate) newNextDate = new Date().toISOString().split('T')[0];
+                  }
+                  
+                  // Clean dates for comparison (remove T time part if exists)
+                  const currentNextDate = contract.next_payment_date ? contract.next_payment_date.split('T')[0] : '';
+                  const calculatedNextDate = newNextDate.split('T')[0];
+
+                  if (currentNextDate !== calculatedNextDate) {
+                      await db.query(`UPDATE contracts SET next_payment_date = $1 WHERE code = $2`, [calculatedNextDate, contract.code]);
+                      addLog(`🔄 ${contract.code}: Último periodo ${lastPeriod || 'Ninguno'}. Fecha ajustada a ${calculatedNextDate}`);
+                      updatedCount++;
+                  }
+              }
               
-              if (contractsStr) {
+              addLog(`✅ Sincronización completada. ${updatedCount} contratos corregidos.`);
+              alert(`Se han sincronizado ${updatedCount} contratos basados en los periodos registrados.`);
+
+          } else {
+              // LOCAL STORAGE LOGIC
+              addLog("💾 Modo Local: Leyendo datos...");
+              const contractsStr = localStorage.getItem('icash_plus_contracts');
+              const txStr = localStorage.getItem('icash_plus_transactions');
+              
+              if (contractsStr && txStr) {
                   let contracts: Contract[] = JSON.parse(contractsStr);
-                  addLog(`📊 Análisis: Se encontraron ${contracts.length} contratos totales en memoria.`);
+                  const transactions: Transaction[] = JSON.parse(txStr);
                   
                   let count = 0;
                   const updatedContracts = contracts.map(c => {
-                      if (c.status === 'ACTIVE') {
-                          addLog(`✏️ Modificando contrato ${c.code}: ${c.nextPaymentDate} -> ${c.startDate}`);
+                      if (c.status !== 'ACTIVE') return c;
+
+                      // 1. Find Transactions for this contract with billable_period
+                      const contractTxs = transactions.filter(t => 
+                          t.type === 'INGRESO' && 
+                          t.contractCode === c.code &&
+                          t.billablePeriod
+                      );
+                      
+                      // 2. Find Max Period (String comparison works for YYYY-MM)
+                      let maxPeriod = '';
+                      contractTxs.forEach(t => {
+                          if (t.billablePeriod && t.billablePeriod > maxPeriod) {
+                              maxPeriod = t.billablePeriod!;
+                          }
+                      });
+
+                      // 3. Calc Next Date
+                      const paymentDay = c.paymentDay || 1;
+                      let newNextDate = c.startDate;
+
+                      if (maxPeriod) {
+                          const [y, m] = maxPeriod.split('-').map(Number);
+                          newNextDate = getNextMonthDate(y, m, paymentDay);
+                      }
+
+                      // 4. Update if needed
+                      if (c.nextPaymentDate !== newNextDate) {
+                          addLog(`🔄 ${c.code}: Último mes ${maxPeriod || 'Ninguno'}. Ajustando a ${newNextDate}`);
                           count++;
-                          return { ...c, nextPaymentDate: c.startDate };
-                      } else {
-                          addLog(`⏭️ Omitiendo contrato ${c.code} (Estado: ${c.status})`);
+                          return { ...c, nextPaymentDate: newNextDate };
                       }
                       return c;
                   });
 
                   if (count > 0) {
                       localStorage.setItem('icash_plus_contracts', JSON.stringify(updatedContracts));
-                      addLog(`💾 Guardando cambios en LocalStorage...`);
-                      addLog(`✅ ÉXITO: ${count} contratos fueron reiniciados a su fecha original.`);
-                      alert(`✅ ÉXITO: ${count} contratos reiniciados.`);
-                      // Force event to update other components
+                      addLog(`✅ ÉXITO: ${count} contratos recalibrados.`);
+                      alert(`Sincronización finalizada. ${count} contratos actualizados.`);
                       window.dispatchEvent(new Event('storage'));
                   } else {
-                      addLog("⚠️ ALERTA: No se encontraron contratos con estado 'ACTIVE' para reiniciar.");
-                      alert("No hay contratos Activos para reiniciar.");
+                      addLog("✅ Todos los contratos ya están correctamente sincronizados.");
+                      alert("Todo está en orden. No hubo cambios.");
                   }
               } else {
-                  addLog("❌ ERROR: No existen datos de contratos en la memoria local.");
-                  alert("No hay contratos guardados.");
+                  addLog("❌ No hay datos suficientes para sincronizar.");
               }
           }
       } catch (e: any) {
-          addLog(`❌ EXCEPCIÓN: ${e.message}`);
+          addLog(`❌ ERROR: ${e.message}`);
           console.error(e);
           alert(`Error: ${e.message}`);
       } finally {
-          setIsResettingContracts(false);
-          setShowResetConfirmUI(false);
-          addLog("🏁 Operación de rebobinado finalizada.");
+          setIsSyncingContracts(false);
+          setShowSyncConfirmUI(false);
+          addLog("🏁 Proceso finalizado.");
       }
   };
 
@@ -492,52 +563,56 @@ const SettingsPage: React.FC = () => {
 
                       <div className="w-full h-px bg-rose-100"></div>
 
-                      {/* RESET CONTRACTS */}
+                      {/* SYNC CONTRACTS */}
                       <div>
                           <div className="flex justify-between items-start mb-2">
-                              <label className="block text-sm font-bold text-slate-700">2. Rebobinar Contratos</label>
+                              <label className="block text-sm font-bold text-slate-700">2. Sincronizar Calendario de Cobros</label>
                           </div>
                           
                           <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-4">
                               <div className="flex items-center justify-between gap-4">
-                                  <p className="text-xs text-slate-500 flex-1">
-                                      Regresa la "Próxima Fecha de Pago" al inicio original del contrato. Útil si borraste pagos y quieres empezar de nuevo.
-                                  </p>
-                                  {!showResetConfirmUI && (
+                                  <div className="text-xs text-slate-500 flex-1 space-y-1">
+                                      <p>Analiza el <strong>Periodo Facturable</strong> (YYYY-MM) de los pagos y establece el próximo mes pendiente.</p>
+                                      <p className="text-indigo-600 font-medium">Lógica: Si el último pago es Marzo, el próximo cobro será Abril.</p>
+                                  </div>
+                                  {!showSyncConfirmUI && (
                                       <button 
-                                          onClick={handleRequestReset}
-                                          disabled={isResettingContracts}
-                                          className="px-4 py-2 bg-amber-500 text-white font-bold rounded-lg hover:bg-amber-600 shadow-sm text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap"
+                                          onClick={handleRequestSync}
+                                          disabled={isSyncingContracts}
+                                          className="px-4 py-2 bg-indigo-500 text-white font-bold rounded-lg hover:bg-indigo-600 shadow-sm text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap"
                                       >
-                                          {isResettingContracts ? <Activity size={16} className="animate-spin"/> : <Rewind size={16}/>}
-                                          Resetear
+                                          {isSyncingContracts ? <Activity size={16} className="animate-spin"/> : <Calculator size={16}/>}
+                                          Recalcular
                                       </button>
                                   )}
                               </div>
 
-                              {/* CONFIRMATION UI FOR RESET */}
-                              {showResetConfirmUI && (
-                                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 animate-fadeIn">
-                                      <div className="flex items-center gap-2 text-amber-800 font-bold mb-2">
-                                          <AlertTriangle size={20}/>
-                                          Confirmar Rebobinado
+                              {/* CONFIRMATION UI FOR SYNC */}
+                              {showSyncConfirmUI && (
+                                  <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 animate-fadeIn">
+                                      <div className="flex items-center gap-2 text-indigo-800 font-bold mb-2">
+                                          <RefreshCw size={20}/>
+                                          Confirmar Sincronización
                                       </div>
-                                      <p className="text-xs text-amber-800 mb-4 leading-relaxed">
-                                          Estás a punto de cambiar la fecha de cobro de <strong>TODOS los contratos activos</strong> a su fecha de inicio original.<br/><br/>
-                                          <strong>Ejemplo:</strong> Si el contrato inició en Enero y ya pagaron hasta Marzo, al resetear, el sistema volverá a cobrar Enero.
-                                      </p>
+                                      <div className="text-xs text-indigo-800 mb-4 leading-relaxed space-y-2">
+                                          <p>El sistema ignorará los montos y solo mirará qué meses están marcados como pagados.</p>
+                                          <ul className="list-disc pl-4 space-y-1 opacity-80">
+                                              <li><strong>Pagos Borrados:</strong> Si borras un pago, la fecha retrocederá automáticamente al mes faltante.</li>
+                                              <li><strong>Pagos Futuros:</strong> Si hay meses adelantados, la fecha avanzará.</li>
+                                          </ul>
+                                      </div>
                                       <div className="flex gap-2">
                                           <button 
-                                              onClick={() => { setShowResetConfirmUI(false); addLog("🚫 Acción cancelada por el usuario."); }}
-                                              className="flex-1 py-2 bg-white border border-amber-200 text-amber-800 rounded-lg text-xs font-bold hover:bg-amber-100"
+                                              onClick={() => { setShowSyncConfirmUI(false); addLog("🚫 Acción cancelada por el usuario."); }}
+                                              className="flex-1 py-2 bg-white border border-indigo-200 text-indigo-800 rounded-lg text-xs font-bold hover:bg-indigo-100"
                                           >
                                               Cancelar
                                           </button>
                                           <button 
-                                              onClick={handleExecuteResetContracts}
-                                              className="flex-[2] py-2 bg-amber-600 text-white rounded-lg text-xs font-bold hover:bg-amber-700 shadow-sm flex justify-center items-center gap-2"
+                                              onClick={handleExecuteSyncContracts}
+                                              className="flex-[2] py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 shadow-sm flex justify-center items-center gap-2"
                                           >
-                                              <Rewind size={14}/> SÍ, REINICIAR FECHAS
+                                              <Play size={14}/> EJECUTAR AHORA
                                           </button>
                                       </div>
                                   </div>
