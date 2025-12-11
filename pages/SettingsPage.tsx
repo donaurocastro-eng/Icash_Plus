@@ -478,7 +478,7 @@ const SettingsPage: React.FC = () => {
                               <button 
                                   onClick={handleResetContracts}
                                   disabled={isResettingContracts}
-                                  className="px-4 py-2 bg-amber-50 text-white font-bold rounded-lg hover:bg-amber-600 shadow-sm text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap"
+                                  className="px-4 py-2 bg-amber-500 text-white font-bold rounded-lg hover:bg-amber-600 shadow-sm text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap"
                               >
                                   {isResettingContracts ? <Activity size={16} className="animate-spin"/> : <Rewind size={16}/>}
                                   Resetear
