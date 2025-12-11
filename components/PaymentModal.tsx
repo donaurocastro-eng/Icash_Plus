@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, AlertCircle, Calendar, CreditCard, Clock, FileText } from 'lucide-react';
+import { X, Save, AlertCircle, Calendar, CreditCard, Clock, FileText, AlertTriangle, CheckCircle } from 'lucide-react';
 import { Contract, PaymentFormData, Account } from '../types';
 import { AccountService } from '../services/accountService';
+import { ContractService } from '../services/contractService';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -32,11 +33,16 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   });
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [error, setError] = useState<string | null>(null);
+  
+  // Debt States
+  const [debtAnalysis, setDebtAnalysis] = useState<{months: any[], totalDebt: number} | null>(null);
+  const [loadingDebt, setLoadingDebt] = useState(false);
   const [periodDisplay, setPeriodDisplay] = useState('');
 
   useEffect(() => {
     if (isOpen && contract) {
       loadAccounts();
+      analyzeDebt();
       
       // LOGIC: Use contract next payment date as default reference for the PERIOD
       let defaultDate = new Date().toISOString().split('T')[0];
@@ -44,20 +50,12 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       let displayMonth = '';
 
       if (contract.nextPaymentDate) {
-          // 1. Resolve exact date string YYYY-MM-DD
           const nextPayStr = contract.nextPaymentDate.length >= 10 
               ? contract.nextPaymentDate.substring(0, 10) 
               : new Date().toISOString().split('T')[0];
-          
           defaultDate = nextPayStr;
-          
-          // 2. Set Billable Period (YYYY-MM) strictly from Contract Schedule
-          // This ensures that even if user changes the date to next month, 
-          // the payment is recorded for THIS schedule month.
           billablePeriod = nextPayStr.substring(0, 7);
 
-          // 3. Create readable display
-          // Create date object adjusting for timezone to prevent month shifting
           const dateObj = new Date(nextPayStr);
           const userTimezoneOffset = dateObj.getTimezoneOffset() * 60000;
           const offsetDate = new Date(dateObj.getTime() + userTimezoneOffset);
@@ -65,7 +63,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           const monthName = offsetDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
           displayMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
       } else {
-          // Fallback if no next date
           billablePeriod = new Date().toISOString().substring(0, 7);
           displayMonth = 'Periodo Actual';
       }
@@ -74,11 +71,11 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
       setFormData({
         contractCode: contract.code,
-        date: defaultDate, // Initially set transaction date to due date, user can change it
+        date: defaultDate, 
         amount: contract.amount,
         accountCode: '',
         description: initialDescription,
-        billablePeriod: billablePeriod // LOCKED to the schedule
+        billablePeriod: billablePeriod
       });
       setError(null);
     }
@@ -87,10 +84,27 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const loadAccounts = async () => {
     try {
       const data = await AccountService.getAll();
-      setAccounts(data.filter(a => a.type === 'ACTIVO')); // Only show active accounts for receiving payment
+      setAccounts(data.filter(a => a.type === 'ACTIVO')); 
     } catch (e) {
       console.error(e);
     }
+  };
+
+  const analyzeDebt = async () => {
+      if (!contract) return;
+      setLoadingDebt(true);
+      try {
+          const status = await ContractService.getContractStatus(contract.code);
+          setDebtAnalysis(status);
+          
+          // AUTO-SUGGEST TOTAL: Debt + Current Month
+          // Only if there is debt
+          if (status.totalDebt > 0) {
+              const totalSuggested = status.totalDebt + contract.amount;
+              setFormData(prev => ({ ...prev, amount: totalSuggested }));
+          }
+      } catch (e) { console.error(e); }
+      finally { setLoadingDebt(false); }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -103,6 +117,9 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   };
 
   if (!isOpen || !contract) return null;
+
+  const debtMonths = debtAnalysis?.months.filter(m => m.status === 'OVERDUE') || [];
+  const totalDebt = debtAnalysis?.totalDebt || 0;
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
@@ -122,6 +139,39 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
             <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
                 <div className="bg-red-50 text-red-600 text-xs p-2.5 rounded-lg flex items-center"><AlertCircle size={14} className="mr-2 shrink-0" />{error}</div>
+            )}
+
+            {/* DEBT ALERT SECTION */}
+            {loadingDebt ? (
+                <div className="text-center py-2"><span className="text-xs text-slate-400">Calculando estado de cuenta...</span></div>
+            ) : totalDebt > 0 ? (
+                <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 space-y-2">
+                    <div className="flex items-center gap-2 text-amber-800 font-bold text-xs">
+                        <AlertTriangle size={14}/>
+                        <span>Deuda Acumulada Detectada</span>
+                    </div>
+                    <div className="space-y-1">
+                        {debtMonths.map((m, i) => (
+                            <div key={i} className="flex justify-between text-[11px] text-amber-700/80">
+                                <span>{m.monthName} ({m.period})</span>
+                                <span className="font-mono font-bold text-amber-800">- {m.balance.toLocaleString('es-HN', { style: 'currency', currency: 'HNL' })}</span>
+                            </div>
+                        ))}
+                        <div className="border-t border-amber-200 my-1"></div>
+                        <div className="flex justify-between text-xs font-bold text-amber-900">
+                            <span>Total Mora:</span>
+                            <span>{totalDebt.toLocaleString('es-HN', { style: 'currency', currency: 'HNL' })}</span>
+                        </div>
+                    </div>
+                    <div className="bg-white/60 p-2 rounded text-[10px] text-amber-800 italic">
+                        El sistema distribuirá el pago automáticamente para cubrir primero la deuda más antigua (Junio, etc.) y luego el mes actual.
+                    </div>
+                </div>
+            ) : (
+                <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-2 flex items-center gap-2 text-emerald-700 text-xs font-bold">
+                    <CheckCircle size={14}/>
+                    <span>Al día. No hay deudas pendientes.</span>
+                </div>
             )}
 
             {/* PERIOD INFO BOX (COMPACT) */}
@@ -157,7 +207,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                 </div>
 
                 <div className="space-y-1">
-                    <label className="block text-xs font-bold text-slate-700">Monto</label>
+                    <label className="block text-xs font-bold text-slate-700">Monto Total</label>
                     <div className="relative">
                     <input 
                         type="number" 
