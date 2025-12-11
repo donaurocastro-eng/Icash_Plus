@@ -261,12 +261,16 @@ export const ContractService = {
     }
 
     const categories = await CategoryService.getAll();
-    let cat = categories.find(c => (c.name.toLowerCase().includes('alquiler') || c.name.toLowerCase().includes('renta')) && c.type === 'INGRESO');
+    // 1. Try exact code: CAT-INC-003
+    let cat = categories.find(c => c.code === 'CAT-INC-003');
+    // 2. Fallback to name search
+    if (!cat) cat = categories.find(c => (c.name.toLowerCase().includes('alquiler') || c.name.toLowerCase().includes('renta')) && c.type === 'INGRESO');
+    // 3. Last resort
     if (!cat) cat = categories.find(c => c.type === 'INGRESO');
+    
     if (!cat) throw new Error("No hay categoría de Ingresos disponible.");
 
     // IMPORTANT: Use the passed billablePeriod or fallback to extracting YYYY-MM from the payment date
-    // Note: The UI should ideally pass billablePeriod. If not, we infer it from data.date.
     let targetPeriod = data.billablePeriod;
     if (!targetPeriod && data.date) {
         targetPeriod = data.date.substring(0, 7); // YYYY-MM
@@ -278,6 +282,7 @@ export const ContractService = {
        description: data.description,
        type: 'INGRESO',
        categoryCode: cat.code,
+       categoryName: cat.name, // Explicitly pass name to avoid double fetch/error
        accountCode: data.accountCode,
        propertyCode: propertyCode,
        propertyName: propertyName,
@@ -286,10 +291,7 @@ export const ContractService = {
        tenantCode: contract.tenantCode // Link transaction to specific tenant (Snapshot)
     });
 
-    // Advance Next Payment Date Logic (Simplistic - just advances one month)
-    // In a full partial payment implementation, we would query the balance first.
-    // For now, we assume if payment is registered, we move the pointer.
-    
+    // Advance Next Payment Date Logic
     let nextDate = new Date(contract.nextPaymentDate || contract.startDate);
     // Adjust for timezone to ensure we are operating on the date part
     nextDate = new Date(nextDate.valueOf() + nextDate.getTimezoneOffset() * 60000);

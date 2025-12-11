@@ -73,7 +73,9 @@ export interface TransactionFormData {
   amount: number;
   type: CategoryType;
   categoryCode: string; 
+  categoryName?: string; // Optional: Pass name directly to avoid fetch
   accountCode: string;
+  accountName?: string; // Optional: Pass name directly to avoid fetch
   destinationAccountCode?: string; 
   propertyCode?: string;
   propertyName?: string;

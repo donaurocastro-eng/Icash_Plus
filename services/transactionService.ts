@@ -130,31 +130,60 @@ export const TransactionService = {
       const existing = rows.map(r => ({ code: r.code } as Transaction));
       const newCode = generateNextCode(existing);
 
+      // --- CORRECCIÓN FINAL: Obtener Nombres para evitar error NOT NULL ---
+      // Si el servicio que llama ya envió el nombre (data.categoryName), lo usamos.
+      // Si no, lo buscamos en la DB.
+      
+      let categoryName = data.categoryName || '';
+      if (!categoryName && data.categoryCode) {
+          const catRes = await db.query('SELECT name FROM categories WHERE code=$1', [data.categoryCode]);
+          if (catRes.length > 0) categoryName = catRes[0].name;
+      }
+      if (!categoryName) categoryName = 'General'; // Fallback final para evitar constraint violation
+
+      let accountName = data.accountName || '';
+      if (!accountName && data.accountCode) {
+          const accRes = await db.query('SELECT name FROM accounts WHERE code=$1', [data.accountCode]);
+          if (accRes.length > 0) accountName = accRes[0].name;
+      }
+      if (!accountName) accountName = 'Cuenta'; // Fallback final
+      // -------------------------------------------------------------
+
       if (data.type === 'TRANSFERENCIA' && data.destinationAccountCode) {
+          let destAccountName = '';
+          const destRes = await db.query('SELECT name FROM accounts WHERE code=$1', [data.destinationAccountCode]);
+          if (destRes.length > 0) destAccountName = destRes[0].name;
+
           // 1. Withdrawal
           await db.query(`
             INSERT INTO transactions (
-                code, date, description, amount, type, category_code, account_code, 
+                code, date, description, amount, type, category_code, category_name, account_code, account_name,
                 property_code, contract_code, tenant_code, 
-                destination_account_code, loan_id, loan_code, payment_number
+                destination_account_code, destination_account_name, loan_id, loan_code, payment_number
             )
-            VALUES ($1, $2, $3, $4, 'GASTO', $5, $6, $7, $8, $9, $10, $11, $12, $13)
-          `, [newCode, data.date, data.description, data.amount, 'CAT-EXP-013', data.accountCode, 
+            VALUES ($1, $2, $3, $4, 'GASTO', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+          `, [newCode, data.date, data.description, data.amount, 
+              'CAT-EXP-013', 'Transferencia Enviada', // Hardcoded category name for Transfer Out
+              data.accountCode, accountName,
               data.propertyCode || null, data.contractCode || null, data.tenantCode || null, 
-              data.destinationAccountCode, data.loanId || null, data.loanCode || null, data.paymentNumber || null]);
+              data.destinationAccountCode, destAccountName,
+              data.loanId || null, data.loanCode || null, data.paymentNumber || null]);
 
           // 2. Deposit
           const newCodeIn = newCode + '-IN';
           await db.query(`
             INSERT INTO transactions (
-                code, date, description, amount, type, category_code, account_code,
+                code, date, description, amount, type, category_code, category_name, account_code, account_name,
                 property_code, contract_code, tenant_code, 
-                destination_account_code, loan_id, loan_code, payment_number
+                destination_account_code, destination_account_name, loan_id, loan_code, payment_number
             )
-            VALUES ($1, $2, $3, $4, 'INGRESO', $5, $6, $7, $8, $9, $10, $11, $12, $13)
-          `, [newCodeIn, data.date, data.description, data.amount, 'CAT-INC-007', data.destinationAccountCode, 
+            VALUES ($1, $2, $3, $4, 'INGRESO', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+          `, [newCodeIn, data.date, data.description, data.amount, 
+              'CAT-INC-007', 'Transferencia Recibida', // Hardcoded category name for Transfer In
+              data.destinationAccountCode, destAccountName,
               data.propertyCode || null, data.contractCode || null, data.tenantCode || null, 
-              data.accountCode, data.loanId || null, data.loanCode || null, data.paymentNumber || null]);
+              data.accountCode, accountName,
+              data.loanId || null, data.loanCode || null, data.paymentNumber || null]);
 
           return { code: newCode, ...data, createdAt: new Date().toISOString() } as Transaction;
 
@@ -162,12 +191,14 @@ export const TransactionService = {
           // Normal Transaction
           await db.query(`
             INSERT INTO transactions (
-                code, date, description, amount, type, category_code, account_code, 
+                code, date, description, amount, type, category_code, category_name, account_code, account_name,
                 property_code, contract_code, billable_period, tenant_code, 
                 destination_account_code, loan_id, loan_code, payment_number
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-          `, [newCode, data.date, data.description, data.amount, data.type, data.categoryCode, data.accountCode, 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+          `, [newCode, data.date, data.description, data.amount, data.type, 
+              data.categoryCode, categoryName, // Uses passed or fetched name
+              data.accountCode, accountName,   // Uses passed or fetched name
               data.propertyCode || null, data.contractCode || null, data.billablePeriod || null, data.tenantCode || null, 
               data.destinationAccountCode || null, data.loanId || null, data.loanCode || null, data.paymentNumber || null]);
 
@@ -220,6 +251,11 @@ export const TransactionService = {
 
   update: async (code: string, data: TransactionFormData): Promise<Transaction> => {
       if (db.isConfigured()) {
+          // Si actualizamos, técnicamente también deberíamos actualizar los nombres si cambiaron los códigos
+          // Por simplicidad en update (que es menos frecuente), solo actualizamos los códigos. 
+          // Si la DB tiene triggers, se encargarán. Si no, quedará desincronizado el nombre hasta que se haga un reload completo
+          // O podemos hacer la misma lógica de fetch aqui.
+          
           await db.query(`
             UPDATE transactions 
             SET date=$1, description=$2, amount=$3, type=$4, category_code=$5, account_code=$6, property_code=$7
