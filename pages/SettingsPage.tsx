@@ -162,10 +162,28 @@ const SettingsPage: React.FC = () => {
                 SET next_payment_date = start_date 
                 WHERE status = 'ACTIVE'
               `);
-              addLog("✅ Contratos reiniciados a su fecha de inicio original.");
+              addLog("✅ Contratos reiniciados a su fecha de inicio original (DB).");
               alert("✅ Contratos reiniciados correctamente.");
           } else {
-              alert("Función disponible solo en modo base de datos.");
+              // LOCAL STORAGE LOGIC
+              const contractsStr = localStorage.getItem('icash_plus_contracts');
+              if (contractsStr) {
+                  let contracts: Contract[] = JSON.parse(contractsStr);
+                  let count = 0;
+                  contracts = contracts.map(c => {
+                      if (c.status === 'ACTIVE') {
+                          count++;
+                          return { ...c, nextPaymentDate: c.startDate };
+                      }
+                      return c;
+                  });
+                  localStorage.setItem('icash_plus_contracts', JSON.stringify(contracts));
+                  addLog(`✅ ${count} contratos reiniciados a su fecha de inicio original (Local).`);
+                  alert(`✅ ${count} contratos reiniciados correctamente.`);
+              } else {
+                  addLog("⚠️ No se encontraron contratos en memoria local.");
+                  alert("No hay contratos para reiniciar.");
+              }
           }
       } catch (e: any) {
           addLog(`❌ Error: ${e.message}`);
@@ -460,7 +478,7 @@ const SettingsPage: React.FC = () => {
                               <button 
                                   onClick={handleResetContracts}
                                   disabled={isResettingContracts}
-                                  className="px-4 py-2 bg-amber-500 text-white font-bold rounded-lg hover:bg-amber-600 shadow-sm text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap"
+                                  className="px-4 py-2 bg-amber-50 text-white font-bold rounded-lg hover:bg-amber-600 shadow-sm text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap"
                               >
                                   {isResettingContracts ? <Activity size={16} className="animate-spin"/> : <Rewind size={16}/>}
                                   Resetear
