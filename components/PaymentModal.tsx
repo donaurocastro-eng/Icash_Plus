@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, AlertCircle, Calendar, CreditCard, Clock } from 'lucide-react';
+import { X, Save, AlertCircle, Calendar, CreditCard, Clock, FileText } from 'lucide-react';
 import { Contract, PaymentFormData, Account } from '../types';
 import { AccountService } from '../services/accountService';
 
@@ -38,18 +38,26 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     if (isOpen && contract) {
       loadAccounts();
       
-      // Determine default payment date and label based on Contract Next Payment Date
+      // LOGIC: Use contract next payment date as default reference for the PERIOD
       let defaultDate = new Date().toISOString().split('T')[0];
       let billablePeriod = '';
       let displayMonth = '';
 
       if (contract.nextPaymentDate) {
+          // 1. Resolve exact date string YYYY-MM-DD
           const nextPayStr = contract.nextPaymentDate.length >= 10 
               ? contract.nextPaymentDate.substring(0, 10) 
               : new Date().toISOString().split('T')[0];
+          
           defaultDate = nextPayStr;
+          
+          // 2. Set Billable Period (YYYY-MM) strictly from Contract Schedule
+          // This ensures that even if user changes the date to next month, 
+          // the payment is recorded for THIS schedule month.
           billablePeriod = nextPayStr.substring(0, 7);
 
+          // 3. Create readable display
+          // Create date object adjusting for timezone to prevent month shifting
           const dateObj = new Date(nextPayStr);
           const userTimezoneOffset = dateObj.getTimezoneOffset() * 60000;
           const offsetDate = new Date(dateObj.getTime() + userTimezoneOffset);
@@ -57,6 +65,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           const monthName = offsetDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
           displayMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
       } else {
+          // Fallback if no next date
           billablePeriod = new Date().toISOString().substring(0, 7);
           displayMonth = 'Periodo Actual';
       }
@@ -65,11 +74,11 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
       setFormData({
         contractCode: contract.code,
-        date: defaultDate, 
+        date: defaultDate, // Initially set transaction date to due date, user can change it
         amount: contract.amount,
         accountCode: '',
         description: initialDescription,
-        billablePeriod: billablePeriod
+        billablePeriod: billablePeriod // LOCKED to the schedule
       });
       setError(null);
     }
@@ -78,7 +87,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const loadAccounts = async () => {
     try {
       const data = await AccountService.getAll();
-      setAccounts(data.filter(a => a.type === 'ACTIVO')); 
+      setAccounts(data.filter(a => a.type === 'ACTIVO')); // Only show active accounts for receiving payment
     } catch (e) {
       console.error(e);
     }
@@ -115,7 +124,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                 <div className="bg-red-50 text-red-600 text-xs p-2.5 rounded-lg flex items-center"><AlertCircle size={14} className="mr-2 shrink-0" />{error}</div>
             )}
 
-            {/* PERIOD INFO BOX */}
+            {/* PERIOD INFO BOX (COMPACT) */}
             <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3 flex items-center gap-3">
                 <div className="bg-white p-1.5 rounded-full text-indigo-600 shadow-sm shrink-0">
                     <Clock size={16} />
@@ -126,6 +135,9 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                     </div>
                     <div className="flex items-center gap-2">
                         <p className="text-sm font-bold text-indigo-900 leading-tight truncate">{periodDisplay}</p>
+                        <span className="text-[9px] text-indigo-400 bg-indigo-100/50 px-1.5 rounded border border-indigo-100 truncate">
+                            Mes del Contrato
+                        </span>
                     </div>
                 </div>
             </div>
@@ -145,7 +157,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                 </div>
 
                 <div className="space-y-1">
-                    <label className="block text-xs font-bold text-slate-700">Monto Total</label>
+                    <label className="block text-xs font-bold text-slate-700">Monto</label>
                     <div className="relative">
                     <input 
                         type="number" 
