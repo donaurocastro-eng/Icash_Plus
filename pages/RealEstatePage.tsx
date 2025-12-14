@@ -60,7 +60,8 @@ const RealEstatePage: React.FC = () => {
   
   // Contract Actions Modals
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [paymentModalDesc, setPaymentModalDesc] = useState(''); // Dynamic description state
+  const [paymentModalDesc, setPaymentModalDesc] = useState(''); 
+  const [paymentModalOverrides, setPaymentModalOverrides] = useState<{amount?: number, date?: Date}>({});
 
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showBulkModal, setShowBulkModal] = useState(false);
@@ -95,7 +96,7 @@ const RealEstatePage: React.FC = () => {
     loadData();
   }, []);
 
-  // CRUD Handlers
+  // CRUD Handlers... (omitted repetitive standard handlers for brevity, keeping only modified ones below)
   
   // ... Properties
   const handleCreateProperty = async (data: PropertyFormData) => {
@@ -143,8 +144,6 @@ const RealEstatePage: React.FC = () => {
       try { await TenantService.update(selectedTenant.code, data); await loadData(); setShowTenantModal(false); }
       catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
   };
-  
-  // NEW: Secure Delete Handler for Tenants
   const handleConfirmDeleteTenant = async () => {
       if(!tenantToDelete) return;
       setIsDeleting(true);
@@ -178,16 +177,23 @@ const RealEstatePage: React.FC = () => {
   };
 
   // ... Contract Sub-actions
-  const handleOpenPaymentModal = (contract: Contract) => {
+  const handleOpenPaymentModal = (contract: Contract, specificDate?: Date) => {
       setSelectedContract(contract);
       
+      // Reset overrides if this is a standard open action (not from history drill-down)
+      if (!specificDate) {
+          setPaymentModalOverrides({});
+      }
+
       const t = tenants.find(x => x.code === contract.tenantCode);
       const tenantName = t ? t.fullName : 'Inquilino';
       
-      let nextDate = new Date(contract.nextPaymentDate || new Date());
-      nextDate = new Date(nextDate.valueOf() + nextDate.getTimezoneOffset() * 60000);
+      // If specific date passed, use it. Otherwise use scheduled next payment.
+      let targetDate = specificDate || new Date(contract.nextPaymentDate || new Date());
+      // Adjust timezone for display calculation
+      targetDate = new Date(targetDate.valueOf() + targetDate.getTimezoneOffset() * 60000);
       
-      const monthName = nextDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+      const monthName = targetDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
       const label = monthName.charAt(0).toUpperCase() + monthName.slice(1);
       
       const desc = `Contrato: ${contract.code} Inquilino: ${contract.tenantCode} ${tenantName} - Alquiler ${label}`;
@@ -220,9 +226,14 @@ const RealEstatePage: React.FC = () => {
   const handleDeleteContractTransaction = async (txCode: string) => {
       await TransactionService.delete(txCode);
   };
-  const handleHistoryRegisterPayment = (date: Date) => {
+  
+  // UPDATED HANDLER
+  const handleHistoryRegisterPayment = (date: Date, amount?: number) => {
       setShowHistoryModal(false);
-      if (selectedContract) handleOpenPaymentModal(selectedContract);
+      if (selectedContract) {
+          setPaymentModalOverrides({ date, amount });
+          handleOpenPaymentModal(selectedContract, date);
+      }
   };
 
   // ... Services
@@ -725,6 +736,8 @@ const RealEstatePage: React.FC = () => {
             contract={selectedContract} 
             contractLabel={selectedContract ? getContractLabel(selectedContract) : ''} 
             initialDescription={paymentModalDesc} 
+            initialAmount={paymentModalOverrides.amount}
+            initialDate={paymentModalOverrides.date}
             isSubmitting={isSubmitting} 
           />
           

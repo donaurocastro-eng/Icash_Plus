@@ -10,7 +10,7 @@ interface PaymentHistoryModalProps {
   contractLabel: string;
   tenantName?: string;
   unitName?: string;
-  onRegisterPayment: (monthDate: Date) => void;
+  onRegisterPayment: (monthDate: Date, amount?: number) => void;
   onDeleteTransaction?: (code: string) => Promise<void>;
 }
 
@@ -154,7 +154,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
   const formatDateShort = (dateStr: string | null) => {
       if (!dateStr) return '-';
       const parts = dateStr.split('-');
-      if (parts.length === 3) return `${parts[2]}/${parts[1]}`;
+      if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
       return dateStr;
   };
 
@@ -209,7 +209,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                         // Due Date Calculation
                         const dueDateObj = new Date(year, monthIndex, contract.paymentDay || 1);
                         const dueDateStr = dueDateObj.toLocaleDateString();
-                        const dueDateShort = `${dueDateObj.getDate().toString().padStart(2,'0')}/${(dueDateObj.getMonth()+1).toString().padStart(2,'0')}`;
+                        const dueDateShort = `${dueDateObj.getDate().toString().padStart(2,'0')}/${(dueDateObj.getMonth()+1).toString().padStart(2,'0')}/${dueDateObj.getFullYear()}`;
 
                         // Card Styles
                         let cardClass = "bg-white border-slate-200 opacity-60";
@@ -217,6 +217,8 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                         let statusText = "PENDIENTE";
                         let statusColor = "text-slate-400";
                         let action = null;
+
+                        const remainingAmount = Math.max(0, contract.amount - totalPaid);
 
                         if (status === 'PAID') { 
                             cardClass = "bg-emerald-50 border-emerald-200 opacity-100 ring-1 ring-emerald-100"; 
@@ -229,21 +231,21 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                             statusIcon = <AlertCircle size={16} className="text-orange-500"/>; 
                             statusText = "PARCIAL";
                             statusColor = "text-orange-700 bg-orange-100 border-orange-200";
-                            action = () => onRegisterPayment(dueDateObj);
+                            action = () => onRegisterPayment(dueDateObj, remainingAmount);
                         }
                         else if (status === 'DUE_NOW') { 
                             cardClass = "bg-white border-blue-300 ring-2 ring-blue-100 shadow-md opacity-100 transform scale-[1.02] z-10"; 
                             statusIcon = <DollarSign size={16} className="text-blue-500"/>; 
                             statusText = "COBRAR";
                             statusColor = "text-blue-700 bg-blue-50 border-blue-100";
-                            action = () => onRegisterPayment(dueDateObj);
+                            action = () => onRegisterPayment(dueDateObj, contract.amount);
                         }
                         else if (status === 'OVERDUE') { 
                             cardClass = "bg-rose-50 border-rose-200 shadow-sm opacity-100"; 
                             statusIcon = <AlertCircle size={16} className="text-rose-500"/>; 
                             statusText = "VENCIDO";
                             statusColor = "text-rose-700 bg-rose-100/50 border-rose-100";
-                            action = () => onRegisterPayment(dueDateObj);
+                            action = () => onRegisterPayment(dueDateObj, contract.amount);
                         }
                         else if (status === 'NA') {
                             cardClass = "bg-slate-50 border-slate-100 opacity-30 grayscale";

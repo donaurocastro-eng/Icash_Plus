@@ -10,6 +10,8 @@ interface PaymentModalProps {
   contract: Contract | null;
   contractLabel: string;
   initialDescription: string;
+  initialAmount?: number;
+  initialDate?: Date;
   isSubmitting: boolean;
 }
 
@@ -20,6 +22,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   contract,
   contractLabel,
   initialDescription,
+  initialAmount,
+  initialDate,
   isSubmitting
 }) => {
   const [formData, setFormData] = useState<PaymentFormData>({
@@ -38,51 +42,44 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     if (isOpen && contract) {
       loadAccounts();
       
-      // LOGIC: Use contract next payment date as default reference for the PERIOD
-      let defaultDate = new Date().toISOString().split('T')[0];
-      let billablePeriod = '';
-      let displayMonth = '';
-
-      if (contract.nextPaymentDate) {
-          // 1. Resolve exact date string YYYY-MM-DD
-          const nextPayStr = contract.nextPaymentDate.length >= 10 
+      // LOGIC: Use passed initialDate, or contract next payment date, or today
+      let targetDateStr = '';
+      
+      if (initialDate) {
+          // Adjust for timezone to get local YYYY-MM-DD from Date object passed
+          const offsetDate = new Date(initialDate.valueOf() + initialDate.getTimezoneOffset() * 60000);
+          targetDateStr = offsetDate.toISOString().split('T')[0];
+      } else if (contract.nextPaymentDate) {
+          targetDateStr = contract.nextPaymentDate.length >= 10 
               ? contract.nextPaymentDate.substring(0, 10) 
               : new Date().toISOString().split('T')[0];
-          
-          defaultDate = nextPayStr;
-          
-          // 2. Set Billable Period (YYYY-MM) strictly from Contract Schedule
-          // This ensures that even if user changes the date to next month, 
-          // the payment is recorded for THIS schedule month.
-          billablePeriod = nextPayStr.substring(0, 7);
-
-          // 3. Create readable display
-          // Create date object adjusting for timezone to prevent month shifting
-          const dateObj = new Date(nextPayStr);
-          const userTimezoneOffset = dateObj.getTimezoneOffset() * 60000;
-          const offsetDate = new Date(dateObj.getTime() + userTimezoneOffset);
-          
-          const monthName = offsetDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
-          displayMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
       } else {
-          // Fallback if no next date
-          billablePeriod = new Date().toISOString().substring(0, 7);
-          displayMonth = 'Periodo Actual';
+          targetDateStr = new Date().toISOString().split('T')[0];
       }
+      
+      // Set Billable Period (YYYY-MM)
+      const billablePeriod = targetDateStr.substring(0, 7);
+
+      // Create readable display
+      const dateObj = new Date(targetDateStr);
+      // Adjust timezone for display calculation
+      const displayDate = new Date(dateObj.valueOf() + dateObj.getTimezoneOffset() * 60000);
+      const monthName = displayDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+      const displayMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
 
       setPeriodDisplay(displayMonth);
 
       setFormData({
         contractCode: contract.code,
-        date: defaultDate, // Initially set transaction date to due date, user can change it
-        amount: contract.amount,
+        date: targetDateStr, // Initially set transaction date to due date, user can change it
+        amount: initialAmount !== undefined ? initialAmount : contract.amount,
         accountCode: '',
         description: initialDescription,
         billablePeriod: billablePeriod // LOCKED to the schedule
       });
       setError(null);
     }
-  }, [isOpen, contract, initialDescription]);
+  }, [isOpen, contract, initialDescription, initialAmount, initialDate]);
 
   const loadAccounts = async () => {
     try {
