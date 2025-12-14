@@ -197,7 +197,7 @@ export const ContractService = {
         `, [contractCode]);
         return rows.map(r => ({
             ...r,
-            id: String(r.id), // Ensure ID is string for consistent frontend handling
+            id: String(r.id), 
             amount: Number(r.amount),
             startDate: toDateString(r.startDate),
             endDate: r.endDate ? toDateString(r.endDate) : undefined
@@ -229,8 +229,14 @@ export const ContractService = {
 
   deletePriceHistory: async (id: string): Promise<void> => {
       if(db.isConfigured()) {
-          // Explicitly waiting for query completion
-          await db.query('DELETE FROM contract_prices WHERE id=$1', [id]);
+          // FIX: Detect if ID is a number string and cast it to integer for Postgres
+          // This prevents "delete 0 rows" issue if DB expects int but receives string '5'
+          const finalId = /^\d+$/.test(id) ? parseInt(id, 10) : id;
+          
+          // Debug check
+          console.log("Deleting history ID:", finalId, "Type:", typeof finalId);
+          
+          await db.query('DELETE FROM contract_prices WHERE id=$1', [finalId]);
       }
   },
 

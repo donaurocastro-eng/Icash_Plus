@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, TrendingUp, Calendar, CheckCircle, AlertTriangle, Loader } from 'lucide-react';
+import { X, Plus, Trash2, TrendingUp, Calendar, CheckCircle, AlertTriangle, Loader, RefreshCw } from 'lucide-react';
 import { Contract, ContractPrice } from '../types';
 import { ContractService } from '../services/contractService';
 
@@ -77,17 +77,30 @@ const ContractPriceHistoryModal: React.FC<ContractPriceHistoryModalProps> = ({
       }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (!id) {
+          setFeedback({ type: 'error', message: "ID de registro no válido." });
+          return;
+      }
+
       if (!window.confirm("¿Estás seguro de que deseas eliminar este registro histórico?")) return;
       
       setDeletingId(id);
       setFeedback(null);
 
       try {
+          // Llamada al servicio
           await ContractService.deletePriceHistory(id);
+          
+          // Recarga forzada para verificar visualmente el cambio
           await loadHistory();
+          
           setFeedback({ type: 'success', message: 'Registro eliminado correctamente.' });
       } catch (e: any) { 
+          console.error(e);
           setFeedback({ type: 'error', message: "Error al eliminar: " + e.message });
       } finally {
           setDeletingId(null);
@@ -109,7 +122,12 @@ const ContractPriceHistoryModal: React.FC<ContractPriceHistoryModalProps> = ({
                 <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><TrendingUp size={20} className="text-blue-600"/> Historial de Precios</h3>
                 <p className="text-xs text-slate-500">{contractLabel}</p>
             </div>
-            <button onClick={onClose}><X size={20} className="text-slate-400 hover:text-slate-600"/></button>
+            <div className="flex gap-2">
+                <button onClick={loadHistory} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors" title="Recargar lista">
+                    <RefreshCw size={18} className={loading ? 'animate-spin' : ''}/>
+                </button>
+                <button onClick={onClose}><X size={20} className="text-slate-400 hover:text-slate-600"/></button>
+            </div>
         </div>
 
         <div className="p-6 overflow-y-auto space-y-6">
@@ -193,13 +211,10 @@ const ContractPriceHistoryModal: React.FC<ContractPriceHistoryModalProps> = ({
                                         <td className="p-3 text-right">
                                             <button 
                                                 type="button"
-                                                onClick={(e) => {
-                                                    e.stopPropagation(); // Evitar conflictos
-                                                    handleDelete(item.id);
-                                                }} 
+                                                onClick={(e) => handleDelete(item.id, e)} 
                                                 disabled={deletingId === item.id}
                                                 className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors cursor-pointer disabled:opacity-50"
-                                                title="Eliminar este registro"
+                                                title={`Eliminar ID: ${item.id}`}
                                             >
                                                 {deletingId === item.id ? <Loader size={16} className="animate-spin text-red-500"/> : <Trash2 size={16}/>}
                                             </button>
