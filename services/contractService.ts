@@ -75,7 +75,6 @@ export const ContractService = {
       `, [newCode, data.apartmentCode, data.tenantCode, data.startDate, data.endDate, nextPay, data.amount, data.paymentDay]);
 
       try {
-        // Initial price history entry
         await db.query(`
             INSERT INTO contract_prices (contract_code, amount, start_date)
             VALUES ($1, $2, $3)
@@ -117,13 +116,8 @@ export const ContractService = {
 
   update: async (code: string, data: ContractFormData): Promise<Contract> => {
     if (db.isConfigured()) {
-      // 1. Fetch current contract state
       const currentContract = (await db.query(`SELECT amount, next_payment_date FROM contracts WHERE code=$1`, [code]))[0];
       
-      // 2. Logic for Next Payment Date: 
-      // If user provides a date (data.nextPaymentDate is not empty), use it.
-      // If user clears it/sends empty, KEEP EXISTING from DB to prevent resetting to startDate.
-      // Fallback to startDate only if DB is also null (unlikely for active contract).
       let nextPay = data.nextPaymentDate;
       if (!nextPay) {
           nextPay = currentContract.next_payment_date ? toDateString(currentContract.next_payment_date) : data.startDate;
@@ -142,7 +136,6 @@ export const ContractService = {
       const index = existingList.findIndex(c => c.code === code);
       if (index === -1) throw new Error("Contract not found");
       
-      // Local storage logic for nextPay
       let nextPay = data.nextPaymentDate;
       if (!nextPay) {
           nextPay = existingList[index].nextPaymentDate || data.startDate;
@@ -204,7 +197,7 @@ export const ContractService = {
         `, [contractCode]);
         return rows.map(r => ({
             ...r,
-            id: String(r.id), // Strict String cast for ID to avoid issues in UI
+            id: String(r.id), // Ensure ID is string for consistent frontend handling
             amount: Number(r.amount),
             startDate: toDateString(r.startDate),
             endDate: r.endDate ? toDateString(r.endDate) : undefined
@@ -219,18 +212,13 @@ export const ContractService = {
 
   addPriceHistory: async (contractCode: string, amount: number, startDate: string, endDate?: string): Promise<void> => {
       if (db.isConfigured()) {
-          // 1. Insert the new price history record
           await db.query(`
             INSERT INTO contract_prices (contract_code, amount, start_date, end_date)
             VALUES ($1, $2, $3, $4)
           `, [contractCode, amount, startDate, endDate || null]);
           
-          // 2. Logic: Check if today falls within [startDate, endDate]
-          // If so, update the main contract amount to reflect the current price.
           const today = new Date().toISOString().split('T')[0];
-          
           const isStarted = startDate <= today;
-          // If endDate is present, today must be <= endDate. If endDate is null, it's open-ended (valid).
           const isNotEnded = !endDate || today <= endDate;
 
           if (isStarted && isNotEnded) {
@@ -241,6 +229,7 @@ export const ContractService = {
 
   deletePriceHistory: async (id: string): Promise<void> => {
       if(db.isConfigured()) {
+          // Explicitly waiting for query completion
           await db.query('DELETE FROM contract_prices WHERE id=$1', [id]);
       }
   },
@@ -278,7 +267,7 @@ export const ContractService = {
 
     let targetPeriod = data.billablePeriod;
     if (!targetPeriod && data.date) {
-        targetPeriod = data.date.substring(0, 7); // YYYY-MM
+        targetPeriod = data.date.substring(0, 7);
     }
 
     await TransactionService.create({
@@ -296,7 +285,6 @@ export const ContractService = {
        tenantCode: contract.tenantCode
     });
 
-    // Advance payment date logic...
     let totalPaidForPeriod = data.amount; 
     
     try {
@@ -307,7 +295,6 @@ export const ContractService = {
         console.error("Error calculating total paid for period", e);
     }
 
-    // Advance logic: Only if paid in full against current amount
     if (totalPaidForPeriod >= (contract.amount - 0.01)) {
         let nextDate = new Date(contract.nextPaymentDate || contract.startDate);
         nextDate = new Date(nextDate.valueOf() + nextDate.getTimezoneOffset() * 60000);

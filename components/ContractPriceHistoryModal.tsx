@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, TrendingUp, Calendar, CheckCircle, AlertCircle } from 'lucide-react';
+import { X, Plus, Trash2, TrendingUp, Calendar, CheckCircle, AlertTriangle, Loader } from 'lucide-react';
 import { Contract, ContractPrice } from '../types';
 import { ContractService } from '../services/contractService';
 
@@ -24,9 +24,9 @@ const ContractPriceHistoryModal: React.FC<ContractPriceHistoryModalProps> = ({
   const [newEndDate, setNewEndDate] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Feedback States
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  // Estados para mensajes de ayuda visual
+  const [feedback, setFeedback] = useState<{type: 'success' | 'error', message: string} | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen && contract) {
@@ -34,21 +34,17 @@ const ContractPriceHistoryModal: React.FC<ContractPriceHistoryModalProps> = ({
       setNewAmount(contract.amount);
       setNewStartDate(new Date().toISOString().split('T')[0]);
       setNewEndDate('');
-      setError(null);
-      setSuccess(null);
+      setFeedback(null);
     }
   }, [isOpen, contract]);
 
-  // Auto-hide messages
+  // Auto-ocultar mensajes de éxito
   useEffect(() => {
-      if (success || error) {
-          const timer = setTimeout(() => {
-              setSuccess(null);
-              setError(null);
-          }, 4000);
-          return () => clearTimeout(timer);
-      }
-  }, [success, error]);
+    if (feedback?.type === 'success') {
+      const timer = setTimeout(() => setFeedback(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [feedback]);
 
   const loadHistory = async () => {
     if (!contract) return;
@@ -64,40 +60,37 @@ const ContractPriceHistoryModal: React.FC<ContractPriceHistoryModalProps> = ({
       if (!contract || !newAmount || !newStartDate) return;
       
       setIsSubmitting(true);
-      setError(null);
-      setSuccess(null);
-
+      setFeedback(null);
+      
       try {
           await ContractService.addPriceHistory(contract.code, newAmount, newStartDate, newEndDate || undefined);
           await loadHistory();
-          setSuccess("Nuevo precio registrado correctamente.");
+          setFeedback({ type: 'success', message: 'Nuevo precio registrado correctamente.' });
           
-          // Reset form but keep amount
+          // Reset fields but keep reasonable defaults
           setNewStartDate(new Date().toISOString().split('T')[0]);
           setNewEndDate('');
       } catch (e: any) { 
-          setError("Error al guardar: " + e.message); 
+          setFeedback({ type: 'error', message: "Error al guardar: " + e.message });
       } finally { 
           setIsSubmitting(false); 
       }
   };
 
-  const handleDelete = async (id: string, e: React.MouseEvent) => {
-      // Prevent button click from bubbling or doing anything weird
-      e.preventDefault();
-      e.stopPropagation();
+  const handleDelete = async (id: string) => {
+      if (!window.confirm("¿Estás seguro de que deseas eliminar este registro histórico?")) return;
       
-      setError(null);
-      setSuccess(null);
+      setDeletingId(id);
+      setFeedback(null);
 
-      if (!window.confirm("¿Estás seguro de que deseas eliminar este registro histórico de precio?")) return;
-      
       try {
           await ContractService.deletePriceHistory(id);
           await loadHistory();
-          setSuccess("Registro de precio eliminado.");
+          setFeedback({ type: 'success', message: 'Registro eliminado correctamente.' });
       } catch (e: any) { 
-          setError("Error al eliminar: " + e.message); 
+          setFeedback({ type: 'error', message: "Error al eliminar: " + e.message });
+      } finally {
+          setDeletingId(null);
       }
   };
 
@@ -119,22 +112,19 @@ const ContractPriceHistoryModal: React.FC<ContractPriceHistoryModalProps> = ({
             <button onClick={onClose}><X size={20} className="text-slate-400 hover:text-slate-600"/></button>
         </div>
 
-        {/* Content */}
         <div className="p-6 overflow-y-auto space-y-6">
             
-            {/* Feedback Messages */}
-            {success && (
-                <div className="bg-emerald-50 text-emerald-700 p-3 rounded-lg border border-emerald-200 text-sm flex items-center gap-2 animate-fadeIn">
-                    <CheckCircle size={16} /> {success}
-                </div>
-            )}
-            {error && (
-                <div className="bg-red-50 text-red-700 p-3 rounded-lg border border-red-200 text-sm flex items-center gap-2 animate-fadeIn">
-                    <AlertCircle size={16} /> {error}
+            {/* Mensajes de Feedback (Ayuda Visual) */}
+            {feedback && (
+                <div className={`p-4 rounded-xl flex items-center gap-3 text-sm font-medium animate-fadeIn ${
+                    feedback.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'
+                }`}>
+                    {feedback.type === 'success' ? <CheckCircle size={18}/> : <AlertTriangle size={18}/>}
+                    {feedback.message}
                 </div>
             )}
 
-            {/* New Price Form */}
+            {/* Formulario */}
             <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 shadow-sm">
                 <h4 className="text-sm font-bold text-blue-800 mb-3">Nuevo Precio / Ajuste</h4>
                 <form onSubmit={handleAddPrice} className="flex flex-col gap-3">
@@ -164,7 +154,7 @@ const ContractPriceHistoryModal: React.FC<ContractPriceHistoryModalProps> = ({
                 </form>
             </div>
 
-            {/* History Table */}
+            {/* Tabla Historial */}
             <div>
                 <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
                     <Calendar size={16}/> Línea de Tiempo
@@ -183,27 +173,16 @@ const ContractPriceHistoryModal: React.FC<ContractPriceHistoryModalProps> = ({
                         <tbody className="divide-y divide-slate-100">
                             {history.map((item) => {
                                 const today = new Date().toISOString().split('T')[0];
-                                
-                                // Logic fallback: If no item end date, check contract end date
                                 const effectiveEndDate = item.endDate || contract.endDate || '';
-                                
                                 const isFuture = item.startDate > today;
                                 const isPast = effectiveEndDate && effectiveEndDate < today;
-                                
-                                // Current if started and (not ended OR end date is future)
                                 const isCurrent = !isFuture && (!effectiveEndDate || effectiveEndDate >= today);
                                 
                                 return (
                                     <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${isCurrent ? 'bg-emerald-50/30' : ''}`}>
                                         <td className="p-3 pl-4 font-mono text-slate-600">{item.startDate}</td>
                                         <td className="p-3 font-mono text-slate-400">
-                                            {item.endDate ? (
-                                                item.endDate
-                                            ) : (
-                                                <span className="text-xs italic text-slate-300">
-                                                    {contract.endDate ? `${contract.endDate} (Contrato)` : 'Indefinido'}
-                                                </span>
-                                            )}
+                                            {item.endDate ? item.endDate : <span className="text-xs italic text-slate-300">{contract.endDate ? `${contract.endDate} (Contrato)` : 'Indefinido'}</span>}
                                         </td>
                                         <td className="p-3 text-right font-bold text-slate-700">{formatMoney(item.amount)}</td>
                                         <td className="p-3 text-center">
@@ -214,11 +193,15 @@ const ContractPriceHistoryModal: React.FC<ContractPriceHistoryModalProps> = ({
                                         <td className="p-3 text-right">
                                             <button 
                                                 type="button"
-                                                onClick={(e) => handleDelete(item.id, e)} 
-                                                className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors cursor-pointer"
+                                                onClick={(e) => {
+                                                    e.stopPropagation(); // Evitar conflictos
+                                                    handleDelete(item.id);
+                                                }} 
+                                                disabled={deletingId === item.id}
+                                                className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors cursor-pointer disabled:opacity-50"
                                                 title="Eliminar este registro"
                                             >
-                                                <Trash2 size={16}/>
+                                                {deletingId === item.id ? <Loader size={16} className="animate-spin text-red-500"/> : <Trash2 size={16}/>}
                                             </button>
                                         </td>
                                     </tr>
