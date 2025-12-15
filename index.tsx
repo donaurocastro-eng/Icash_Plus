@@ -3,22 +3,15 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
 
-const mount = () => {
-  const rootElement = document.getElementById('root');
-  if (!rootElement) {
-    throw new Error("Could not find root element to mount to");
-  }
+const rootElement = document.getElementById('root');
 
+if (rootElement) {
   const root = ReactDOM.createRoot(rootElement);
   root.render(
     <React.StrictMode>
       <App />
     </React.StrictMode>
   );
-};
-
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', mount);
 } else {
-  mount();
+  console.error("Error Crítico: No se encontró el elemento 'root' para montar la aplicación.");
 }

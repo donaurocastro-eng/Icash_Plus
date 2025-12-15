@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { X, ChevronLeft, ChevronRight, CheckCircle, AlertCircle, Clock, DollarSign, Calendar, Trash2, Hash, User } from 'lucide-react';
-import { Contract, Transaction } from '../types';
+import { Contract, Transaction, ContractPrice } from '../types';
 import { TransactionService } from '../services/transactionService';
+import { ContractService } from '../services/contractService';
 
 interface PaymentHistoryModalProps {
   isOpen: boolean;
@@ -26,6 +27,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
 }) => {
   const [year, setYear] = useState(new Date().getFullYear());
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [priceHistory, setPriceHistory] = useState<ContractPrice[]>([]);
   const [loading, setLoading] = useState(false);
   
   // Delete UI States
@@ -34,25 +36,30 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
 
   useEffect(() => {
     if (isOpen && contract) {
-      loadTransactions();
+      loadData();
       setConfirmDeleteTxId(null);
     }
   }, [isOpen, contract, year]);
 
-  const loadTransactions = async () => {
+  const loadData = async () => {
     if (!contract) return;
     setLoading(true);
     try {
-        const all = await TransactionService.getAll();
+        const [allTxs, history] = await Promise.all([
+            TransactionService.getAll(),
+            ContractService.getPriceHistory(contract.code)
+        ]);
         
-        // Filter strictly by Contract Code
-        const filtered = all.filter(t => {
+        // Filter transactions strictly by Contract Code
+        const filteredTxs = allTxs.filter(t => {
             if (t.type !== 'INGRESO') return false;
             return t.contractCode === contract.code;
         });
-        setTransactions(filtered);
+        
+        setTransactions(filteredTxs);
+        setPriceHistory(history);
     } catch (e) {
-        console.error("Error loading history transactions", e);
+        console.error("Error loading history data", e);
     } finally {
         setLoading(false);
     }
@@ -72,7 +79,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
       setIsDeleting(true);
       try {
           await onDeleteTransaction(txId);
-          await loadTransactions();
+          await loadData(); // Reload all data
           setConfirmDeleteTxId(null);
       } catch (e) {
           console.error(e);
@@ -81,9 +88,28 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
       }
   };
 
+  // Helper to find the correct price for a specific date
+  const getHistoricalPrice = (date: Date): number => {
+      if (!contract) return 0;
+      if (priceHistory.length === 0) return contract.amount;
+
+      // Construct comparable string YYYY-MM-DD
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      const dateStr = `${y}-${m}-${d}`;
+
+      // priceHistory is sorted by startDate DESC (newest first).
+      // Find the first record that started on or before the target date.
+      const match = priceHistory.find(p => p.startDate <= dateStr);
+
+      return match ? match.amount : contract.amount;
+  };
+
   if (!isOpen || !contract) return null;
 
   const startDate = new Date(contract.startDate);
+  // Adjust for timezone if needed, but simple new Date(str) is usually local.
   const today = new Date(); 
   const months = Array.from({ length: 12 }, (_, i) => i);
 
@@ -91,9 +117,16 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
   const getPeriodString = (y: number, m: number) => `${y}-${String(m + 1).padStart(2, '0')}`;
 
   const calculateMonthStatus = (monthIndex: number, currentYear: number) => {
+      // 1. Calculate Due Date First to determine Price
+      const paymentDay = contract.paymentDay || 1;
+      const dueDate = new Date(currentYear, monthIndex, paymentDay);
+      
+      // 2. Get Dynamic Price for this specific month
+      const monthlyAmount = getHistoricalPrice(dueDate);
+
       const periodStr = getPeriodString(currentYear, monthIndex);
       
-      // 1. Find transactions
+      // 3. Find transactions
       const monthTransactions = transactions.filter(t => t.billablePeriod === periodStr);
       
       // Fallback legacy check
@@ -105,31 +138,28 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
 
       const allTxs = [...monthTransactions, ...legacyTransactions];
       
-      // 2. Sum amounts
+      // 4. Sum amounts
       const totalPaid = allTxs.reduce((sum, t) => sum + t.amount, 0);
-      const contractAmount = contract.amount;
       
-      // 3. Get Payment Date (Use the first one found if multiple, usually just one)
+      // 5. Get Payment Date
       const paymentDate = allTxs.length > 0 ? allTxs[0].date : null;
 
-      // 4. Determine Status
+      // 6. Determine Status
       let status = 'FUTURE';
       
       const cellDate = new Date(currentYear, monthIndex, 1);
       const contractStartMonth = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
       
       // If before contract start
-      if (cellDate < contractStartMonth) return { status: 'NA', totalPaid: 0, paymentDate: null, txs: [] };
+      if (cellDate < contractStartMonth) return { status: 'NA', totalPaid: 0, paymentDate: null, txs: [], monthlyAmount };
 
-      // Status Logic
-      if (totalPaid >= contractAmount - 0.01) {
+      // Status Logic with Tolerance (0.01)
+      if (totalPaid >= monthlyAmount - 0.01) {
           status = 'PAID';
       } else if (totalPaid > 0) {
           status = 'PARTIAL';
       } else {
           // No payment yet
-          const paymentDay = contract.paymentDay || 1;
-          const dueDate = new Date(currentYear, monthIndex, paymentDay);
           dueDate.setHours(23, 59, 59, 999);
 
           if (today > dueDate) {
@@ -144,7 +174,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
           }
       }
 
-      return { status, totalPaid, paymentDate, txs: allTxs };
+      return { status, totalPaid, paymentDate, txs: allTxs, monthlyAmount, dueDate };
   };
 
   const formatMoney = (amount: number) => {
@@ -163,7 +193,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
       <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[90vh] border border-slate-200">
         
-        {/* HEADER RESTORED & COMPACT */}
+        {/* HEADER */}
         <div className="px-5 py-3 border-b border-slate-100 flex justify-between items-start bg-slate-50">
             <div>
                 <h3 className="text-lg font-bold text-slate-800">Control de Pagos</h3>
@@ -180,7 +210,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                     </div>
                     <div className="flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-slate-200">
                         <span className="font-bold text-emerald-600">{formatMoney(contract.amount)}</span>
-                        <span className="text-[10px] text-slate-400">/ mes</span>
+                        <span className="text-[10px] text-slate-400">/ mes (actual)</span>
                     </div>
                 </div>
             </div>
@@ -194,7 +224,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
             <button onClick={() => setYear(year + 1)} className="p-1 hover:bg-slate-100 rounded-full text-slate-600"><ChevronRight size={20}/></button>
         </div>
 
-        {/* MONTHS GRID - COMPACT */}
+        {/* MONTHS GRID */}
         <div className="p-4 overflow-y-auto bg-slate-50/50 flex-1">
             {loading && !isDeleting ? (
                  <div className="flex justify-center py-12">
@@ -203,13 +233,11 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
             ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
                     {months.map(monthIndex => {
-                        const { status, totalPaid, paymentDate, txs } = calculateMonthStatus(monthIndex, year);
+                        const { status, totalPaid, paymentDate, txs, monthlyAmount, dueDate } = calculateMonthStatus(monthIndex, year);
                         
                         const monthName = new Date(year, monthIndex, 1).toLocaleDateString('es-ES', { month: 'short' }).toUpperCase();
-                        // Due Date Calculation
-                        const dueDateObj = new Date(year, monthIndex, contract.paymentDay || 1);
-                        const dueDateStr = dueDateObj.toLocaleDateString();
-                        const dueDateShort = `${dueDateObj.getDate().toString().padStart(2,'0')}/${(dueDateObj.getMonth()+1).toString().padStart(2,'0')}/${dueDateObj.getFullYear()}`;
+                        
+                        const dueDateShort = `${dueDate.getDate().toString().padStart(2,'0')}/${(dueDate.getMonth()+1).toString().padStart(2,'0')}/${dueDate.getFullYear()}`;
 
                         // Card Styles
                         let cardClass = "bg-white border-slate-200 opacity-60";
@@ -218,7 +246,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                         let statusColor = "text-slate-400";
                         let action = null;
 
-                        const remainingAmount = Math.max(0, contract.amount - totalPaid);
+                        const remainingAmount = Math.max(0, monthlyAmount - totalPaid);
 
                         if (status === 'PAID') { 
                             cardClass = "bg-emerald-50 border-emerald-200 opacity-100 ring-1 ring-emerald-100"; 
@@ -231,21 +259,21 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                             statusIcon = <AlertCircle size={16} className="text-orange-500"/>; 
                             statusText = "PARCIAL";
                             statusColor = "text-orange-700 bg-orange-100 border-orange-200";
-                            action = () => onRegisterPayment(dueDateObj, remainingAmount);
+                            action = () => onRegisterPayment(dueDate, remainingAmount);
                         }
                         else if (status === 'DUE_NOW') { 
                             cardClass = "bg-white border-blue-300 ring-2 ring-blue-100 shadow-md opacity-100 transform scale-[1.02] z-10"; 
                             statusIcon = <DollarSign size={16} className="text-blue-500"/>; 
                             statusText = "COBRAR";
                             statusColor = "text-blue-700 bg-blue-50 border-blue-100";
-                            action = () => onRegisterPayment(dueDateObj, contract.amount);
+                            action = () => onRegisterPayment(dueDate, monthlyAmount);
                         }
                         else if (status === 'OVERDUE') { 
                             cardClass = "bg-rose-50 border-rose-200 shadow-sm opacity-100"; 
                             statusIcon = <AlertCircle size={16} className="text-rose-500"/>; 
                             statusText = "VENCIDO";
                             statusColor = "text-rose-700 bg-rose-100/50 border-rose-100";
-                            action = () => onRegisterPayment(dueDateObj, contract.amount);
+                            action = () => onRegisterPayment(dueDate, monthlyAmount);
                         }
                         else if (status === 'NA') {
                             cardClass = "bg-slate-50 border-slate-100 opacity-30 grayscale";
@@ -297,7 +325,8 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                                         {/* Row: Amounts */}
                                         <div className="flex justify-between items-center">
                                             <span className="text-slate-500">Contrato:</span>
-                                            <span className="font-mono">{formatMoney(contract.amount)}</span>
+                                            {/* Aquí se muestra el monto calculado dinámicamente */}
+                                            <span className="font-mono">{formatMoney(monthlyAmount)}</span>
                                         </div>
                                         {(status === 'PAID' || status === 'PARTIAL') && (
                                             <div className={`flex justify-between items-center font-bold ${status === 'PAID' ? 'text-emerald-700' : 'text-orange-600'}`}>
