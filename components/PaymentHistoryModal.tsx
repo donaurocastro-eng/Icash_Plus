@@ -106,6 +106,43 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
       return match ? match.amount : contract.amount;
   };
 
+  const formatMoney = (amount: number) => {
+      return amount.toLocaleString('es-HN', { style: 'currency', currency: 'HNL', minimumFractionDigits: 0 });
+  };
+
+  const getPriceRangesString = () => {
+      if (!contract) return '';
+      
+      const ranges: { start: number, end: number, amount: number }[] = [];
+      let currentRange: { start: number, end: number, amount: number } | null = null;
+
+      for (let m = 0; m < 12; m++) {
+          const date = new Date(year, m, contract.paymentDay || 1);
+          const price = getHistoricalPrice(date);
+
+          if (!currentRange) {
+              currentRange = { start: m, end: m, amount: price };
+          } else {
+              if (currentRange.amount === price) {
+                  currentRange.end = m;
+              } else {
+                  ranges.push(currentRange);
+                  currentRange = { start: m, end: m, amount: price };
+              }
+          }
+      }
+      if (currentRange) ranges.push(currentRange);
+
+      const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+
+      return ranges.map(r => {
+          const startName = monthNames[r.start];
+          const endName = monthNames[r.end];
+          const rangeLabel = r.start === r.end ? startName : `${startName}-${endName}`;
+          return `${rangeLabel} ${formatMoney(r.amount)}`;
+      }).join(' / ');
+  };
+
   if (!isOpen || !contract) return null;
 
   const startDate = new Date(contract.startDate);
@@ -177,10 +214,6 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
       return { status, totalPaid, paymentDate, txs: allTxs, monthlyAmount, dueDate };
   };
 
-  const formatMoney = (amount: number) => {
-      return amount.toLocaleString('es-HN', { style: 'currency', currency: 'HNL', minimumFractionDigits: 0 });
-  };
-
   const formatDateShort = (dateStr: string | null) => {
       if (!dateStr) return '-';
       const parts = dateStr.split('-');
@@ -208,9 +241,11 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                         <span className="text-slate-400">|</span>
                         <span className="font-medium">{tenantName}</span>
                     </div>
+                    {/* Updated Price Range Display */}
                     <div className="flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-slate-200">
-                        <span className="font-bold text-emerald-600">{formatMoney(contract.amount)}</span>
-                        <span className="text-[10px] text-slate-400">/ mes (actual)</span>
+                        <Calendar size={12} className="text-slate-400 mr-1"/>
+                        <span className="font-medium text-slate-700 mr-1">{year}:</span>
+                        <span className="font-bold text-emerald-600">{getPriceRangesString()}</span>
                     </div>
                 </div>
             </div>
