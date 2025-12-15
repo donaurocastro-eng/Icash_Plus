@@ -156,7 +156,12 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
   const calculateMonthStatus = (monthIndex: number, currentYear: number) => {
       // 1. Calculate Due Date First to determine Price
       const paymentDay = contract.paymentDay || 1;
-      const dueDate = new Date(currentYear, monthIndex, paymentDay);
+      
+      // FIX: Calcular el último día del mes real para evitar desbordamiento (ej. 31 Nov -> 1 Dic)
+      const daysInMonth = new Date(currentYear, monthIndex + 1, 0).getDate();
+      const safeDay = Math.min(paymentDay, daysInMonth);
+      
+      const dueDate = new Date(currentYear, monthIndex, safeDay);
       
       // 2. Get Dynamic Price for this specific month
       const monthlyAmount = getHistoricalPrice(dueDate);

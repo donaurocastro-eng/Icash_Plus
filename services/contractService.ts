@@ -302,10 +302,26 @@ export const ContractService = {
     }
 
     if (totalPaidForPeriod >= (contract.amount - 0.01)) {
-        let nextDate = new Date(contract.nextPaymentDate || contract.startDate);
-        nextDate = new Date(nextDate.valueOf() + nextDate.getTimezoneOffset() * 60000);
+        // CORRECCIÓN: Cálculo seguro de fecha para evitar desbordamiento de mes (ej. 30 Nov -> 1 Dic)
+        let currentNext = new Date(contract.nextPaymentDate || contract.startDate);
+        currentNext = new Date(currentNext.valueOf() + currentNext.getTimezoneOffset() * 60000);
         
-        nextDate.setMonth(nextDate.getMonth() + 1);
+        let targetYear = currentNext.getFullYear();
+        let targetMonth = currentNext.getMonth() + 1; // Siguiente mes
+        
+        // Manejo de cambio de año
+        if (targetMonth > 11) {
+            targetMonth = 0;
+            targetYear++;
+        }
+        
+        // Usar el DÍA DE CORTE configurado en el contrato como ancla
+        const pDay = contract.paymentDay || 1;
+        // Calcular último día del mes objetivo para no pasarnos
+        const daysInTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+        const safeDay = Math.min(pDay, daysInTargetMonth);
+        
+        const nextDate = new Date(targetYear, targetMonth, safeDay);
         const nextDateStr = nextDate.toISOString().split('T')[0];
 
         if (db.isConfigured()) {
