@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Plus, Search, Trash2, ArrowDownCircle, ArrowUpCircle, Calendar, ArrowRightLeft, Edit2, FileSpreadsheet, Upload, Filter, Loader, X, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Plus, Search, Trash2, ArrowDownCircle, ArrowUpCircle, Calendar, ArrowRightLeft, Edit2, FileSpreadsheet, Upload, Filter, Loader, X, AlertTriangle, CheckCircle, Download } from 'lucide-react';
 import { Transaction, TransactionFormData, Account, Category } from '../types';
 import { TransactionService } from '../services/transactionService';
 import { AccountService } from '../services/accountService';
@@ -26,6 +26,7 @@ const TransactionsPage: React.FC = () => {
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   
   // Custom UI State (Replacements for window.confirm/alert)
   const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
@@ -123,6 +124,52 @@ const TransactionsPage: React.FC = () => {
     const ws = XLSX.utils.aoa_to_sheet([headers, example]);
     XLSX.utils.book_append_sheet(wb, ws, "Transacciones");
     XLSX.writeFile(wb, "plantilla_transacciones.xlsx");
+  };
+
+  const handleExportExcel = () => {
+    setIsExporting(true);
+    try {
+        const dataToExport = filteredTransactions.map(t => ({
+            'Código': t.code,
+            'Fecha': formatDate(t.date),
+            'Descripción': t.description,
+            'Monto': t.amount,
+            'Tipo': t.type,
+            'Categoría': t.categoryName || t.categoryCode,
+            'Cuenta': t.accountName || t.accountCode,
+            'Propiedad': t.propertyName || t.propertyCode || 'N/A',
+            'Inquilino': t.tenantName || t.tenantCode || 'N/A',
+            'Periodo': t.billablePeriod || 'N/A'
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(dataToExport);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Movimientos");
+
+        // Set column widths for better readability
+        const wscols = [
+            {wch: 12}, // Código
+            {wch: 12}, // Fecha
+            {wch: 35}, // Descripción
+            {wch: 12}, // Monto
+            {wch: 15}, // Tipo
+            {wch: 20}, // Categoría
+            {wch: 20}, // Cuenta
+            {wch: 20}, // Propiedad
+            {wch: 20}, // Inquilino
+            {wch: 10}, // Periodo
+        ];
+        ws['!cols'] = wscols;
+
+        const fileName = `movimientos_${selectedYear}_${selectedMonth + 1}.xlsx`;
+        XLSX.writeFile(wb, fileName);
+        setNotification({ type: 'success', message: 'Archivo Excel generado correctamente.' });
+    } catch (e) {
+        console.error("Export Error:", e);
+        setNotification({ type: 'error', message: 'Error al exportar los datos.' });
+    } finally {
+        setIsExporting(false);
+    }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -342,9 +389,13 @@ const TransactionsPage: React.FC = () => {
                     <FileSpreadsheet size={16} />
                     <span className="hidden sm:inline">Plantilla</span>
                 </button>
-                <button onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-emerald-600 rounded-md transition-colors text-sm font-medium disabled:opacity-50" title="Subir archivo Excel">
+                <button onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-emerald-600 rounded-md transition-colors text-sm font-medium border-r border-slate-100 disabled:opacity-50" title="Subir archivo Excel">
                     {isImporting ? <div className="animate-spin h-4 w-4 border-2 border-emerald-600 border-t-transparent rounded-full"/> : <Upload size={16} />}
                     <span className="hidden sm:inline">Importar</span>
+                </button>
+                <button onClick={handleExportExcel} disabled={isExporting || filteredTransactions.length === 0} className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-emerald-600 rounded-md transition-colors text-sm font-medium disabled:opacity-50" title="Exportar a Excel">
+                    {isExporting ? <div className="animate-spin h-4 w-4 border-2 border-emerald-600 border-t-transparent rounded-full"/> : <Download size={16} />}
+                    <span className="hidden sm:inline">Exportar</span>
                 </button>
             </div>
 

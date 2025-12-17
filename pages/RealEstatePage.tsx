@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { 
   Plus, Search, Edit2, Trash2, Building, Home, Users, FileText, Zap, 
   DollarSign, Calendar, Clock, CheckCircle, TrendingUp, MoreVertical, Key,
-  CreditCard, List, AlertTriangle, ArrowRight, User, Loader, X, Filter
+  CreditCard, List, AlertTriangle, ArrowRight, User, Loader, X, Filter, RefreshCw
 } from 'lucide-react';
 import { 
   Property, Apartment, Tenant, Contract, PropertyServiceItem, Transaction,
@@ -68,6 +68,11 @@ const RealEstatePage: React.FC = () => {
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkProgress, setBulkProgress] = useState('');
   const [showPriceHistoryModal, setShowPriceHistoryModal] = useState(false);
+
+  // Sync / Recalculate States
+  const [showSyncModal, setShowSyncModal] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncLogs, setSyncLogs] = useState<string[]>([]);
 
   // Delete Confirmation States (Tenants)
   const [tenantToDelete, setTenantToDelete] = useState<Tenant | null>(null);
@@ -287,6 +292,78 @@ const RealEstatePage: React.FC = () => {
       return nextPayAdjusted < todayZero;
   });
 
+  async function handleSyncContracts() {
+      setShowSyncModal(true);
+      setIsSyncing(true);
+      setSyncLogs(["Iniciando escaneo de contratos activos..."]);
+      
+      const addLog = (msg: string) => setSyncLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
+
+      try {
+          const [allContracts, allTxs] = await Promise.all([
+              ContractService.getAll(),
+              TransactionService.getAll()
+          ]);
+          
+          const activeOnes = allContracts.filter(c => c.status === 'ACTIVE');
+          addLog(`Encontrados ${activeOnes.length} contratos activos.`);
+
+          let count = 0;
+          for (const contract of activeOnes) {
+              addLog(`Analizando ${contract.code}...`);
+              
+              const contractTxs = allTxs.filter(t => t.contractCode === contract.code && t.type === 'INGRESO' && t.billablePeriod);
+              const startParts = contract.startDate.split('-');
+              let pointerDate = new Date(parseInt(startParts[0]), parseInt(startParts[1]) - 1, parseInt(startParts[2]));
+              const limitDate = new Date();
+              limitDate.setMonth(limitDate.getMonth() + 6);
+              
+              let foundFirstUnpaidDate = '';
+              let safety = 0;
+              const history = await ContractService.getPriceHistory(contract.code);
+
+              while (pointerDate <= limitDate && safety < 120) {
+                  safety++;
+                  const y = pointerDate.getFullYear();
+                  const m = pointerDate.getMonth();
+                  const periodStr = `${y}-${String(m + 1).padStart(2, '0')}`;
+                  
+                  const dueDate = new Date(y, m, contract.paymentDay || 1);
+                  const dStr = `${y}-${String(m+1).padStart(2,'0')}-${String(dueDate.getDate()).padStart(2,'0')}`;
+                  const matchPrice = history.find(p => p.startDate <= dStr);
+                  const expectedAmount = matchPrice ? matchPrice.amount : contract.amount;
+
+                  const totalPaid = contractTxs
+                      .filter(t => t.billablePeriod === periodStr)
+                      .reduce((sum, t) => sum + t.amount, 0);
+
+                  if (totalPaid < (expectedAmount - 0.01)) {
+                      const daysInMonth = new Date(y, m + 1, 0).getDate();
+                      const finalDay = Math.min(contract.paymentDay || 1, daysInMonth);
+                      foundFirstUnpaidDate = `${y}-${String(m + 1).padStart(2, '0')}-${String(finalDay).padStart(2, '0')}`;
+                      break;
+                  }
+                  pointerDate.setMonth(pointerDate.getMonth() + 1);
+              }
+
+              if (foundFirstUnpaidDate && foundFirstUnpaidDate !== contract.nextPaymentDate) {
+                  addLog(`Ajustando fecha de ${contract.nextPaymentDate} a ${foundFirstUnpaidDate}`);
+                  await ContractService.update(contract.code, { ...contract, nextPaymentDate: foundFirstUnpaidDate } as any);
+                  count++;
+              } else {
+                  addLog(`Contrato al día.`);
+              }
+          }
+
+          addLog(`✅ PROCESO COMPLETADO. ${count} contratos actualizados.`);
+          await loadData();
+      } catch (e: any) {
+          addLog(`❌ ERROR: ${e.message}`);
+      } finally {
+          setIsSyncing(false);
+      }
+  }
+
   if(loading) return <div className="flex justify-center items-center h-full"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div></div>;
 
   return (
@@ -382,6 +459,17 @@ const RealEstatePage: React.FC = () => {
                         {activeTab === 'CONTRACTS' && 'Nuevo Contrato'}
                         {activeTab === 'SERVICES' && 'Nuevo Servicio'}
                     </span>
+                 </button>
+             )}
+
+             {activeTab === 'DELINQUENT' && (
+                 <button 
+                    onClick={handleSyncContracts}
+                    disabled={isSyncing}
+                    className="px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-900 font-bold flex items-center gap-2 shadow-md w-full sm:w-auto justify-center transition-all active:scale-95 disabled:opacity-50"
+                 >
+                    <RefreshCw size={18} className={isSyncing ? 'animate-spin' : ''}/> 
+                    <span className="text-sm">Recalcular Mora</span>
                  </button>
              )}
           </div>
@@ -530,7 +618,7 @@ const RealEstatePage: React.FC = () => {
                                                     <span className="px-2 py-1 rounded text-[10px] font-bold bg-rose-100 text-rose-700 uppercase">Vencido</span>
                                                 )
                                             ) : (
-                                                <span className={`px-2 py-1 rounded text-[10px] font-bold ${contract.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{contract.status === 'ACTIVE' ? 'ACTIVO' : 'INACTIVO'}</span>
+                                                <span className={`px-2 py-1 rounded text-[10px] font-bold ${contract.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-50'}`}>{contract.status === 'ACTIVE' ? 'ACTIVO' : 'INACTIVO'}</span>
                                             )}
                                         </td>
                                         <td className="px-6 py-3 text-right">
@@ -661,6 +749,12 @@ const RealEstatePage: React.FC = () => {
                                 {delinquentContracts.map(c => {
                                     const t = tenants.find(x => x.code === c.tenantCode);
                                     const a = apartments.find(x => x.code === c.apartmentCode);
+                                    
+                                    const period = c.nextPaymentDate?.substring(0, 7);
+                                    const periodTxs = transactions.filter(tx => tx.contractCode === c.code && tx.billablePeriod === period && tx.type === 'INGRESO');
+                                    const totalPaid = periodTxs.reduce((sum, tx) => sum + tx.amount, 0);
+                                    const isPartial = totalPaid > 0 && totalPaid < (c.amount - 0.01);
+
                                     return (
                                         <tr key={c.code} className="hover:bg-slate-50">
                                             <td className="px-6 py-3">
@@ -676,14 +770,25 @@ const RealEstatePage: React.FC = () => {
                                                     <AlertTriangle size={16}/>
                                                     {formatDateDisplay(c.nextPaymentDate)}
                                                 </div>
-                                                <span className="text-xs text-rose-400">Vencido</span>
+                                                {isPartial ? (
+                                                    <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-bold border border-orange-200">PAGO PARCIAL</span>
+                                                ) : (
+                                                    <span className="text-xs text-rose-400">Vencido</span>
+                                                )}
                                             </td>
                                             <td className="px-6 py-3 text-right font-mono font-bold text-slate-700">
-                                                {c.amount.toLocaleString('es-HN', {style: 'currency', currency: 'HNL'})}
+                                                {isPartial ? (
+                                                    <div className="flex flex-col items-end">
+                                                        <span className="text-rose-600">{(c.amount - totalPaid).toLocaleString('es-HN', {style: 'currency', currency: 'HNL'})}</span>
+                                                        <span className="text-[9px] text-slate-400">De {c.amount.toLocaleString('es-HN', {style: 'currency', currency: 'HNL'})}</span>
+                                                    </div>
+                                                ) : (
+                                                    c.amount.toLocaleString('es-HN', {style: 'currency', currency: 'HNL'})
+                                                )}
                                             </td>
                                             <td className="px-6 py-3 text-center">
                                                 <button onClick={() => handleOpenPaymentModal(c)} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 shadow-md flex items-center gap-2 mx-auto">
-                                                    <DollarSign size={14}/> Cobrar Ahora
+                                                    <DollarSign size={14}/> {isPartial ? 'Completar Pago' : 'Cobrar Ahora'}
                                                 </button>
                                             </td>
                                         </tr>
@@ -733,6 +838,42 @@ const RealEstatePage: React.FC = () => {
           <PaymentHistoryModal isOpen={showHistoryModal} onClose={() => setShowHistoryModal(false)} contract={selectedContract} contractLabel={selectedContract ? getContractLabel(selectedContract) : ''} tenantName={tenants.find(t => t.code === selectedContract?.tenantCode)?.fullName} unitName={apartments.find(a => a.code === selectedContract?.apartmentCode)?.name} onRegisterPayment={handleHistoryRegisterPayment} onDeleteTransaction={handleDeleteContractTransaction} />
           <BulkPaymentModal isOpen={showBulkModal} onClose={() => setShowBulkModal(false)} onSubmit={handleBulkPayment} contract={selectedContract} contractLabel={selectedContract ? getContractLabel(selectedContract) : ''} isSubmitting={isSubmitting} progressText={bulkProgress} />
           <ContractPriceHistoryModal isOpen={showPriceHistoryModal} onClose={() => setShowPriceHistoryModal(false)} contract={selectedContract} contractLabel={selectedContract ? getContractLabel(selectedContract) : ''} />
+
+          {showSyncModal && (
+              <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                  <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-md" />
+                  <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200 animate-fadeIn">
+                      <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                              <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg">
+                                  <RefreshCw size={20} className={isSyncing ? 'animate-spin' : ''}/>
+                              </div>
+                              <h3 className="font-bold text-slate-800">Sincronizando Contratos</h3>
+                          </div>
+                          {!isSyncing && <button onClick={() => setShowSyncModal(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>}
+                      </div>
+                      <div className="p-6">
+                          <div className="bg-slate-900 rounded-xl p-4 h-64 overflow-y-auto font-mono text-xs space-y-1 mb-4 shadow-inner">
+                              {syncLogs.map((log, i) => (
+                                  <div key={i} className="text-emerald-400 border-l-2 border-slate-700 pl-2 py-0.5 animate-fadeIn">
+                                      <span className="text-slate-500 mr-2">$</span>
+                                      {log}
+                                  </div>
+                              ))}
+                              {isSyncing && <div className="text-indigo-400 animate-pulse mt-2">... Analizando registros ...</div>}
+                          </div>
+                          <div className="flex items-center justify-between">
+                              <span className="text-xs text-slate-500 font-medium">{isSyncing ? 'Por favor no cierres esta ventana' : 'Proceso finalizado'}</span>
+                              {!isSyncing && (
+                                  <button onClick={() => setShowSyncModal(false)} className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 shadow-md transition-all">
+                                      Cerrar
+                                  </button>
+                              )}
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          )}
       </div>
   );
 };
