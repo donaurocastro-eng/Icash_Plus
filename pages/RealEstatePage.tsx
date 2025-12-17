@@ -190,8 +190,16 @@ const RealEstatePage: React.FC = () => {
       
       // If specific date passed, use it. Otherwise use scheduled next payment.
       let targetDate = specificDate || new Date(contract.nextPaymentDate || new Date());
-      // Adjust timezone for display calculation
-      targetDate = new Date(targetDate.valueOf() + targetDate.getTimezoneOffset() * 60000);
+      
+      // REMOVED TIMEZONE HACK: We now rely on 'specificDate' being correct (Noon)
+      // or 'nextPaymentDate' string being parsed correctly by browser as local time.
+      if (!specificDate && contract.nextPaymentDate) {
+          // Ensure string parsing for nextPaymentDate to avoid TZ issues if it was stored weirdly
+          const dateStr = contract.nextPaymentDate.length >= 10 ? contract.nextPaymentDate.substring(0, 10) : new Date().toISOString().split('T')[0];
+          targetDate = new Date(dateStr);
+          // Apply standard display offset for string-based dates
+          targetDate = new Date(targetDate.valueOf() + targetDate.getTimezoneOffset() * 60000);
+      }
       
       const monthName = targetDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
       const label = monthName.charAt(0).toUpperCase() + monthName.slice(1);

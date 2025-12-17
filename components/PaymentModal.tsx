@@ -44,27 +44,33 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       
       // LOGIC: Use passed initialDate, or contract next payment date, or today
       let targetDateStr = '';
+      let dateForDisplay: Date;
       
       if (initialDate) {
-          // Adjust for timezone to get local YYYY-MM-DD from Date object passed
-          const offsetDate = new Date(initialDate.valueOf() + initialDate.getTimezoneOffset() * 60000);
-          targetDateStr = offsetDate.toISOString().split('T')[0];
+          // Manual extraction to ensure we get "YYYY-MM-DD" of the local date object passed
+          // without relying on timezone offsets or ISO conversions that might shift the day.
+          const y = initialDate.getFullYear();
+          const m = String(initialDate.getMonth() + 1).padStart(2, '0');
+          const d = String(initialDate.getDate()).padStart(2, '0');
+          targetDateStr = `${y}-${m}-${d}`;
+          dateForDisplay = initialDate;
       } else if (contract.nextPaymentDate) {
           targetDateStr = contract.nextPaymentDate.length >= 10 
               ? contract.nextPaymentDate.substring(0, 10) 
               : new Date().toISOString().split('T')[0];
+          dateForDisplay = new Date(targetDateStr);
+          // Fix timezone for display only
+          dateForDisplay = new Date(dateForDisplay.valueOf() + dateForDisplay.getTimezoneOffset() * 60000);
       } else {
           targetDateStr = new Date().toISOString().split('T')[0];
+          dateForDisplay = new Date();
       }
       
       // Set Billable Period (YYYY-MM)
       const billablePeriod = targetDateStr.substring(0, 7);
 
       // Create readable display
-      const dateObj = new Date(targetDateStr);
-      // Adjust timezone for display calculation
-      const displayDate = new Date(dateObj.valueOf() + dateObj.getTimezoneOffset() * 60000);
-      const monthName = displayDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+      const monthName = dateForDisplay.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
       const displayMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
 
       setPeriodDisplay(displayMonth);

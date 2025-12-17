@@ -161,7 +161,8 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
       const daysInMonth = new Date(currentYear, monthIndex + 1, 0).getDate();
       const safeDay = Math.min(paymentDay, daysInMonth);
       
-      const dueDate = new Date(currentYear, monthIndex, safeDay);
+      // FIX: Crear fecha a las 12:00:00 (Mediodía) para evitar problemas de zona horaria al pasar la fecha
+      const dueDate = new Date(currentYear, monthIndex, safeDay, 12, 0, 0);
       
       // 2. Get Dynamic Price for this specific month
       const monthlyAmount = getHistoricalPrice(dueDate);
