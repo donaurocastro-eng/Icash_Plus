@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, ChevronLeft, ChevronRight, CheckCircle, AlertCircle, Clock, DollarSign, Calendar, Trash2, Hash, User } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, CheckCircle, AlertCircle, Clock, DollarSign, Calendar, Trash2, Hash, User, Terminal } from 'lucide-react';
 import { Contract, Transaction, ContractPrice } from '../types';
 import { TransactionService } from '../services/transactionService';
 import { ContractService } from '../services/contractService';
@@ -29,6 +29,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [priceHistory, setPriceHistory] = useState<ContractPrice[]>([]);
   const [loading, setLoading] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
   
   // Delete UI States
   const [confirmDeleteTxId, setConfirmDeleteTxId] = useState<string | null>(null);
@@ -143,10 +144,26 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
       }).join(' / ');
   };
 
+  // --- SAFE DATE PARSING ---
+  // Avoids timezone shifts (e.g., Oct 1 becoming Sept 30) by parsing YYYY-MM-DD manually
+  const parseLocalYMD = (dateStr: string | undefined): Date => {
+      if (!dateStr) return new Date();
+      // Expects "YYYY-MM-DD"
+      const parts = dateStr.split('-');
+      if (parts.length < 3) return new Date(dateStr); // fallback
+      
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      const d = parseInt(parts[2], 10);
+      // Return local date at 00:00:00
+      return new Date(y, m - 1, d);
+  };
+
   if (!isOpen || !contract) return null;
 
-  const startDate = new Date(contract.startDate);
-  // Adjust for timezone if needed, but simple new Date(str) is usually local.
+  // Use the safe parser instead of new Date()
+  const startDate = parseLocalYMD(contract.startDate);
+  
   const today = new Date(); 
   const months = Array.from({ length: 12 }, (_, i) => i);
 
@@ -191,10 +208,11 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
       let status = 'FUTURE';
       
       const cellDate = new Date(currentYear, monthIndex, 1);
+      // Normalized start date (Year, Month, 1) based on parsed start date
       const contractStartMonth = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
       
       // If before contract start
-      if (cellDate < contractStartMonth) return { status: 'NA', totalPaid: 0, paymentDate: null, txs: [], monthlyAmount };
+      if (cellDate < contractStartMonth) return { status: 'NA', totalPaid: 0, paymentDate: null, txs: [], monthlyAmount, cellDate, contractStartMonth };
 
       // Status Logic with Tolerance (0.01)
       if (totalPaid >= monthlyAmount - 0.01) {
@@ -217,7 +235,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
           }
       }
 
-      return { status, totalPaid, paymentDate, txs: allTxs, monthlyAmount, dueDate };
+      return { status, totalPaid, paymentDate, txs: allTxs, monthlyAmount, dueDate, cellDate, contractStartMonth };
   };
 
   const formatDateShort = (dateStr: string | null) => {
@@ -278,7 +296,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                         
                         const monthName = new Date(year, monthIndex, 1).toLocaleDateString('es-ES', { month: 'short' }).toUpperCase();
                         
-                        const dueDateShort = `${dueDate.getDate().toString().padStart(2,'0')}/${(dueDate.getMonth()+1).toString().padStart(2,'0')}/${dueDate.getFullYear()}`;
+                        const dueDateShort = dueDate ? `${dueDate.getDate().toString().padStart(2,'0')}/${(dueDate.getMonth()+1).toString().padStart(2,'0')}/${dueDate.getFullYear()}` : '-';
 
                         // Card Styles
                         let cardClass = "bg-white border-slate-200 opacity-60";
@@ -397,6 +415,53 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                 </div>
             )}
         </div>
+
+        {/* DIAGNOSTIC PANEL TOGGLE */}
+        <div className="bg-slate-100 p-2 text-xs flex justify-end border-t border-slate-200">
+            <button 
+                onClick={() => setShowDebug(!showDebug)} 
+                className={`flex items-center gap-2 font-bold transition-colors ${showDebug ? 'text-indigo-600' : 'text-slate-400 hover:text-indigo-600'}`}
+            >
+                <Terminal size={12}/> {showDebug ? 'Ocultar Diagnóstico' : 'Ver Diagnóstico de Fechas'}
+            </button>
+        </div>
+
+        {/* DIAGNOSTIC PANEL CONTENT */}
+        {showDebug && (
+            <div className="bg-slate-900 text-green-400 p-4 font-mono text-xs overflow-auto h-48 border-t-2 border-indigo-500 shadow-inner">
+                <p className="font-bold text-white mb-2">=== CONSOLA DE DIAGNÓSTICO (DEBUG) ===</p>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <p className="text-slate-400">Datos Crudos (Base de Datos):</p>
+                        <p>contract.startDate: <span className="text-yellow-300">"{contract.startDate}"</span></p>
+                        <p>contract.status: <span className="text-yellow-300">"{contract.status}"</span></p>
+                    </div>
+                    <div>
+                        <p className="text-slate-400">Interpretación Local (Corregida):</p>
+                        <p>Parsed Start Date: <span className="text-yellow-300">{startDate.toString()}</span></p>
+                        <p>Start Year / Month: <span className="text-yellow-300">{startDate.getFullYear()} / {startDate.getMonth() + 1}</span></p>
+                    </div>
+                </div>
+                <p className="text-slate-400 mb-1">Lógica de Visibilidad para Año {year}:</p>
+                <div className="space-y-1">
+                    {months.slice(0, 4).map(m => { // Show first 4 months example
+                        const { status, cellDate, contractStartMonth } = calculateMonthStatus(m, year) as any;
+                        const isVisible = status !== 'NA';
+                        return (
+                            <div key={m} className="flex gap-2">
+                                <span className="w-16 text-slate-300">Mes {m+1}:</span>
+                                <span>Cell[{cellDate?.toLocaleDateString()}] {isVisible ? '>=' : '<'} Start[{contractStartMonth?.toLocaleDateString()}]</span>
+                                <span className={isVisible ? "text-green-500 font-bold" : "text-red-500 font-bold"}>
+                                    -> {isVisible ? "VISIBLE" : "NA (Oculto)"}
+                                </span>
+                            </div>
+                        )
+                    })}
+                    <p className="text-slate-500 italic">... (resto de los meses sigue la misma lógica)</p>
+                </div>
+            </div>
+        )}
+
       </div>
     </div>
   );
