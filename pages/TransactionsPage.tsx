@@ -393,9 +393,14 @@ const TransactionsPage: React.FC = () => {
                     {isImporting ? <div className="animate-spin h-4 w-4 border-2 border-emerald-600 border-t-transparent rounded-full"/> : <Upload size={16} />}
                     <span className="hidden sm:inline">Importar</span>
                 </button>
-                <button onClick={handleExportExcel} disabled={isExporting || filteredTransactions.length === 0} className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-emerald-600 rounded-md transition-colors text-sm font-medium disabled:opacity-50" title="Exportar a Excel">
-                    {isExporting ? <div className="animate-spin h-4 w-4 border-2 border-emerald-600 border-t-transparent rounded-full"/> : <Download size={16} />}
-                    <span className="hidden sm:inline">Exportar</span>
+                <button 
+                    onClick={handleExportExcel} 
+                    disabled={isExporting || filteredTransactions.length === 0} 
+                    className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg transition-all text-sm font-bold disabled:opacity-50 shadow-md shadow-emerald-500/20 active:scale-95" 
+                    title="Exportar a Excel"
+                >
+                    {isExporting ? <Loader size={16} className="animate-spin"/> : <FileSpreadsheet size={16} />}
+                    <span className="hidden sm:inline">Exportar Excel</span>
                 </button>
             </div>
 

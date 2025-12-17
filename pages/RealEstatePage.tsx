@@ -22,6 +22,7 @@ import TenantModal from '../components/TenantModal';
 import ContractModal from '../components/ContractModal';
 import ServiceItemModal from '../components/ServiceItemModal';
 import ServicePaymentModal from '../components/ServicePaymentModal';
+import ServicePaymentHistoryModal from '../components/ServicePaymentHistoryModal';
 import PaymentModal from '../components/PaymentModal';
 import PaymentHistoryModal from '../components/PaymentHistoryModal';
 import BulkPaymentModal from '../components/BulkPaymentModal';
@@ -58,6 +59,8 @@ const RealEstatePage: React.FC = () => {
   const [selectedService, setSelectedService] = useState<PropertyServiceItem | null>(null);
   
   const [showServicePaymentModal, setShowServicePaymentModal] = useState(false);
+  const [showServiceHistoryModal, setShowServiceHistoryModal] = useState(false);
+  const [suggestedPaymentDate, setSuggestedPaymentDate] = useState<string | undefined>(undefined);
   
   // Contract Actions Modals
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -253,10 +256,16 @@ const RealEstatePage: React.FC = () => {
       setIsSubmitting(true);
       try { 
           await ServiceItemService.registerPayment(data); 
+          await loadData();
           setShowServicePaymentModal(false); 
           alert("Registro guardado con éxito"); 
       }
       catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
+  };
+
+  const handleOpenServicePaymentFromHistory = (date: string) => {
+      setSuggestedPaymentDate(date);
+      setShowServicePaymentModal(true);
   };
 
   const formatDateDisplay = (dateStr: string | undefined) => {
@@ -807,16 +816,37 @@ const RealEstatePage: React.FC = () => {
                             {services.filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase())).map(s => {
                                 const prop = properties.find(p => p.code === s.propertyCode);
                                 return (
-                                    <tr key={s.code} className="hover:bg-slate-50">
-                                        <td className="px-6 py-3"><div className="font-bold text-slate-800">{s.name}</div><div className="text-xs text-slate-400 font-mono">{s.code}</div></td>
+                                    <tr key={s.code} className="hover:bg-slate-50 group">
+                                        <td className="px-6 py-3">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <div className="font-bold text-slate-800">{s.name}</div>
+                                                    <div className="text-xs text-slate-400 font-mono">{s.code}</div>
+                                                </div>
+                                                <div className="flex items-center gap-2 ml-4">
+                                                    <button 
+                                                        onClick={() => { setSelectedService(s); setSuggestedPaymentDate(undefined); setShowServicePaymentModal(true); }}
+                                                        className="px-3 py-1.5 bg-emerald-600 text-white text-[10px] font-black rounded-lg hover:bg-emerald-700 transition-all flex items-center gap-1.5 shadow-md shadow-emerald-500/20 active:scale-95 uppercase tracking-wider"
+                                                    >
+                                                        <CreditCard size={12}/> Pagar
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => { setSelectedService(s); setShowServiceHistoryModal(true); }}
+                                                        className="px-3 py-1.5 bg-indigo-50 text-indigo-600 border border-indigo-100 text-[10px] font-black rounded-lg hover:bg-indigo-100 transition-all flex items-center gap-1.5 shadow-sm active:scale-95 uppercase tracking-wider"
+                                                        title="Ver Historial Mensual"
+                                                    >
+                                                        <Clock size={12}/> Historial
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </td>
                                         <td className="px-6 py-3 text-slate-600"><div className="flex items-center gap-2"><Building size={14}/> {prop?.name || s.propertyCode}</div></td>
                                         <td className="px-6 py-3 text-right font-mono text-slate-700">{s.defaultAmount.toLocaleString()}</td>
                                         <td className="px-6 py-3 text-center"><span className={`px-2 py-1 rounded text-xs font-bold ${s.active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{s.active ? 'ACTIVO' : 'INACTIVO'}</span></td>
                                         <td className="px-6 py-3 text-right">
                                             <div className="flex justify-end gap-1">
-                                                <button onClick={() => { setSelectedService(s); setShowServicePaymentModal(true); }} className="p-1.5 text-rose-600 bg-rose-50 hover:bg-rose-100 rounded" title="Pagar Servicio"><CreditCard size={16}/></button>
-                                                <button onClick={() => { setSelectedService(s); setShowServiceModal(true); }} className="p-1.5 text-slate-400 hover:text-indigo-600 rounded"><Edit2 size={16}/></button>
-                                                <button onClick={() => handleDeleteService(s.code)} className="p-1.5 text-slate-400 hover:text-red-600 rounded"><Trash2 size={16}/></button>
+                                                <button onClick={() => { setSelectedService(s); setShowServiceModal(true); }} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"><Edit2 size={16}/></button>
+                                                <button onClick={() => handleDeleteService(s.code)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"><Trash2 size={16}/></button>
                                             </div>
                                         </td>
                                     </tr>
@@ -833,7 +863,24 @@ const RealEstatePage: React.FC = () => {
           <TenantModal isOpen={showTenantModal} onClose={() => setShowTenantModal(false)} onSubmit={selectedTenant ? handleUpdateTenant : handleCreateTenant} editingTenant={selectedTenant} isSubmitting={isSubmitting} />
           <ContractModal isOpen={showContractModal} onClose={() => setShowContractModal(false)} onSubmit={selectedContract ? handleUpdateContract : handleCreateContract} editingContract={selectedContract} isSubmitting={isSubmitting} />
           <ServiceItemModal isOpen={showServiceModal} onClose={() => setShowServiceModal(false)} onSubmit={selectedService ? handleUpdateService : handleCreateService} editingItem={selectedService} isSubmitting={isSubmitting} />
-          <ServicePaymentModal isOpen={showServicePaymentModal} onClose={() => setShowServicePaymentModal(false)} onSubmit={handleServicePayment} serviceItem={selectedService} isSubmitting={isSubmitting} />
+          
+          <ServicePaymentModal 
+              isOpen={showServicePaymentModal} 
+              onClose={() => { setShowServicePaymentModal(false); setSuggestedPaymentDate(undefined); }} 
+              onSubmit={handleServicePayment} 
+              serviceItem={selectedService} 
+              isSubmitting={isSubmitting} 
+              initialDate={suggestedPaymentDate}
+          />
+
+          <ServicePaymentHistoryModal 
+              isOpen={showServiceHistoryModal} 
+              onClose={() => setShowServiceHistoryModal(false)} 
+              service={selectedService} 
+              propertyName={properties.find(p => p.code === selectedService?.propertyCode)?.name || 'Propiedad'}
+              onAddPayment={handleOpenServicePaymentFromHistory}
+          />
+
           <PaymentModal isOpen={showPaymentModal} onClose={() => setShowPaymentModal(false)} onSubmit={handleRegisterPayment} contract={selectedContract} contractLabel={selectedContract ? getContractLabel(selectedContract) : ''} initialDescription={paymentModalDesc} initialAmount={paymentModalOverrides.amount} initialDate={paymentModalOverrides.date} isSubmitting={isSubmitting} />
           <PaymentHistoryModal isOpen={showHistoryModal} onClose={() => setShowHistoryModal(false)} contract={selectedContract} contractLabel={selectedContract ? getContractLabel(selectedContract) : ''} tenantName={tenants.find(t => t.code === selectedContract?.tenantCode)?.fullName} unitName={apartments.find(a => a.code === selectedContract?.apartmentCode)?.name} onRegisterPayment={handleHistoryRegisterPayment} onDeleteTransaction={handleDeleteContractTransaction} />
           <BulkPaymentModal isOpen={showBulkModal} onClose={() => setShowBulkModal(false)} onSubmit={handleBulkPayment} contract={selectedContract} contractLabel={selectedContract ? getContractLabel(selectedContract) : ''} isSubmitting={isSubmitting} progressText={bulkProgress} />

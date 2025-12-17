@@ -10,6 +10,7 @@ interface ServicePaymentModalProps {
   onSubmit: (data: ServicePaymentFormData) => Promise<void>;
   serviceItem: PropertyServiceItem | null;
   isSubmitting: boolean;
+  initialDate?: string;
 }
 
 const ServicePaymentModal: React.FC<ServicePaymentModalProps> = ({ 
@@ -17,7 +18,8 @@ const ServicePaymentModal: React.FC<ServicePaymentModalProps> = ({
   onClose, 
   onSubmit, 
   serviceItem, 
-  isSubmitting 
+  isSubmitting,
+  initialDate
 }) => {
   const [formData, setFormData] = useState<ServicePaymentFormData>({
     serviceCode: '',
@@ -47,19 +49,17 @@ const ServicePaymentModal: React.FC<ServicePaymentModalProps> = ({
             // Validate defaults against loaded lists
             let defAccount = serviceItem.defaultAccountCode || '';
             if (defAccount && !accs.find(a => a.code === defAccount)) {
-                console.warn(`Default account ${defAccount} not found.`);
                 defAccount = '';
             }
 
             let defCat = serviceItem.defaultCategoryCode || '';
             if (defCat && !expenseCats.find(c => c.code === defCat)) {
-                console.warn(`Default category ${defCat} not found or not GASTO.`);
                 defCat = '';
             }
 
             setFormData({
                 serviceCode: serviceItem.code,
-                date: new Date().toISOString().split('T')[0],
+                date: initialDate || new Date().toISOString().split('T')[0],
                 amount: serviceItem.defaultAmount,
                 accountCode: defAccount,
                 categoryCode: defCat,
@@ -70,7 +70,7 @@ const ServicePaymentModal: React.FC<ServicePaymentModalProps> = ({
       };
       init();
     }
-  }, [isOpen, serviceItem]);
+  }, [isOpen, serviceItem, initialDate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,7 +89,7 @@ const ServicePaymentModal: React.FC<ServicePaymentModalProps> = ({
   if (!isOpen || !serviceItem) return null;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all scale-100">
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-rose-50">
