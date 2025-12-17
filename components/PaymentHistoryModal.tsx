@@ -163,6 +163,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
 
   // Use the safe parser instead of new Date()
   const startDate = parseLocalYMD(contract.startDate);
+  const endDate = contract.endDate ? parseLocalYMD(contract.endDate) : null;
   
   const today = new Date(); 
   const months = Array.from({ length: 12 }, (_, i) => i);
@@ -173,46 +174,42 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
   const calculateMonthStatus = (monthIndex: number, currentYear: number) => {
       // 1. Calculate Due Date First to determine Price
       const paymentDay = contract.paymentDay || 1;
-      
-      // FIX: Calcular el último día del mes real para evitar desbordamiento (ej. 31 Nov -> 1 Dic)
       const daysInMonth = new Date(currentYear, monthIndex + 1, 0).getDate();
       const safeDay = Math.min(paymentDay, daysInMonth);
-      
-      // FIX: Crear fecha a las 12:00:00 (Mediodía) para evitar problemas de zona horaria al pasar la fecha
       const dueDate = new Date(currentYear, monthIndex, safeDay, 12, 0, 0);
       
       // 2. Get Dynamic Price for this specific month
       const monthlyAmount = getHistoricalPrice(dueDate);
-
       const periodStr = getPeriodString(currentYear, monthIndex);
       
       // 3. Find transactions
       const monthTransactions = transactions.filter(t => t.billablePeriod === periodStr);
-      
-      // Fallback legacy check
       const legacyTransactions = transactions.filter(t => {
           if (t.billablePeriod) return false;
           const [tYStr, tMStr] = t.date.split('-');
           return parseInt(tYStr) === currentYear && (parseInt(tMStr) - 1) === monthIndex;
       });
-
       const allTxs = [...monthTransactions, ...legacyTransactions];
       
       // 4. Sum amounts
       const totalPaid = allTxs.reduce((sum, t) => sum + t.amount, 0);
-      
-      // 5. Get Payment Date
       const paymentDate = allTxs.length > 0 ? allTxs[0].date : null;
 
-      // 6. Determine Status
+      // 5. Determine Status
       let status = 'FUTURE';
-      
       const cellDate = new Date(currentYear, monthIndex, 1);
-      // Normalized start date (Year, Month, 1) based on parsed start date
       const contractStartMonth = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
       
       // If before contract start
       if (cellDate < contractStartMonth) return { status: 'NA', totalPaid: 0, paymentDate: null, txs: [], monthlyAmount, cellDate, contractStartMonth };
+
+      // FIX: If after contract end
+      if (endDate) {
+          const contractEndMonthNorm = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
+          if (cellDate > contractEndMonthNorm) {
+              return { status: 'NA', totalPaid: 0, paymentDate: null, txs: [], monthlyAmount, cellDate, contractStartMonth };
+          }
+      }
 
       // Status Logic with Tolerance (0.01)
       if (totalPaid >= monthlyAmount - 0.01) {
@@ -222,7 +219,6 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
       } else {
           // No payment yet
           dueDate.setHours(23, 59, 59, 999);
-
           if (today > dueDate) {
               status = 'OVERDUE';
           } else {
@@ -265,7 +261,6 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                         <span className="text-slate-400">|</span>
                         <span className="font-medium">{tenantName}</span>
                     </div>
-                    {/* Updated Price Range Display */}
                     <div className="flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-slate-200">
                         <Calendar size={12} className="text-slate-400 mr-1"/>
                         <span className="font-medium text-slate-700 mr-1">{year}:</span>
@@ -293,9 +288,7 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
                     {months.map(monthIndex => {
                         const { status, totalPaid, paymentDate, txs, monthlyAmount, dueDate } = calculateMonthStatus(monthIndex, year);
-                        
                         const monthName = new Date(year, monthIndex, 1).toLocaleDateString('es-ES', { month: 'short' }).toUpperCase();
-                        
                         const dueDateShort = dueDate ? `${dueDate.getDate().toString().padStart(2,'0')}/${(dueDate.getMonth()+1).toString().padStart(2,'0')}/${dueDate.getFullYear()}` : '-';
 
                         // Card Styles
@@ -341,12 +334,9 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
 
                         return (
                             <div key={monthIndex} className={`relative rounded-lg border p-2.5 flex flex-col justify-between min-h-[110px] transition-all ${cardClass}`}>
-                                
-                                {/* Header Row */}
                                 <div className="flex justify-between items-center mb-2">
                                     <span className="font-bold text-xs text-slate-700">{monthName}</span>
                                     <div className="flex items-center gap-1">
-                                        {/* Delete Button (Only if paid/partial) */}
                                         {txs.length > 0 && onDeleteTransaction && (
                                             <button 
                                                 onClick={(e) => { e.stopPropagation(); handleRequestDelete(txs[0].code); }}
@@ -360,31 +350,23 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                                     </div>
                                 </div>
 
-                                {/* Info Rows */}
                                 {status !== 'NA' && (
                                     <div className="space-y-1 text-[10px]">
-                                        {/* Row: Due Date */}
                                         <div className="flex justify-between items-center text-slate-500">
                                             <span>Vence:</span>
                                             <span className="font-mono">{dueDateShort}</span>
                                         </div>
-
-                                        {/* Row: Payment Date (Only if paid) */}
                                         {(status === 'PAID' || status === 'PARTIAL') && paymentDate ? (
                                             <div className="flex justify-between items-center text-slate-700 font-bold">
                                                 <span>Pagado:</span>
                                                 <span className="font-mono">{formatDateShort(paymentDate)}</span>
                                             </div>
                                         ) : (
-                                            <div className="h-[15px]"></div> // Spacer
+                                            <div className="h-[15px]"></div>
                                         )}
-
                                         <div className="border-t border-black/5 my-1"></div>
-
-                                        {/* Row: Amounts */}
                                         <div className="flex justify-between items-center">
                                             <span className="text-slate-500">Contrato:</span>
-                                            {/* Aquí se muestra el monto calculado dinámicamente */}
                                             <span className="font-mono">{formatMoney(monthlyAmount)}</span>
                                         </div>
                                         {(status === 'PAID' || status === 'PARTIAL') && (
@@ -396,10 +378,8 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                                     </div>
                                 )}
 
-                                {/* Action Overlay */}
                                 {action && <button onClick={action} className="absolute inset-0 w-full h-full cursor-pointer rounded-lg z-10" title="Click para gestionar"></button>}
 
-                                {/* DELETE CONFIRMATION OVERLAY */}
                                 {isConfirmingDelete(txs) && (
                                     <div className="absolute inset-0 z-30 bg-white/95 backdrop-blur-sm rounded-lg flex flex-col items-center justify-center p-2 text-center animate-fadeIn border border-red-200">
                                         <p className="text-[10px] font-bold text-slate-800 mb-1.5 leading-tight">¿Borrar pago?</p>
@@ -416,7 +396,6 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
             )}
         </div>
 
-        {/* DIAGNOSTIC PANEL TOGGLE */}
         <div className="bg-slate-100 p-2 text-xs flex justify-end border-t border-slate-200">
             <button 
                 onClick={() => setShowDebug(!showDebug)} 
@@ -426,7 +405,6 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
             </button>
         </div>
 
-        {/* DIAGNOSTIC PANEL CONTENT */}
         {showDebug && (
             <div className="bg-slate-900 text-green-400 p-4 font-mono text-xs overflow-auto h-48 border-t-2 border-indigo-500 shadow-inner">
                 <p className="font-bold text-white mb-2">=== CONSOLA DE DIAGNÓSTICO (DEBUG) ===</p>
@@ -434,34 +412,16 @@ const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                     <div>
                         <p className="text-slate-400">Datos Crudos (Base de Datos):</p>
                         <p>contract.startDate: <span className="text-yellow-300">"{contract.startDate}"</span></p>
-                        <p>contract.status: <span className="text-yellow-300">"{contract.status}"</span></p>
+                        <p>contract.endDate: <span className="text-yellow-300">"{contract.endDate}"</span></p>
                     </div>
                     <div>
-                        <p className="text-slate-400">Interpretación Local (Corregida):</p>
+                        <p className="text-slate-400">Interpretación Local:</p>
                         <p>Parsed Start Date: <span className="text-yellow-300">{startDate.toString()}</span></p>
-                        <p>Start Year / Month: <span className="text-yellow-300">{startDate.getFullYear()} / {startDate.getMonth() + 1}</span></p>
+                        <p>Parsed End Date: <span className="text-yellow-300">{endDate?.toString() || 'N/A'}</span></p>
                     </div>
-                </div>
-                <p className="text-slate-400 mb-1">Lógica de Visibilidad para Año {year}:</p>
-                <div className="space-y-1">
-                    {months.slice(0, 4).map(m => { // Show first 4 months example
-                        const { status, cellDate, contractStartMonth } = calculateMonthStatus(m, year) as any;
-                        const isVisible = status !== 'NA';
-                        return (
-                            <div key={m} className="flex gap-2">
-                                <span className="w-16 text-slate-300">Mes {m+1}:</span>
-                                <span>Cell[{cellDate?.toLocaleDateString()}] {isVisible ? '>=' : '<'} Start[{contractStartMonth?.toLocaleDateString()}]</span>
-                                <span className={isVisible ? "text-green-500 font-bold" : "text-red-500 font-bold"}>
-                                    -> {isVisible ? "VISIBLE" : "NA (Oculto)"}
-                                </span>
-                            </div>
-                        )
-                    })}
-                    <p className="text-slate-500 italic">... (resto de los meses sigue la misma lógica)</p>
                 </div>
             </div>
         )}
-
       </div>
     </div>
   );

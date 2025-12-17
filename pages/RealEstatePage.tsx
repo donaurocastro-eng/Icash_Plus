@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { 
   Plus, Search, Edit2, Trash2, Building, Home, Users, FileText, Zap, 
   DollarSign, Calendar, Clock, CheckCircle, TrendingUp, MoreVertical, Key,
-  CreditCard, List, AlertTriangle, ArrowRight, User, Loader, X
+  CreditCard, List, AlertTriangle, ArrowRight, User, Loader, X, Filter
 } from 'lucide-react';
 import { 
   Property, Apartment, Tenant, Contract, PropertyServiceItem, Transaction,
@@ -31,6 +31,7 @@ const RealEstatePage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'PROPERTIES' | 'UNITS' | 'TENANTS' | 'CONTRACTS' | 'PAYMENTS' | 'DELINQUENT' | 'SERVICES'>('CONTRACTS');
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [contractFilter, setContractFilter] = useState<'ALL' | 'ACTIVE' | 'FINISHED'>('ALL');
 
   // Data
   const [properties, setProperties] = useState<Property[]>([]);
@@ -276,6 +277,13 @@ const RealEstatePage: React.FC = () => {
       const nextPay = new Date(c.nextPaymentDate);
       const nextPayAdjusted = new Date(nextPay.valueOf() + nextPay.getTimezoneOffset() * 60000);
       const todayZero = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      
+      if (c.endDate) {
+          const endObj = new Date(c.endDate);
+          const endAdjusted = new Date(endObj.valueOf() + endObj.getTimezoneOffset() * 60000);
+          if (nextPayAdjusted > endAdjusted) return false;
+      }
+
       return nextPayAdjusted < todayZero;
   });
 
@@ -335,9 +343,25 @@ const RealEstatePage: React.FC = () => {
           </div>
 
           <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-             <div className="relative w-full sm:w-64">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
-                <input type="text" placeholder="Buscar..." className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+             <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+                <div className="relative w-full sm:w-64">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
+                    <input type="text" placeholder="Buscar..." className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-sm" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                </div>
+                {activeTab === 'CONTRACTS' && (
+                    <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg p-1 w-full sm:w-auto">
+                        <Filter size={14} className="text-slate-400 ml-2" />
+                        <select 
+                            className="bg-transparent text-xs font-bold text-slate-600 outline-none py-1 pr-2"
+                            value={contractFilter}
+                            onChange={(e) => setContractFilter(e.target.value as any)}
+                        >
+                            <option value="ALL">Todos los Contratos</option>
+                            <option value="ACTIVE">Solo Activos</option>
+                            <option value="FINISHED">Solo Finalizados</option>
+                        </select>
+                    </div>
+                )}
              </div>
              {activeTab !== 'PAYMENTS' && activeTab !== 'DELINQUENT' && (
                  <button 
@@ -348,10 +372,10 @@ const RealEstatePage: React.FC = () => {
                         if (activeTab === 'CONTRACTS') { setSelectedContract(null); setShowContractModal(true); }
                         if (activeTab === 'SERVICES') { setSelectedService(null); setShowServiceModal(true); }
                     }} 
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-bold flex items-center gap-2 shadow-md"
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-bold flex items-center gap-2 shadow-md w-full sm:w-auto justify-center"
                  >
                     <Plus size={18}/> 
-                    <span>
+                    <span className="text-sm">
                         {activeTab === 'PROPERTIES' && 'Nueva Propiedad'}
                         {activeTab === 'UNITS' && 'Nueva Unidad'}
                         {activeTab === 'TENANTS' && 'Nuevo Inquilino'}
@@ -447,17 +471,39 @@ const RealEstatePage: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {contracts.filter(c => getContractLabel(c).toLowerCase().includes(searchTerm.toLowerCase())).map(contract => {
+                            {contracts
+                                .filter(c => getContractLabel(c).toLowerCase().includes(searchTerm.toLowerCase()))
+                                .filter(c => {
+                                    if (contractFilter === 'ALL') return true;
+                                    const today = new Date();
+                                    today.setHours(0,0,0,0);
+                                    const endObj = c.endDate ? new Date(c.endDate) : null;
+                                    const isFinished = endObj ? (new Date(endObj.valueOf() + endObj.getTimezoneOffset() * 60000) < today) : false;
+                                    return contractFilter === 'ACTIVE' ? !isFinished : isFinished;
+                                })
+                                .map(contract => {
                                 const t = tenants.find(x => x.code === contract.tenantCode);
                                 const a = apartments.find(x => x.code === contract.apartmentCode);
                                 const today = new Date();
                                 today.setHours(0, 0, 0, 0);
                                 const endObj = contract.endDate ? new Date(contract.endDate) : null;
-                                let isExpired = false;
+                                
+                                let isTemporallyExpired = false;
                                 if (endObj) {
                                     const endAdjusted = new Date(endObj.valueOf() + endObj.getTimezoneOffset() * 60000);
-                                    isExpired = endAdjusted < today;
+                                    isTemporallyExpired = endAdjusted < today;
                                 }
+
+                                const nextPay = new Date(contract.nextPaymentDate || contract.startDate);
+                                const nextPayAdjusted = new Date(nextPay.valueOf() + nextPay.getTimezoneOffset() * 60000);
+                                
+                                // Un contrato está realmente finalizado y pagado si la fecha de próximo pago supera el fin del contrato.
+                                let isFullyPaidAndFinished = false;
+                                if (endObj) {
+                                    const endAdjusted = new Date(endObj.valueOf() + endObj.getTimezoneOffset() * 60000);
+                                    if (nextPayAdjusted > endAdjusted) isFullyPaidAndFinished = true;
+                                }
+
                                 return (
                                     <tr key={contract.code} className="hover:bg-slate-50 group">
                                         <td className="px-6 py-3">
@@ -477,8 +523,12 @@ const RealEstatePage: React.FC = () => {
                                         <td className="px-6 py-3 text-right font-mono font-bold text-slate-700">{contract.amount.toLocaleString('es-HN', {style:'currency', currency: 'HNL'})}</td>
                                         <td className="px-6 py-3 text-center"><span className="px-2 py-1 bg-slate-100 text-slate-600 rounded font-bold text-xs">Día {contract.paymentDay}</span></td>
                                         <td className="px-6 py-3 text-center">
-                                            {isExpired ? (
-                                                <span className="px-2 py-1 rounded text-[10px] font-bold bg-rose-100 text-rose-700">VENCIDO</span>
+                                            {isTemporallyExpired ? (
+                                                isFullyPaidAndFinished ? (
+                                                    <span className="px-2 py-1 rounded text-[10px] font-bold bg-blue-50 text-blue-600 border border-blue-100 uppercase">Finalizado</span>
+                                                ) : (
+                                                    <span className="px-2 py-1 rounded text-[10px] font-bold bg-rose-100 text-rose-700 uppercase">Vencido</span>
+                                                )
                                             ) : (
                                                 <span className={`px-2 py-1 rounded text-[10px] font-bold ${contract.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{contract.status === 'ACTIVE' ? 'ACTIVO' : 'INACTIVO'}</span>
                                             )}
@@ -526,7 +576,14 @@ const RealEstatePage: React.FC = () => {
                                     const nextPay = new Date(contract.nextPaymentDate || contract.startDate);
                                     const nextPayAdjusted = new Date(nextPay.valueOf() + nextPay.getTimezoneOffset() * 60000);
                                     const todayZero = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-                                    const isOverdue = nextPayAdjusted < todayZero;
+                                    
+                                    let isOverdue = nextPayAdjusted < todayZero;
+                                    if (contract.endDate) {
+                                        const endObj = new Date(contract.endDate);
+                                        const endAdjusted = new Date(endObj.valueOf() + endObj.getTimezoneOffset() * 60000);
+                                        if (nextPayAdjusted > endAdjusted) isOverdue = false;
+                                    }
+
                                     return (
                                         <tr key={contract.code} className="hover:bg-slate-50 group">
                                             <td className="px-6 py-3">
