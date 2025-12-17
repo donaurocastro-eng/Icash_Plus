@@ -230,12 +230,7 @@ export const ContractService = {
   deletePriceHistory: async (id: string): Promise<void> => {
       if(db.isConfigured()) {
           // FIX: Detect if ID is a number string and cast it to integer for Postgres
-          // This prevents "delete 0 rows" issue if DB expects int but receives string '5'
           const finalId = /^\d+$/.test(id) ? parseInt(id, 10) : id;
-          
-          // Debug check
-          console.log("Deleting history ID:", finalId, "Type:", typeof finalId);
-          
           await db.query('DELETE FROM contract_prices WHERE id=$1', [finalId]);
       }
   },
@@ -302,22 +297,18 @@ export const ContractService = {
     }
 
     if (totalPaidForPeriod >= (contract.amount - 0.01)) {
-        // CORRECCIÓN: Cálculo seguro de fecha para evitar desbordamiento de mes (ej. 30 Nov -> 1 Dic)
         let currentNext = new Date(contract.nextPaymentDate || contract.startDate);
         currentNext = new Date(currentNext.valueOf() + currentNext.getTimezoneOffset() * 60000);
         
         let targetYear = currentNext.getFullYear();
         let targetMonth = currentNext.getMonth() + 1; // Siguiente mes
         
-        // Manejo de cambio de año
         if (targetMonth > 11) {
             targetMonth = 0;
             targetYear++;
         }
         
-        // Usar el DÍA DE CORTE configurado en el contrato como ancla
         const pDay = contract.paymentDay || 1;
-        // Calcular último día del mes objetivo para no pasarnos
         const daysInTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
         const safeDay = Math.min(pDay, daysInTargetMonth);
         
@@ -337,11 +328,15 @@ export const ContractService = {
     }
   },
 
-  processBulkPayment: async (data: BulkPaymentFormData): Promise<void> => {
+  processBulkPayment: async (data: BulkPaymentFormData, onProgress?: (current: number, total: number) => void): Promise<void> => {
       const paymentsToProcess = data.items.filter(i => i.selected);
-      if (paymentsToProcess.length === 0) return;
+      const total = paymentsToProcess.length;
+      if (total === 0) return;
       
-      for (const item of paymentsToProcess) {
+      for (let i = 0; i < total; i++) {
+          const item = paymentsToProcess[i];
+          if (onProgress) onProgress(i + 1, total);
+
           const historicalAmount = await ContractService.getPriceAtDate(data.contractCode, item.date);
           const finalAmount = historicalAmount > 0 ? historicalAmount : item.amount;
 

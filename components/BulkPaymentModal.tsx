@@ -13,6 +13,7 @@ interface BulkPaymentModalProps {
   contract: Contract | null;
   contractLabel: string;
   isSubmitting: boolean;
+  progressText?: string;
 }
 
 const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
@@ -21,7 +22,8 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
   onSubmit,
   contract,
   contractLabel,
-  isSubmitting
+  isSubmitting,
+  progressText
 }) => {
   const [items, setItems] = useState<BulkPaymentItem[]>([]);
   const [accountCode, setAccountCode] = useState('');
@@ -42,7 +44,6 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
       setItems([]);
 
       try {
-          // 1. Cargar dependencias en paralelo
           const [accData, allTenants, allTxs, priceHistory] = await Promise.all([
               AccountService.getAll(),
               TenantService.getAll(),
@@ -53,7 +54,6 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
           setAccounts(accData.filter(a => a.type === 'ACTIVO'));
           const tenant = allTenants.find(x => x.code === contract.tenantCode);
 
-          // 2. Calcular lista de pendientes usando la lógica "Control de Pagos"
           calculatePendingPayments(contract, tenant || null, allTxs, priceHistory);
           
       } catch (err: any) {
@@ -65,13 +65,10 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
   };
 
   const getHistoricalPrice = (date: Date, history: ContractPrice[], currentAmount: number): number => {
-      // YYYY-MM-DD
       const y = date.getFullYear();
       const m = String(date.getMonth() + 1).padStart(2, '0');
       const d = String(date.getDate()).padStart(2, '0');
       const dateStr = `${y}-${m}-${d}`;
-
-      // history está ordenado DESC por fecha. Buscamos el primero que sea <= fecha actual
       const match = history.find(p => p.startDate <= dateStr);
       return match ? match.amount : currentAmount;
   };
@@ -83,67 +80,40 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
       history: ContractPrice[]
   ) => {
       const list: BulkPaymentItem[] = [];
-      
-      // Fecha de inicio para el análisis (Inicio del contrato)
-      // Ajuste de zona horaria para evitar desfases
       const startParts = c.startDate.split('-');
       let pointerDate = new Date(parseInt(startParts[0]), parseInt(startParts[1]) - 1, parseInt(startParts[2]));
-      
-      // Fecha límite: Hoy + 12 meses (para permitir adelantos)
       const limitDate = new Date();
       limitDate.setMonth(limitDate.getMonth() + 12);
-
       const tenantName = t ? t.fullName : 'Desconocido';
       const tenantCode = t ? t.code : c.tenantCode;
-
-      // Filtrar transacciones de este contrato una sola vez
       const contractTxs = allTxs.filter(tx => tx.contractCode === c.code && tx.type === 'INGRESO');
 
-      // Iteramos mes a mes
       while (pointerDate <= limitDate) {
           const year = pointerDate.getFullYear();
           const monthIndex = pointerDate.getMonth();
-          
-          // Calcular día de pago seguro para este mes
           const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
           const paymentDay = c.paymentDay || 1;
           const safeDay = Math.min(paymentDay, daysInMonth);
-          
           const dueDate = new Date(year, monthIndex, safeDay);
           const dueDateStr = dueDate.toISOString().split('T')[0];
           const periodStr = `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
-
-          // 1. Obtener precio histórico para ESTE mes específico
           const expectedAmount = getHistoricalPrice(dueDate, history, c.amount);
-
-          // 2. Calcular cuánto se ha pagado para ESTE mes
-          // Busca por billablePeriod O por coincidencia de fecha (fallback)
           const paidAmount = contractTxs.reduce((sum, tx) => {
               let match = false;
-              if (tx.billablePeriod) {
-                  match = tx.billablePeriod === periodStr;
-              } else {
-                  // Fallback legacy
+              if (tx.billablePeriod) { match = tx.billablePeriod === periodStr; } else {
                   const txDate = new Date(tx.date);
                   match = txDate.getFullYear() === year && txDate.getMonth() === monthIndex;
               }
               return match ? sum + tx.amount : sum;
           }, 0);
 
-          // 3. Determinar deuda
           const remaining = expectedAmount - paidAmount;
-
-          // Si hay deuda pendiente (tolerancia de 0.1 para decimales)
           if (remaining > 0.1) {
               const monthName = pointerDate.toLocaleDateString('es-ES', { month: 'long' });
               const label = monthName.charAt(0).toUpperCase() + monthName.slice(1);
-              
               const isPartial = paidAmount > 0;
               const statusText = isPartial ? `(Saldo Pendiente)` : `(Mes Completo)`;
-              
               const description = `Contrato: ${c.code} Inquilino: ${tenantCode} ${tenantName} - Alquiler ${label} ${year} ${statusText}`;
-              
-              // Seleccionar por defecto solo el primer mes pendiente (el más antiguo)
               const isFirstPending = list.length === 0;
 
               list.push({
@@ -154,13 +124,9 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
                   billablePeriod: periodStr
               });
           }
-
-          // Avanzar al siguiente mes
           pointerDate.setMonth(pointerDate.getMonth() + 1);
-          // Reseteamos al día 1 para evitar problemas de días (ej. 31 Ene + 1 mes -> 3 Mar)
           pointerDate.setDate(1); 
       }
-
       setItems(list);
   };
 
@@ -222,7 +188,6 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
                 </div>
             )}
 
-            {/* Account Selector */}
             <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm space-y-1">
                 <label className="block text-xs font-bold text-slate-700">Cuenta de Destino</label>
                 <select 
@@ -235,7 +200,6 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
                 </select>
             </div>
 
-            {/* Month List */}
             <div className="flex flex-col h-full min-h-[200px]">
                 <div className="flex justify-between items-end mb-2 px-1">
                     <label className="block text-xs font-bold text-slate-700">Pagos Pendientes (Cronológico)</label>
@@ -271,11 +235,9 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
                                     <div className={`mt-0.5 transition-colors ${item.selected ? 'text-indigo-600' : 'text-slate-300 group-hover:text-slate-400'}`}>
                                         {item.selected ? <CheckSquare size={18} strokeWidth={2.5}/> : <Square size={18}/>}
                                     </div>
-                                    
                                     <div className="flex-1 min-w-0">
                                         <div className="flex justify-between items-start">
                                             <p className={`text-xs font-bold truncate pr-2 ${item.selected ? 'text-indigo-900' : 'text-slate-700'}`}>
-                                                {/* Extract Month/Year safely or use full desc */}
                                                 {item.description.includes('- Alquiler') 
                                                     ? item.description.split('- Alquiler')[1].trim()
                                                     : item.description}
@@ -284,7 +246,6 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
                                                 {item.amount.toLocaleString('es-HN', { minimumFractionDigits: 2 })}
                                             </p>
                                         </div>
-                                        
                                         <div className="mt-1 flex items-center justify-between">
                                             <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
                                                 <Calendar size={10}/>
@@ -327,7 +288,9 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
                     className="flex-1 sm:flex-none px-4 py-1.5 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 shadow-md shadow-indigo-200 disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-1.5 transition-all transform active:scale-95 text-xs"
                 >
                     {isSubmitting ? (
-                        <>Procesando...</>
+                        <span className="flex items-center gap-2">
+                             <RefreshCw size={14} className="animate-spin"/> {progressText ? `Actualizado ${progressText}` : 'Procesando...'}
+                        </span>
                     ) : (
                         <>
                             Pagar {selectedCount} Meses <ArrowRight size={14}/>
@@ -336,7 +299,6 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
                 </button>
             </div>
         </div>
-
       </div>
     </div>
   );
