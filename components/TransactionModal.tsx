@@ -28,7 +28,8 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
     accountCode: '',
     destinationAccountCode: '',
     propertyCode: '',
-    propertyName: ''
+    propertyName: '',
+    serviceCode: ''
   });
 
   const [categories, setCategories] = useState<Category[]>([]);
@@ -53,7 +54,8 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
             accountCode: editingTransaction.accountCode,
             destinationAccountCode: '', // Editing transfers not supported directly
             propertyCode: editingTransaction.propertyCode || '',
-            propertyName: editingTransaction.propertyName || ''
+            propertyName: editingTransaction.propertyName || '',
+            serviceCode: editingTransaction.serviceCode || ''
           });
       } else {
           setFormData({
@@ -65,7 +67,8 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
             accountCode: '',
             destinationAccountCode: '',
             propertyCode: '',
-            propertyName: ''
+            propertyName: '',
+            serviceCode: ''
           });
       }
       setError(null);
@@ -283,10 +286,10 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
                   </div>
               )}
 
-              {/* Property Section (Optional) */}
+              {/* Property & Service Section (Optional) */}
               <div className="pt-2 border-t border-slate-100 mt-2">
-                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Propiedad (Opcional)</span>
-                <div className="grid grid-cols-2 gap-2">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Información Adicional (Opcional)</span>
+                <div className="grid grid-cols-2 gap-2 mb-2">
                   <input
                     type="text"
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none text-sm"
@@ -297,11 +300,18 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
                   <input
                     type="text"
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none text-sm"
-                    placeholder="Nombre Propiedad"
-                    value={formData.propertyName}
-                    onChange={e => setFormData({...formData, propertyName: e.target.value})}
+                    placeholder="Cod. Servicio"
+                    value={formData.serviceCode}
+                    onChange={e => setFormData({...formData, serviceCode: e.target.value})}
                   />
                 </div>
+                <input
+                  type="text"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none text-sm"
+                  placeholder="Nombre Propiedad"
+                  value={formData.propertyName}
+                  onChange={e => setFormData({...formData, propertyName: e.target.value})}
+                />
               </div>
             </div>
           </div>
