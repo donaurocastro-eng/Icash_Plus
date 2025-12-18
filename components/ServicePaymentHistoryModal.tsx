@@ -1,6 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
-import { X, ChevronLeft, ChevronRight, CreditCard, Clock, CheckCircle, Plus, Calendar } from 'lucide-react';
+/* Added AlertTriangle to the imports from lucide-react */
+import { X, ChevronLeft, ChevronRight, CreditCard, Clock, CheckCircle, Plus, Calendar, Trash2, AlertTriangle } from 'lucide-react';
 import { PropertyServiceItem, Transaction } from '../types';
 import { TransactionService } from '../services/transactionService';
 
@@ -10,6 +10,7 @@ interface ServicePaymentHistoryModalProps {
   service: PropertyServiceItem | null;
   propertyName: string;
   onAddPayment: (date: string) => void;
+  onDeleteTransaction?: (code: string) => Promise<void>;
 }
 
 const ServicePaymentHistoryModal: React.FC<ServicePaymentHistoryModalProps> = ({
@@ -17,11 +18,13 @@ const ServicePaymentHistoryModal: React.FC<ServicePaymentHistoryModalProps> = ({
   onClose,
   service,
   propertyName,
-  onAddPayment
+  onAddPayment,
+  onDeleteTransaction
 }) => {
   const [year, setYear] = useState(new Date().getFullYear());
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen && service) {
@@ -34,18 +37,12 @@ const ServicePaymentHistoryModal: React.FC<ServicePaymentHistoryModalProps> = ({
     setLoading(true);
     try {
         const allTxs = await TransactionService.getAll();
-        
-        // FILTRADO ESTRICTO POR SERVICE_CODE
         const serviceTxs = allTxs.filter(t => {
             if (t.type !== 'GASTO') return false;
             const tYear = parseInt(t.date.split('-')[0]);
-            
-            // Si la transacción tiene el código del servicio, es un match perfecto
             if (t.serviceCode) {
                 return tYear === year && t.serviceCode === service.code;
             }
-            
-            // Fallback para datos antiguos (basado en Propiedad + Categoría)
             return tYear === year && 
                    t.propertyCode === service.propertyCode && 
                    t.categoryCode === service.defaultCategoryCode;
@@ -58,6 +55,20 @@ const ServicePaymentHistoryModal: React.FC<ServicePaymentHistoryModalProps> = ({
     }
   };
 
+  const handleDelete = async (code: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!onDeleteTransaction || !window.confirm("¿Deseas eliminar este registro de pago?")) return;
+      setDeletingId(code);
+      try {
+          await onDeleteTransaction(code);
+          await loadHistory();
+      } catch (e) {
+          console.error(e);
+      } finally {
+          setDeletingId(null);
+      }
+  };
+
   if (!isOpen || !service) return null;
 
   const months = Array.from({ length: 12 }, (_, i) => i);
@@ -68,7 +79,6 @@ const ServicePaymentHistoryModal: React.FC<ServicePaymentHistoryModalProps> = ({
       <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm transition-opacity" onClick={onClose} />
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh] border border-slate-200 animate-fadeIn">
         
-        {/* HEADER */}
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-start bg-slate-50">
             <div>
                 <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
@@ -80,19 +90,17 @@ const ServicePaymentHistoryModal: React.FC<ServicePaymentHistoryModalProps> = ({
             <button onClick={onClose} className="p-1.5 hover:bg-slate-200 rounded-full transition-colors text-slate-500"><X size={20}/></button>
         </div>
         
-        {/* YEAR SELECTOR */}
         <div className="flex items-center justify-center py-4 gap-8 border-b border-slate-100 bg-white shadow-sm z-10">
-            <button onClick={() => setYear(year - 1)} className="p-2 hover:bg-slate-100 rounded-full text-slate-600 transition-all border border-slate-200 active:scale-90"><ChevronLeft size={24}/></button>
+            <button onClick={() => setYear(year - 1)} className="p-2 hover:bg-slate-100 rounded-full text-slate-600 border border-slate-200 active:scale-90"><ChevronLeft size={24}/></button>
             <div className="flex flex-col items-center">
                 <span className="text-2xl font-black text-slate-800 tracking-tighter">{year}</span>
                 <span className="text-[10px] text-indigo-500 font-bold uppercase tracking-[0.2em]">Año Fiscal</span>
             </div>
-            <button onClick={() => setYear(year + 1)} className="p-2 hover:bg-slate-100 rounded-full text-slate-600 transition-all border border-slate-200 active:scale-90"><ChevronRight size={24}/></button>
+            <button onClick={() => setYear(year + 1)} className="p-2 hover:bg-slate-100 rounded-full text-slate-600 border border-slate-200 active:scale-90"><ChevronRight size={24}/></button>
         </div>
 
-        {/* MONTHS GRID */}
         <div className="p-6 overflow-y-auto bg-slate-50/50 flex-1">
-            {loading ? (
+            {loading && !deletingId ? (
                  <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3">
                      <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600"></div>
                      <span className="text-xs font-bold uppercase">Sincronizando operaciones...</span>
@@ -108,24 +116,14 @@ const ServicePaymentHistoryModal: React.FC<ServicePaymentHistoryModalProps> = ({
                         return (
                             <div 
                                 key={monthIndex} 
-                                onClick={() => {
-                                    const date = `${year}-${String(monthIndex + 1).padStart(2, '0')}-01`;
-                                    onAddPayment(date);
-                                }}
-                                className={`relative rounded-xl border-2 p-5 flex flex-col justify-between transition-all group cursor-pointer active:scale-95 hover:shadow-lg overflow-hidden ${
+                                className={`relative rounded-xl border-2 p-5 flex flex-col justify-between transition-all group overflow-hidden ${
                                     hasPaid 
-                                    ? 'bg-white border-emerald-100 hover:border-emerald-500 shadow-sm' 
-                                    : 'bg-white border-slate-100 hover:border-indigo-400 opacity-90 hover:opacity-100'
+                                    ? 'bg-white border-emerald-100 shadow-sm' 
+                                    : 'bg-white border-slate-100 opacity-90'
                                 }`}
                             >
-                                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <div className="bg-indigo-600 text-white p-1 rounded-full shadow-md">
-                                        <Plus size={14} strokeWidth={3}/>
-                                    </div>
-                                </div>
-
-                                <div className="flex justify-between items-start mb-4">
-                                    <span className={`font-black text-xs tracking-widest transition-colors ${hasPaid ? 'text-emerald-600' : 'text-slate-400 group-hover:text-indigo-600'}`}>
+                                <div className="flex justify-between items-start mb-2">
+                                    <span className={`font-black text-xs tracking-widest ${hasPaid ? 'text-emerald-600' : 'text-slate-400'}`}>
                                         {monthName}
                                     </span>
                                     {hasPaid && <CheckCircle size={18} className="text-emerald-500"/>}
@@ -133,26 +131,54 @@ const ServicePaymentHistoryModal: React.FC<ServicePaymentHistoryModalProps> = ({
 
                                 <div className="space-y-1">
                                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Total Pagado</p>
-                                    <p className={`text-xl font-mono font-black tracking-tighter ${hasPaid ? 'text-slate-800' : 'text-slate-300 group-hover:text-slate-400'}`}>
+                                    <p className={`text-xl font-mono font-black tracking-tighter ${hasPaid ? 'text-slate-800' : 'text-slate-300'}`}>
                                         {formatMoney(totalPaid)}
                                     </p>
-                                    {monthTxs.length > 0 && (
-                                        <div className="flex items-center gap-1.5 mt-2">
-                                            <div className="flex -space-x-1">
-                                                {monthTxs.slice(0, 3).map((_, i) => (
-                                                    <div key={i} className="w-2.5 h-2.5 rounded-full bg-emerald-400 border border-white"></div>
-                                                ))}
-                                            </div>
-                                            <span className="text-[10px] text-emerald-600 font-bold">
-                                                {monthTxs.length} {monthTxs.length === 1 ? 'pago' : 'pagos'}
-                                            </span>
-                                        </div>
-                                    )}
                                 </div>
-                                
-                                <div className="mt-4 pt-3 border-t border-slate-50 flex items-center gap-2 text-[9px] font-black text-slate-400 group-hover:text-indigo-500 uppercase tracking-widest transition-colors">
-                                    <Calendar size={12} className="shrink-0"/>
-                                    <span>{hasPaid ? 'Añadir recibo' : 'Registrar'}</span>
+
+                                <div className="mt-4 pt-3 border-t border-slate-50">
+                                    {monthTxs.length > 0 ? (
+                                        <div className="space-y-2">
+                                            {monthTxs.map(tx => (
+                                                <div key={tx.code} className="flex items-center justify-between group/tx bg-slate-50 p-1.5 rounded border border-slate-100">
+                                                    <div className="flex flex-col">
+                                                        <span className="text-[9px] font-bold text-slate-600">{tx.date.split('-')[2]}/{tx.date.split('-')[1]}</span>
+                                                        <span className="text-[8px] text-slate-400 font-mono">{tx.code}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="text-[10px] font-bold text-slate-700">{formatMoney(tx.amount)}</span>
+                                                        <button 
+                                                            disabled={!!deletingId}
+                                                            onClick={(e) => handleDelete(tx.code, e)} 
+                                                            className="p-1 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded transition-colors"
+                                                            title="Eliminar movimiento"
+                                                        >
+                                                            {deletingId === tx.code ? <div className="animate-spin h-3 w-3 border-b-2 border-rose-500 rounded-full"/> : <Trash2 size={12}/>}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            <button 
+                                                onClick={() => {
+                                                    const date = `${year}-${String(monthIndex + 1).padStart(2, '0')}-01`;
+                                                    onAddPayment(date);
+                                                }}
+                                                className="w-full py-1 text-[9px] font-bold text-indigo-600 bg-indigo-50 rounded flex items-center justify-center gap-1 hover:bg-indigo-100 transition-colors"
+                                            >
+                                                <Plus size={10}/> AÑADIR OTRO
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <button 
+                                            onClick={() => {
+                                                const date = `${year}-${String(monthIndex + 1).padStart(2, '0')}-01`;
+                                                onAddPayment(date);
+                                            }}
+                                            className="w-full py-2 text-[9px] font-black text-slate-400 hover:text-indigo-600 uppercase tracking-widest transition-colors flex items-center justify-center gap-2"
+                                        >
+                                            <Plus size={12}/> REGISTRAR PAGO
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         );
@@ -163,11 +189,11 @@ const ServicePaymentHistoryModal: React.FC<ServicePaymentHistoryModalProps> = ({
 
         <div className="px-6 py-4 bg-white border-t border-slate-100 flex justify-between items-center text-[10px]">
             <div className="flex items-center gap-5">
-                <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-emerald-500 rounded-full shadow-sm shadow-emerald-200"></div> <span className="text-slate-600 font-bold">CON PAGOS</span></div>
-                <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-slate-200 rounded-full border border-slate-300"></div> <span className="text-slate-400 font-bold">SIN REGISTROS</span></div>
+                <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-emerald-500 rounded-full"></div> <span className="text-slate-600 font-bold">CON PAGOS</span></div>
+                <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-slate-200 rounded-full"></div> <span className="text-slate-400 font-bold">SIN REGISTROS</span></div>
             </div>
             <div className="text-slate-400 italic font-bold flex items-center gap-1.5">
-                <Plus size={12}/> Historial filtrado por ID único del servicio
+                <AlertTriangle size={12}/> Para corregir pagos, elimine el registro individual y registre uno nuevo.
             </div>
         </div>
       </div>

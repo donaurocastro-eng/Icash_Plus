@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { 
   Plus, Search, Edit2, Trash2, Building, Home, Users, FileText, Zap, 
@@ -27,13 +26,11 @@ import ServicePaymentHistoryModal from '../components/ServicePaymentHistoryModal
 import PaymentModal from '../components/PaymentModal';
 import PaymentHistoryModal from '../components/PaymentHistoryModal';
 import BulkPaymentModal from '../components/BulkPaymentModal';
-import ContractPriceHistoryModal from '../components/ContractPriceHistoryModal';
 
 const RealEstatePage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'PROPERTIES' | 'UNITS' | 'TENANTS' | 'CONTRACTS' | 'PAYMENTS' | 'DELINQUENT' | 'SERVICES'>('CONTRACTS');
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [contractFilter, setContractFilter] = useState<'ALL' | 'ACTIVE' | 'FINISHED'>('ALL');
 
   // Data
   const [properties, setProperties] = useState<Property[]>([]);
@@ -46,43 +43,37 @@ const RealEstatePage: React.FC = () => {
   // Modals
   const [showPropertyModal, setShowPropertyModal] = useState(false);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
-
   const [showApartmentModal, setShowApartmentModal] = useState(false);
   const [selectedApartment, setSelectedApartment] = useState<Apartment | null>(null);
-
   const [showTenantModal, setShowTenantModal] = useState(false);
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
-
   const [showContractModal, setShowContractModal] = useState(false);
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
-
   const [showServiceModal, setShowServiceModal] = useState(false);
   const [selectedService, setSelectedService] = useState<PropertyServiceItem | null>(null);
-  
   const [showServicePaymentModal, setShowServicePaymentModal] = useState(false);
   const [showServiceHistoryModal, setShowServiceHistoryModal] = useState(false);
   const [suggestedPaymentDate, setSuggestedPaymentDate] = useState<string | undefined>(undefined);
-  
-  // Contract Actions Modals
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentModalDesc, setPaymentModalDesc] = useState(''); 
-  const [paymentModalOverrides, setPaymentModalOverrides] = useState<{amount?: number, date?: Date}>({});
-
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkProgress, setBulkProgress] = useState('');
-  const [showPriceHistoryModal, setShowPriceHistoryModal] = useState(false);
-
-  // Sync / Recalculate States
-  const [showSyncModal, setShowSyncModal] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncLogs, setSyncLogs] = useState<string[]>([]);
 
   // Delete Confirmation States
   const [itemToDelete, setItemToDelete] = useState<{type: string, code: string, label: string} | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const tabLabels: Record<string, string> = {
+    PROPERTIES: 'PROPIEDADES',
+    UNITS: 'UNIDADES',
+    TENANTS: 'INQUILINOS',
+    CONTRACTS: 'CONTRATOS',
+    PAYMENTS: 'PAGOS',
+    DELINQUENT: 'MOROSIDAD',
+    SERVICES: 'SERVICIOS'
+  };
 
   const loadData = async () => {
     try {
@@ -164,49 +155,20 @@ const RealEstatePage: React.FC = () => {
         else if (itemToDelete.type === 'TENANT') await TenantService.delete(itemToDelete.code);
         else if (itemToDelete.type === 'CONTRACT') await ContractService.delete(itemToDelete.code);
         else if (itemToDelete.type === 'SERVICE') await ServiceItemService.delete(itemToDelete.code);
-        
         await loadData();
         setItemToDelete(null);
-    } catch (e: any) {
-        console.error(e);
-    } finally {
-        setIsDeleting(false);
-    }
-  };
-
-  const handleOpenPaymentModal = (contract: Contract, specificDate?: Date) => {
-      setSelectedContract(contract);
-      if (!specificDate) { setPaymentModalOverrides({}); }
-      const t = tenants.find(x => x.code === contract.tenantCode);
-      const tenantName = t ? t.fullName : 'Inquilino';
-      let targetDate = specificDate || new Date(contract.nextPaymentDate || new Date());
-      if (!specificDate && contract.nextPaymentDate) {
-          const dateStr = contract.nextPaymentDate.substring(0, 10);
-          targetDate = new Date(dateStr);
-          targetDate = new Date(targetDate.valueOf() + targetDate.getTimezoneOffset() * 60000);
-      }
-      const monthName = targetDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
-      setPaymentModalDesc(`Pago Alquiler: ${tenantName} - ${monthName}`);
-      setShowPaymentModal(true);
+    } catch (e: any) { console.error(e); } finally { setIsDeleting(false); }
   };
 
   const handleRegisterPayment = async (data: PaymentFormData) => {
       setIsSubmitting(true);
-      try { 
-          await ContractService.registerPayment(data); 
-          await loadData(); 
-          setShowPaymentModal(false); 
-      }
+      try { await ContractService.registerPayment(data); await loadData(); setShowPaymentModal(false); }
       catch (e: any) { console.error(e); } finally { setIsSubmitting(false); }
   };
   
   const handleBulkPayment = async (data: BulkPaymentFormData) => {
       setIsSubmitting(true);
-      try { 
-          await ContractService.processBulkPayment(data, (cur, tot) => setBulkProgress(`${cur}/${tot}`)); 
-          await loadData(); 
-          setShowBulkModal(false); 
-      }
+      try { await ContractService.processBulkPayment(data, (cur, tot) => setBulkProgress(`${cur}/${tot}`)); await loadData(); setShowBulkModal(false); }
       catch (e: any) { console.error(e); } finally { setIsSubmitting(false); setBulkProgress(''); }
   };
 
@@ -228,45 +190,17 @@ const RealEstatePage: React.FC = () => {
       catch (e: any) { console.error(e); } finally { setIsSubmitting(false); }
   };
 
-  const formatDateDisplay = (dateStr: string | undefined) => {
-      if (!dateStr) return '-';
-      const parts = dateStr.split('-');
-      return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : dateStr;
-  };
-
-  const activeContractsList = contracts.filter(c => c.status === 'ACTIVE');
-  const delinquentContracts = contracts.filter(c => {
-      if (c.status !== 'ACTIVE') return false;
-      if (!c.nextPaymentDate) return true;
-      const today = new Date();
-      const nextPay = new Date(c.nextPaymentDate);
-      const nextPayAdj = new Date(nextPay.valueOf() + nextPay.getTimezoneOffset() * 60000);
-      const todayZero = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-      return nextPayAdj < todayZero;
-  });
-
-  async function handleSyncContracts() {
-      setShowSyncModal(true);
-      setIsSyncing(true);
-      setSyncLogs(["Analizando contratos..."]);
-      const addLog = (msg: string) => setSyncLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
+  const handleDeleteTransaction = async (code: string) => {
       try {
-          const [allContracts, allTxs] = await Promise.all([ContractService.getAll(), TransactionService.getAll()]);
-          const activeOnes = allContracts.filter(c => c.status === 'ACTIVE');
-          for (const contract of activeOnes) {
-              addLog(`Sincronizando ${contract.code}...`);
-              // Simular lógica de sincronización
-          }
-          addLog(`✅ Proceso finalizado.`);
+          await TransactionService.delete(code);
           await loadData();
-      } catch (e: any) { addLog(`❌ Error: ${e.message}`); } finally { setIsSyncing(false); }
-  }
+      } catch (e) { console.error(e); }
+  };
 
   if(loading) return <div className="flex justify-center items-center h-full"><div className="animate-spin h-12 w-12 border-b-2 border-indigo-600 rounded-full"></div></div>;
 
   return (
       <div className="space-y-6 relative">
-          {/* GENERIC DELETE CONFIRMATION MODAL */}
           {itemToDelete && (
               <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                   <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => !isDeleting && setItemToDelete(null)} />
@@ -294,7 +228,7 @@ const RealEstatePage: React.FC = () => {
               <div className="flex gap-2 bg-white p-1 rounded-lg border shadow-sm overflow-x-auto">
                    {['PROPERTIES', 'UNITS', 'TENANTS', 'CONTRACTS', 'PAYMENTS', 'DELINQUENT', 'SERVICES'].map(tab => (
                        <button key={tab} onClick={() => setActiveTab(tab as any)} className={`px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap ${activeTab === tab ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-50'}`}>
-                           {tab.replace('_', ' ')}
+                           {tabLabels[tab]}
                        </button>
                    ))}
               </div>
@@ -336,7 +270,24 @@ const RealEstatePage: React.FC = () => {
                     </tbody>
                  </table>
              )}
-             {/* ... (Otras tablas similares siguiendo el patrón de no usar window.confirm) ... */}
+             {activeTab === 'UNITS' && (
+                 <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50"><tr><th className="px-6 py-3">Unidad</th><th className="px-6 py-3">Propiedad</th><th className="px-6 py-3">Estado</th><th className="px-6 py-3 text-right">Acciones</th></tr></thead>
+                    <tbody className="divide-y">
+                        {apartments.map(a => (
+                            <tr key={a.code} className="hover:bg-slate-50">
+                                <td className="px-6 py-3 font-bold">{a.name}</td>
+                                <td className="px-6 py-3">{properties.find(p => p.code === a.propertyCode)?.name || a.propertyCode}</td>
+                                <td className="px-6 py-3"><span className={`px-2 py-1 rounded text-[10px] font-bold ${a.status === 'RENTED' ? 'bg-indigo-100 text-indigo-700' : 'bg-emerald-100 text-emerald-700'}`}>{a.status}</span></td>
+                                <td className="px-6 py-3 text-right">
+                                    <button onClick={() => { setSelectedApartment(a); setShowApartmentModal(true); }} className="p-1.5 text-slate-400"><Edit2 size={16}/></button>
+                                    <button onClick={() => setItemToDelete({type:'APARTMENT', code:a.code, label:a.name})} className="p-1.5 text-slate-400"><Trash2 size={16}/></button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                 </table>
+             )}
              {activeTab === 'TENANTS' && (
                  <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50"><tr><th className="px-6 py-3">Inquilino</th><th className="px-6 py-3 text-center">Estado</th><th className="px-6 py-3 text-right">Acciones</th></tr></thead>
@@ -356,16 +307,36 @@ const RealEstatePage: React.FC = () => {
              )}
              {activeTab === 'CONTRACTS' && (
                  <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50"><tr><th className="px-6 py-3">Contrato</th><th className="px-6 py-3 text-right">Monto</th><th className="px-6 py-3 text-right">Acciones</th></tr></thead>
+                    <thead className="bg-slate-50"><tr><th className="px-6 py-3">Código</th><th className="px-6 py-3">Inquilino</th><th className="px-6 py-3 text-right">Monto</th><th className="px-6 py-3 text-right">Acciones</th></tr></thead>
                     <tbody className="divide-y">
                         {contracts.map(c => (
                             <tr key={c.code} className="hover:bg-slate-50">
                                 <td className="px-6 py-3 font-bold">{c.code}</td>
+                                <td className="px-6 py-3">{tenants.find(t => t.code === c.tenantCode)?.fullName || c.tenantCode}</td>
                                 <td className="px-6 py-3 text-right">{c.amount.toLocaleString()}</td>
                                 <td className="px-6 py-3 text-right flex justify-end gap-1">
-                                    <button onClick={() => { setSelectedContract(c); setShowHistoryModal(true); }} className="p-1.5 text-slate-400"><Clock size={16}/></button>
+                                    <button onClick={() => { setSelectedContract(c); setShowHistoryModal(true); }} title="Historial" className="p-1.5 text-slate-400 hover:text-indigo-600"><Clock size={16}/></button>
                                     <button onClick={() => { setSelectedContract(c); setShowContractModal(true); }} className="p-1.5 text-slate-400"><Edit2 size={16}/></button>
                                     <button onClick={() => setItemToDelete({type:'CONTRACT', code:c.code, label:c.code})} className="p-1.5 text-slate-400"><Trash2 size={16}/></button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                 </table>
+             )}
+             {activeTab === 'SERVICES' && (
+                 <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50"><tr><th className="px-6 py-3">Servicio</th><th className="px-6 py-3">Propiedad</th><th className="px-6 py-3 text-right">Monto Est.</th><th className="px-6 py-3 text-right">Acciones</th></tr></thead>
+                    <tbody className="divide-y">
+                        {services.map(s => (
+                            <tr key={s.code} className="hover:bg-slate-50">
+                                <td className="px-6 py-3 font-bold">{s.name}</td>
+                                <td className="px-6 py-3">{properties.find(p => p.code === s.propertyCode)?.name || s.propertyCode}</td>
+                                <td className="px-6 py-3 text-right">{s.defaultAmount.toLocaleString()} HNL</td>
+                                <td className="px-6 py-3 text-right flex justify-end gap-2">
+                                    <button onClick={() => { setSelectedService(s); setShowServiceHistoryModal(true); }} title="Ver Historial" className="px-2 py-1 bg-slate-100 text-slate-600 rounded text-xs font-bold">Historial</button>
+                                    <button onClick={() => { setSelectedService(s); setShowServicePaymentModal(true); }} className="px-2 py-1 bg-rose-100 text-rose-700 rounded text-xs font-bold">Pagar</button>
+                                    <button onClick={() => { setSelectedService(s); setShowServiceModal(true); }} className="p-1 text-slate-400"><Edit2 size={14}/></button>
                                 </td>
                             </tr>
                         ))}
@@ -379,13 +350,11 @@ const RealEstatePage: React.FC = () => {
           <TenantModal isOpen={showTenantModal} onClose={() => setShowTenantModal(false)} onSubmit={selectedTenant ? handleUpdateTenant : handleCreateTenant} editingTenant={selectedTenant} isSubmitting={isSubmitting} />
           <ContractModal isOpen={showContractModal} onClose={() => setShowContractModal(false)} onSubmit={selectedContract ? handleUpdateContract : handleCreateContract} editingContract={selectedContract} isSubmitting={isSubmitting} />
           <ServiceItemModal isOpen={showServiceModal} onClose={() => setShowServiceModal(false)} onSubmit={selectedService ? handleUpdateService : handleCreateService} editingItem={selectedService} isSubmitting={isSubmitting} />
-          
           <ServicePaymentModal isOpen={showServicePaymentModal} onClose={() => setShowServicePaymentModal(false)} onSubmit={handleServicePayment} serviceItem={selectedService} isSubmitting={isSubmitting} initialDate={suggestedPaymentDate} />
-          <ServicePaymentHistoryModal isOpen={showServiceHistoryModal} onClose={() => setShowServiceHistoryModal(false)} service={selectedService} propertyName="" onAddPayment={() => {}} />
-          
-          <PaymentModal isOpen={showPaymentModal} onClose={() => setShowPaymentModal(false)} onSubmit={handleRegisterPayment} contract={selectedContract} contractLabel="" initialDescription={paymentModalDesc} isSubmitting={isSubmitting} />
-          <PaymentHistoryModal isOpen={showHistoryModal} onClose={() => setShowHistoryModal(false)} contract={selectedContract} contractLabel="" onRegisterPayment={() => {}} />
-          <BulkPaymentModal isOpen={showBulkModal} onClose={() => setShowBulkModal(false)} onSubmit={handleBulkPayment} contract={selectedContract} contractLabel="" isSubmitting={isSubmitting} progressText={bulkProgress} />
+          <ServicePaymentHistoryModal isOpen={showServiceHistoryModal} onClose={() => setShowServiceHistoryModal(false)} service={selectedService} propertyName={properties.find(p => p.code === selectedService?.propertyCode)?.name || ""} onAddPayment={(d) => { setSuggestedPaymentDate(d); setShowServicePaymentModal(true); }} onDeleteTransaction={handleDeleteTransaction} />
+          <PaymentModal isOpen={showPaymentModal} onClose={() => setShowPaymentModal(false)} onSubmit={handleRegisterPayment} contract={selectedContract} contractLabel={selectedContract?.code || ""} initialDescription={paymentModalDesc} isSubmitting={isSubmitting} />
+          <PaymentHistoryModal isOpen={showHistoryModal} onClose={() => setShowHistoryModal(false)} contract={selectedContract} contractLabel={selectedContract?.code || ""} tenantName={tenants.find(t => t.code === selectedContract?.tenantCode)?.fullName || ""} onRegisterPayment={(d) => { setShowPaymentModal(true); }} onDeleteTransaction={handleDeleteTransaction} />
+          <BulkPaymentModal isOpen={showBulkModal} onClose={() => setShowBulkModal(false)} onSubmit={handleBulkPayment} contract={selectedContract} contractLabel={selectedContract?.code || ""} isSubmitting={isSubmitting} progressText={bulkProgress} />
       </div>
   );
 };
