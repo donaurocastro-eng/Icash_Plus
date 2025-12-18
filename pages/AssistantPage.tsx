@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from "@google/genai";
 import { Send, Bot, User, Sparkles, RefreshCcw, ShieldAlert } from 'lucide-react';
@@ -102,7 +103,7 @@ const AssistantPage: React.FC = () => {
       `;
 
       const chat = ai.chats.create({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3-flash-preview',
         config: {
           systemInstruction: systemInstruction,
           temperature: 0.7,
@@ -170,7 +171,7 @@ const AssistantPage: React.FC = () => {
           <div>
             <h2 className="font-bold text-slate-800">Asistente Financiero AI</h2>
             <p className="text-xs text-slate-500 flex items-center gap-1">
-              Potenciado por Gemini 2.5 Flash
+              Potenciado por Gemini 3 Flash
               {initializing && <span className="animate-pulse"> (Iniciando...)</span>}
             </p>
           </div>

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { 
   CheckCircle, AlertTriangle, Database, RefreshCw, 
@@ -15,6 +14,7 @@ const SettingsPage: React.FC = () => {
   const [initLoading, setInitLoading] = useState(false);
   const [initLogs, setInitLogs] = useState<string[]>([]);
   const [showRepairConfirm, setShowRepairConfirm] = useState(false);
+  const [isDone, setIsDone] = useState(false);
   
   // States for Purge Tool
   const [categories, setCategories] = useState<Category[]>([]);
@@ -38,6 +38,7 @@ const SettingsPage: React.FC = () => {
 
   const handleInitializeStepByStep = async () => {
     setShowRepairConfirm(false);
+    setIsDone(false);
     setInitLoading(true);
     setInitLogs(["🚀 INICIANDO DIAGNÓSTICO DE ESTRUCTURA EN NEON..."]); 
     
@@ -64,15 +65,15 @@ const SettingsPage: React.FC = () => {
         addLog("✅ Integridad financiera verificada.");
 
         addLog("✨ ¡PROCESO COMPLETADO EXITOSAMENTE!");
-        addLog("🔄 El sistema se reiniciará en 3 segundos...");
-        
-        setTimeout(() => window.location.reload(), 3000);
+        addLog("⚠️ Por favor, revisa los logs en la consola antes de reiniciar.");
 
     } catch (error: any) {
       console.error(error);
       addLog(`❌ ERROR CRÍTICO: ${error.message}`);
+      addLog("🛑 El proceso se detuvo debido a un error.");
     } finally {
       setInitLoading(false);
+      setIsDone(true); // Se detiene aquí para mostrar el botón de reinicio manual
     }
   };
 
@@ -140,7 +141,21 @@ const SettingsPage: React.FC = () => {
                           Habilita la columna <strong>service_code</strong> para separar historiales de Agua, Luz e Internet individualmente.
                       </p>
                       
-                      {!showRepairConfirm ? (
+                      {isDone ? (
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 animate-fadeIn">
+                            <p className="text-emerald-800 text-xs font-bold mb-3 flex items-center gap-2">
+                                <CheckCircle size={18}/> Operación Finalizada
+                            </p>
+                            <p className="text-slate-600 text-[10px] mb-4">Los cambios han sido procesados. Revisa la consola a la derecha.</p>
+                            <button 
+                                onClick={() => window.location.reload()} 
+                                className="w-full py-3 bg-slate-800 text-white rounded-xl font-bold shadow-lg hover:bg-slate-900 transition-all flex items-center justify-center gap-2"
+                            >
+                                <RefreshCw size={18}/>
+                                REINICIAR Y APLICAR
+                            </button>
+                        </div>
+                      ) : !showRepairConfirm ? (
                         <button 
                             onClick={() => setShowRepairConfirm(true)}
                             disabled={initLoading}
