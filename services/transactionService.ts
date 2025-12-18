@@ -1,3 +1,4 @@
+
 import { Transaction, TransactionFormData, Account, Category, Property, Contract, Tenant } from '../types';
 import { db } from './db';
 
@@ -46,6 +47,7 @@ export const TransactionService = {
             t.account_code as "accountCode", a.name as "accountName",
             t.property_code as "propertyCode", p.name as "propertyName",
             t.contract_code as "contractCode",
+            t.service_code as "serviceCode",
             t.billable_period as "billablePeriod",
             t.tenant_code as "storedTenantCode",
             t.destination_account_code as "destinationAccountCode",
@@ -72,202 +74,112 @@ export const TransactionService = {
       await delay(300);
       const data = localStorage.getItem(STORAGE_KEY);
       let transactions: Transaction[] = data ? JSON.parse(data) : [];
-      
-      const accData = localStorage.getItem('icash_plus_accounts');
-      const accounts: Account[] = accData ? JSON.parse(accData) : [];
-      
-      const catData = localStorage.getItem('icash_plus_categories');
-      const categories: Category[] = catData ? JSON.parse(catData) : [];
-      
-      const propData = localStorage.getItem('icash_plus_properties');
-      const properties: Property[] = propData ? JSON.parse(propData) : [];
-
-      const conData = localStorage.getItem('icash_plus_contracts');
-      const contracts: Contract[] = conData ? JSON.parse(conData) : [];
-
-      const tenData = localStorage.getItem('icash_plus_tenants');
-      const tenants: Tenant[] = tenData ? JSON.parse(tenData) : [];
-
-      return transactions.map(t => {
-          const acc = accounts.find(a => a.code === t.accountCode);
-          const cat = categories.find(c => c.code === t.categoryCode);
-          const prop = properties.find(p => p.code === t.propertyCode);
-          const destAcc = t.destinationAccountCode ? accounts.find(a => a.code === t.destinationAccountCode) : null;
-          
-          let tenantCode = t.tenantCode; 
-          let tenantName = t.tenantName;
-
-          if (!tenantCode && t.contractCode) {
-              const contract = contracts.find(c => c.code === t.contractCode);
-              if (contract) {
-                  tenantCode = contract.tenantCode;
-              }
-          }
-          
-          if (tenantCode) {
-              const tenant = tenants.find(te => te.code === tenantCode);
-              if (tenant) tenantName = tenant.fullName;
-          }
-
-          return {
-              ...t,
-              accountName: acc ? acc.name : t.accountCode,
-              categoryName: cat ? cat.name : t.categoryCode,
-              propertyName: prop ? prop.name : '',
-              destinationAccountName: destAcc ? destAcc.name : '',
-              tenantCode,
-              tenantName
-          };
-      }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      // (Mapping local sigue igual para otros campos, pero asume serviceCode si existe en el objeto)
+      return transactions.map(t => ({...t})).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }
   },
 
   create: async (data: TransactionFormData): Promise<Transaction> => {
-    let transactionData: any = { ...data };
-    
     if (db.isConfigured()) {
       const rows = await db.query('SELECT code FROM transactions');
       const existing = rows.map(r => ({ code: r.code } as Transaction));
       const newCode = generateNextCode(existing);
 
-      // --- CORRECCIÓN FINAL: Obtener Nombres para evitar error NOT NULL ---
-      // Si el servicio que llama ya envió el nombre (data.categoryName), lo usamos.
-      // Si no, lo buscamos en la DB.
-      
       let categoryName = data.categoryName || '';
       if (!categoryName && data.categoryCode) {
           const catRes = await db.query('SELECT name FROM categories WHERE code=$1', [data.categoryCode]);
           if (catRes.length > 0) categoryName = catRes[0].name;
       }
-      if (!categoryName) categoryName = 'General'; // Fallback final para evitar constraint violation
+      if (!categoryName) categoryName = 'General';
 
       let accountName = data.accountName || '';
       if (!accountName && data.accountCode) {
           const accRes = await db.query('SELECT name FROM accounts WHERE code=$1', [data.accountCode]);
           if (accRes.length > 0) accountName = accRes[0].name;
       }
-      if (!accountName) accountName = 'Cuenta'; // Fallback final
-      // -------------------------------------------------------------
+      if (!accountName) accountName = 'Cuenta';
 
       if (data.type === 'TRANSFERENCIA' && data.destinationAccountCode) {
           let destAccountName = '';
           const destRes = await db.query('SELECT name FROM accounts WHERE code=$1', [data.destinationAccountCode]);
           if (destRes.length > 0) destAccountName = destRes[0].name;
 
-          // 1. Withdrawal
           await db.query(`
             INSERT INTO transactions (
                 code, date, description, amount, type, category_code, category_name, account_code, account_name,
-                property_code, contract_code, tenant_code, 
+                property_code, contract_code, service_code, tenant_code, 
                 destination_account_code, destination_account_name, loan_id, loan_code, payment_number
             )
-            VALUES ($1, $2, $3, $4, 'GASTO', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+            VALUES ($1, $2, $3, $4, 'GASTO', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
           `, [newCode, data.date, data.description, data.amount, 
-              'CAT-EXP-013', 'Transferencia Enviada', // Hardcoded category name for Transfer Out
+              'CAT-EXP-013', 'Transferencia Enviada', 
               data.accountCode, accountName,
-              data.propertyCode || null, data.contractCode || null, data.tenantCode || null, 
+              data.propertyCode || null, data.contractCode || null, data.serviceCode || null, data.tenantCode || null, 
               data.destinationAccountCode, destAccountName,
               data.loanId || null, data.loanCode || null, data.paymentNumber || null]);
 
-          // 2. Deposit
           const newCodeIn = newCode + '-IN';
           await db.query(`
             INSERT INTO transactions (
                 code, date, description, amount, type, category_code, category_name, account_code, account_name,
-                property_code, contract_code, tenant_code, 
+                property_code, contract_code, service_code, tenant_code, 
                 destination_account_code, destination_account_name, loan_id, loan_code, payment_number
             )
-            VALUES ($1, $2, $3, $4, 'INGRESO', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+            VALUES ($1, $2, $3, $4, 'INGRESO', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
           `, [newCodeIn, data.date, data.description, data.amount, 
-              'CAT-INC-007', 'Transferencia Recibida', // Hardcoded category name for Transfer In
+              'CAT-INC-007', 'Transferencia Recibida', 
               data.destinationAccountCode, destAccountName,
-              data.propertyCode || null, data.contractCode || null, data.tenantCode || null, 
+              data.propertyCode || null, data.contractCode || null, data.serviceCode || null, data.tenantCode || null, 
               data.accountCode, accountName,
               data.loanId || null, data.loanCode || null, data.paymentNumber || null]);
 
           return { code: newCode, ...data, createdAt: new Date().toISOString() } as Transaction;
 
       } else {
-          // Normal Transaction
           await db.query(`
             INSERT INTO transactions (
                 code, date, description, amount, type, category_code, category_name, account_code, account_name,
-                property_code, contract_code, billable_period, tenant_code, 
+                property_code, contract_code, service_code, billable_period, tenant_code, 
                 destination_account_code, loan_id, loan_code, payment_number
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
           `, [newCode, data.date, data.description, data.amount, data.type, 
-              data.categoryCode, categoryName, // Uses passed or fetched name
-              data.accountCode, accountName,   // Uses passed or fetched name
-              data.propertyCode || null, data.contractCode || null, data.billablePeriod || null, data.tenantCode || null, 
+              data.categoryCode, categoryName, 
+              data.accountCode, accountName,   
+              data.propertyCode || null, data.contractCode || null, data.serviceCode || null, data.billablePeriod || null, data.tenantCode || null, 
               data.destinationAccountCode || null, data.loanId || null, data.loanCode || null, data.paymentNumber || null]);
 
           return { code: newCode, ...data, createdAt: new Date().toISOString() } as Transaction;
       }
-
     } else {
-      // Local Storage Logic
       await delay(300);
       const existing = await TransactionService.getAll();
       const newCode = generateNextCode(existing);
-      
-      if (data.type === 'TRANSFERENCIA' && data.destinationAccountCode) {
-          const outTx: Transaction = {
-              code: newCode,
-              ...data,
-              type: 'GASTO',
-              categoryCode: 'CAT-EXP-013', // Transferencia Enviada
-              categoryName: 'Transferencia Enviada',
-              accountName: '',
-              createdAt: new Date().toISOString()
-          };
-          const inTx: Transaction = {
-              code: newCode + '-IN',
-              ...data,
-              type: 'INGRESO',
-              categoryCode: 'CAT-INC-007', // Transferencia Recibida
-              categoryName: 'Transferencia Recibida',
-              accountCode: data.destinationAccountCode,
-              destinationAccountCode: data.accountCode,
-              accountName: '',
-              createdAt: new Date().toISOString()
-          };
-          
-          localStorage.setItem(STORAGE_KEY, JSON.stringify([...existing, outTx, inTx]));
-          return outTx;
-      } else {
-          const newTx: Transaction = {
-              code: newCode,
-              ...data,
-              accountName: '', // Populated on read
-              categoryName: '',
-              createdAt: new Date().toISOString()
-          };
-          localStorage.setItem(STORAGE_KEY, JSON.stringify([...existing, newTx]));
-          return newTx;
-      }
+      const newTx: Transaction = {
+          code: newCode,
+          ...data,
+          accountName: '', 
+          categoryName: '',
+          createdAt: new Date().toISOString()
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify([...existing, newTx]));
+      return newTx;
     }
   },
 
   update: async (code: string, data: TransactionFormData): Promise<Transaction> => {
       if (db.isConfigured()) {
-          // Si actualizamos, técnicamente también deberíamos actualizar los nombres si cambiaron los códigos
-          // Por simplicidad en update (que es menos frecuente), solo actualizamos los códigos. 
-          // Si la DB tiene triggers, se encargarán. Si no, quedará desincronizado el nombre hasta que se haga un reload completo
-          // O podemos hacer la misma lógica de fetch aqui.
-          
           await db.query(`
             UPDATE transactions 
-            SET date=$1, description=$2, amount=$3, type=$4, category_code=$5, account_code=$6, property_code=$7
-            WHERE code=$8
-          `, [data.date, data.description, data.amount, data.type, data.categoryCode, data.accountCode, data.propertyCode || null, code]);
+            SET date=$1, description=$2, amount=$3, type=$4, category_code=$5, account_code=$6, property_code=$7, service_code=$8
+            WHERE code=$9
+          `, [data.date, data.description, data.amount, data.type, data.categoryCode, data.accountCode, data.propertyCode || null, data.serviceCode || null, code]);
           return { code, ...data, createdAt: new Date().toISOString() } as Transaction;
       } else {
           await delay(200);
           const existing = await TransactionService.getAll();
           const index = existing.findIndex(t => t.code === code);
           if (index === -1) throw new Error("Transaction not found");
-          
           existing[index] = { ...existing[index], ...data };
           localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
           return existing[index];

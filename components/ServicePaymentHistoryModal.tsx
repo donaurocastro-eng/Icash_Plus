@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { X, ChevronLeft, ChevronRight, CreditCard, Clock, CheckCircle, Plus, Calendar } from 'lucide-react';
 import { PropertyServiceItem, Transaction } from '../types';
@@ -33,11 +34,18 @@ const ServicePaymentHistoryModal: React.FC<ServicePaymentHistoryModalProps> = ({
     setLoading(true);
     try {
         const allTxs = await TransactionService.getAll();
-        // Filtrado dinámico por Propiedad y Categoría asignada al servicio para el año seleccionado
+        
+        // FILTRADO ESTRICTO POR SERVICE_CODE
         const serviceTxs = allTxs.filter(t => {
             if (t.type !== 'GASTO') return false;
-            // Usar split para evitar desfases de zona horaria en el año
             const tYear = parseInt(t.date.split('-')[0]);
+            
+            // Si la transacción tiene el código del servicio, es un match perfecto
+            if (t.serviceCode) {
+                return tYear === year && t.serviceCode === service.code;
+            }
+            
+            // Fallback para datos antiguos (basado en Propiedad + Categoría)
             return tYear === year && 
                    t.propertyCode === service.propertyCode && 
                    t.categoryCode === service.defaultCategoryCode;
@@ -67,6 +75,7 @@ const ServicePaymentHistoryModal: React.FC<ServicePaymentHistoryModalProps> = ({
                     <Clock size={20} className="text-indigo-600"/> Historial de Pagos: {service.name}
                 </h3>
                 <p className="text-xs text-slate-500 mt-1 uppercase tracking-wider font-medium">Propiedad: <span className="font-black text-slate-700">{propertyName}</span></p>
+                <p className="text-[10px] text-slate-400 font-mono mt-0.5">ID Servicio: {service.code}</p>
             </div>
             <button onClick={onClose} className="p-1.5 hover:bg-slate-200 rounded-full transition-colors text-slate-500"><X size={20}/></button>
         </div>
@@ -100,7 +109,6 @@ const ServicePaymentHistoryModal: React.FC<ServicePaymentHistoryModalProps> = ({
                             <div 
                                 key={monthIndex} 
                                 onClick={() => {
-                                    // Sugerir el primer día del mes seleccionado
                                     const date = `${year}-${String(monthIndex + 1).padStart(2, '0')}-01`;
                                     onAddPayment(date);
                                 }}
@@ -110,7 +118,6 @@ const ServicePaymentHistoryModal: React.FC<ServicePaymentHistoryModalProps> = ({
                                     : 'bg-white border-slate-100 hover:border-indigo-400 opacity-90 hover:opacity-100'
                                 }`}
                             >
-                                {/* Indicator for clickability on hover */}
                                 <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <div className="bg-indigo-600 text-white p-1 rounded-full shadow-md">
                                         <Plus size={14} strokeWidth={3}/>
@@ -143,7 +150,6 @@ const ServicePaymentHistoryModal: React.FC<ServicePaymentHistoryModalProps> = ({
                                     )}
                                 </div>
                                 
-                                {/* Bottom hint text */}
                                 <div className="mt-4 pt-3 border-t border-slate-50 flex items-center gap-2 text-[9px] font-black text-slate-400 group-hover:text-indigo-500 uppercase tracking-widest transition-colors">
                                     <Calendar size={12} className="shrink-0"/>
                                     <span>{hasPaid ? 'Añadir recibo' : 'Registrar'}</span>
@@ -155,14 +161,13 @@ const ServicePaymentHistoryModal: React.FC<ServicePaymentHistoryModalProps> = ({
             )}
         </div>
 
-        {/* FOOTER */}
         <div className="px-6 py-4 bg-white border-t border-slate-100 flex justify-between items-center text-[10px]">
             <div className="flex items-center gap-5">
                 <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-emerald-500 rounded-full shadow-sm shadow-emerald-200"></div> <span className="text-slate-600 font-bold">CON PAGOS</span></div>
                 <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-slate-200 rounded-full border border-slate-300"></div> <span className="text-slate-400 font-bold">SIN REGISTROS</span></div>
             </div>
             <div className="text-slate-400 italic font-bold flex items-center gap-1.5">
-                <Plus size={12}/> Haz clic en cualquier mes para ingresar un pago
+                <Plus size={12}/> Historial filtrado por ID único del servicio
             </div>
         </div>
       </div>

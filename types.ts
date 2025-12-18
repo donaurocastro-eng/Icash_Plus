@@ -1,3 +1,4 @@
+
 export type AccountType = 'ACTIVO' | 'PASIVO';
 export type CategoryType = 'GASTO' | 'INGRESO' | 'TRANSFERENCIA';
 export type Currency = 'HNL' | 'USD';
@@ -50,8 +51,9 @@ export interface Transaction {
   
   propertyCode?: string;  
   propertyName?: string;
-  contractCode?: string; // Linked contract
-  billablePeriod?: string; // YYYY-MM for rental payments
+  contractCode?: string; 
+  serviceCode?: string; // Nuevo campo para trazabilidad de servicios específicos
+  billablePeriod?: string; 
 
   destinationAccountCode?: string;
   destinationAccountName?: string;
@@ -60,7 +62,6 @@ export interface Transaction {
   loanCode?: string;
   paymentNumber?: number;
   
-  // Derived fields for display (fetched via joins or stored snapshot)
   tenantCode?: string;
   tenantName?: string;
 
@@ -73,15 +74,16 @@ export interface TransactionFormData {
   amount: number;
   type: CategoryType;
   categoryCode: string; 
-  categoryName?: string; // Optional: Pass name directly to avoid fetch
+  categoryName?: string; 
   accountCode: string;
-  accountName?: string; // Optional: Pass name directly to avoid fetch
+  accountName?: string; 
   destinationAccountCode?: string; 
   propertyCode?: string;
   propertyName?: string;
   contractCode?: string;
-  billablePeriod?: string; // Explicitly set period (YYYY-MM)
-  tenantCode?: string; // Explicitly store tenant for history
+  serviceCode?: string; // Nuevo campo para trazabilidad de servicios específicos
+  billablePeriod?: string; 
+  tenantCode?: string; 
   loanId?: string;
   loanCode?: string;
   paymentNumber?: number;
@@ -157,7 +159,7 @@ export interface ContractFormData {
   endDate: string;
   amount: number;
   paymentDay: number;
-  nextPaymentDate?: string; // Manually adjustable next payment date
+  nextPaymentDate?: string; 
 }
 
 export interface ContractPrice {
@@ -203,7 +205,7 @@ export interface PaymentFormData {
   amount: number;
   accountCode: string; 
   description: string;
-  billablePeriod?: string; // YYYY-MM
+  billablePeriod?: string; 
 }
 
 export interface BulkPaymentItem {
@@ -211,7 +213,7 @@ export interface BulkPaymentItem {
     amount: number;
     description: string;
     selected: boolean;
-    billablePeriod?: string; // YYYY-MM
+    billablePeriod?: string; 
 }
 
 export interface BulkPaymentFormData {

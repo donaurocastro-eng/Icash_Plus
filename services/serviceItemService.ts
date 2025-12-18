@@ -1,3 +1,4 @@
+
 import { PropertyServiceItem, PropertyServiceItemFormData, ServicePaymentFormData } from '../types';
 import { db } from './db';
 import { TransactionService } from './transactionService';
@@ -24,7 +25,6 @@ const generateNextCode = (existing: PropertyServiceItem[]): string => {
 export const ServiceItemService = {
   getAll: async (): Promise<PropertyServiceItem[]> => {
     if (db.isConfigured()) {
-      // Added default_account_code to the query
       const rows = await db.query(`
         SELECT code, property_code as "propertyCode", name, default_amount as "defaultAmount", 
                default_category_code as "defaultCategoryCode", default_account_code as "defaultAccountCode",
@@ -96,7 +96,6 @@ export const ServiceItemService = {
   },
 
   registerPayment: async (data: ServicePaymentFormData): Promise<void> => {
-      // Get Service Details for Property Name
       const services = await ServiceItemService.getAll();
       const service = services.find(s => s.code === data.serviceCode);
       
@@ -112,7 +111,6 @@ export const ServiceItemService = {
           } catch (e) { console.error(e); }
       }
 
-      // Create Expense Transaction
       await TransactionService.create({
           date: data.date,
           amount: data.amount,
@@ -121,7 +119,8 @@ export const ServiceItemService = {
           categoryCode: data.categoryCode,
           accountCode: data.accountCode,
           propertyCode: propertyCode,
-          propertyName: propertyName
+          propertyName: propertyName,
+          serviceCode: data.serviceCode // TRAZABILIDAD INDIVIDUAL
       });
   }
 };
