@@ -51,11 +51,15 @@ const RealEstatePage: React.FC = () => {
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
   const [showServiceModal, setShowServiceModal] = useState(false);
   const [selectedService, setSelectedService] = useState<PropertyServiceItem | null>(null);
+  
   const [showServicePaymentModal, setShowServicePaymentModal] = useState(false);
   const [showServiceHistoryModal, setShowServiceHistoryModal] = useState(false);
-  const [suggestedPaymentDate, setSuggestedPaymentDate] = useState<string | undefined>(undefined);
+  const [suggestedServiceDate, setSuggestedServiceDate] = useState<string | undefined>(undefined);
+  
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [paymentModalDesc, setPaymentModalDesc] = useState(''); 
+  const [paymentModalDate, setPaymentModalDate] = useState<Date | undefined>(undefined);
+  const [paymentModalAmount, setPaymentModalAmount] = useState<number | undefined>(undefined);
+  
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkProgress, setBulkProgress] = useState('');
@@ -70,7 +74,7 @@ const RealEstatePage: React.FC = () => {
     UNITS: 'UNIDADES',
     TENANTS: 'INQUILINOS',
     CONTRACTS: 'CONTRATOS',
-    PAYMENTS: 'PAGOS',
+    PAYMENTS: 'PAGOS RÁPIDOS',
     DELINQUENT: 'MOROSIDAD',
     SERVICES: 'SERVICIOS'
   };
@@ -252,7 +256,7 @@ const RealEstatePage: React.FC = () => {
              )}
           </div>
 
-          <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+          <div className="bg-white rounded-xl border shadow-sm overflow-hidden min-h-[300px]">
              {activeTab === 'PROPERTIES' && (
                  <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50"><tr><th className="px-6 py-3">Nombre</th><th className="px-6 py-3 text-right">Valor</th><th className="px-6 py-3 text-right">Acciones</th></tr></thead>
@@ -343,6 +347,13 @@ const RealEstatePage: React.FC = () => {
                     </tbody>
                  </table>
              )}
+             {(activeTab === 'PAYMENTS' || activeTab === 'DELINQUENT') && (
+                 <div className="flex flex-col items-center justify-center p-12 text-slate-400">
+                    <AlertTriangle size={48} className="mb-4 opacity-20"/>
+                    <p className="font-medium text-lg">Módulo en Desarrollo</p>
+                    <p className="text-sm">Esta vista estará disponible en la próxima actualización.</p>
+                 </div>
+             )}
           </div>
 
           <PropertyModal isOpen={showPropertyModal} onClose={() => setShowPropertyModal(false)} onSubmit={selectedProperty ? handleUpdateProperty : handleCreateProperty} editingProperty={selectedProperty} isSubmitting={isSubmitting} />
@@ -350,10 +361,34 @@ const RealEstatePage: React.FC = () => {
           <TenantModal isOpen={showTenantModal} onClose={() => setShowTenantModal(false)} onSubmit={selectedTenant ? handleUpdateTenant : handleCreateTenant} editingTenant={selectedTenant} isSubmitting={isSubmitting} />
           <ContractModal isOpen={showContractModal} onClose={() => setShowContractModal(false)} onSubmit={selectedContract ? handleUpdateContract : handleCreateContract} editingContract={selectedContract} isSubmitting={isSubmitting} />
           <ServiceItemModal isOpen={showServiceModal} onClose={() => setShowServiceModal(false)} onSubmit={selectedService ? handleUpdateService : handleCreateService} editingItem={selectedService} isSubmitting={isSubmitting} />
-          <ServicePaymentModal isOpen={showServicePaymentModal} onClose={() => setShowServicePaymentModal(false)} onSubmit={handleServicePayment} serviceItem={selectedService} isSubmitting={isSubmitting} initialDate={suggestedPaymentDate} />
-          <ServicePaymentHistoryModal isOpen={showServiceHistoryModal} onClose={() => setShowServiceHistoryModal(false)} service={selectedService} propertyName={properties.find(p => p.code === selectedService?.propertyCode)?.name || ""} onAddPayment={(d) => { setSuggestedPaymentDate(d); setShowServicePaymentModal(true); }} onDeleteTransaction={handleDeleteTransaction} />
-          <PaymentModal isOpen={showPaymentModal} onClose={() => setShowPaymentModal(false)} onSubmit={handleRegisterPayment} contract={selectedContract} contractLabel={selectedContract?.code || ""} initialDescription={paymentModalDesc} isSubmitting={isSubmitting} />
-          <PaymentHistoryModal isOpen={showHistoryModal} onClose={() => setShowHistoryModal(false)} contract={selectedContract} contractLabel={selectedContract?.code || ""} tenantName={tenants.find(t => t.code === selectedContract?.tenantCode)?.fullName || ""} onRegisterPayment={(d) => { setShowPaymentModal(true); }} onDeleteTransaction={handleDeleteTransaction} />
+          
+          <ServicePaymentModal isOpen={showServicePaymentModal} onClose={() => setShowServicePaymentModal(false)} onSubmit={handleServicePayment} serviceItem={selectedService} isSubmitting={isSubmitting} initialDate={suggestedServiceDate} />
+          <ServicePaymentHistoryModal isOpen={showServiceHistoryModal} onClose={() => setShowServiceHistoryModal(false)} service={selectedService} propertyName={properties.find(p => p.code === selectedService?.propertyCode)?.name || ""} onAddPayment={(d) => { setSuggestedServiceDate(d); setShowServicePaymentModal(true); }} onDeleteTransaction={handleDeleteTransaction} />
+          
+          <PaymentModal 
+            isOpen={showPaymentModal} 
+            onClose={() => setShowPaymentModal(false)} 
+            onSubmit={handleRegisterPayment} 
+            contract={selectedContract} 
+            contractLabel={selectedContract?.code || ""} 
+            initialDescription={selectedContract ? `Pago Alquiler - ${tenants.find(t => t.code === selectedContract.tenantCode)?.fullName}` : ""} 
+            initialDate={paymentModalDate}
+            initialAmount={paymentModalAmount}
+            isSubmitting={isSubmitting} 
+          />
+          <PaymentHistoryModal 
+            isOpen={showHistoryModal} 
+            onClose={() => setShowHistoryModal(false)} 
+            contract={selectedContract} 
+            contractLabel={selectedContract?.code || ""} 
+            tenantName={tenants.find(t => t.code === selectedContract?.tenantCode)?.fullName || ""} 
+            onRegisterPayment={(monthDate, amount) => { 
+                setPaymentModalDate(monthDate);
+                setPaymentModalAmount(amount);
+                setShowPaymentModal(true); 
+            }} 
+            onDeleteTransaction={handleDeleteTransaction} 
+          />
           <BulkPaymentModal isOpen={showBulkModal} onClose={() => setShowBulkModal(false)} onSubmit={handleBulkPayment} contract={selectedContract} contractLabel={selectedContract?.code || ""} isSubmitting={isSubmitting} progressText={bulkProgress} />
       </div>
   );
