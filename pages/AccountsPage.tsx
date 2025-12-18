@@ -1,5 +1,6 @@
+
 import React, { useEffect, useState, useRef } from 'react';
-import { Plus, Search, Edit2, Trash2, CreditCard, Wallet, AlertTriangle, TrendingUp, TrendingDown, Upload, FileSpreadsheet, Download } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, CreditCard, Wallet, AlertTriangle, TrendingUp, TrendingDown, Upload, FileSpreadsheet, Download, X, Loader } from 'lucide-react';
 import { Account, AccountFormData, AccountType, Currency } from '../types';
 import { AccountService } from '../services/accountService';
 import AccountModal from '../components/AccountModal';
@@ -16,9 +17,12 @@ const AccountsPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
 
+  // Delete State
+  const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load Data
   const loadAccounts = async () => {
     try {
       const data = await AccountService.getAll();
@@ -34,7 +38,6 @@ const AccountsPage: React.FC = () => {
     loadAccounts();
   }, []);
 
-  // Handlers
   const handleCreate = async (data: AccountFormData) => {
     setIsSubmitting(true);
     try {
@@ -59,14 +62,17 @@ const AccountsPage: React.FC = () => {
     }
   };
 
-  const handleDelete = async (code: string) => {
-    if (!window.confirm(`¿Estás seguro que deseas eliminar la cuenta ${code}?`)) return;
-    
+  const handleDelete = async () => {
+    if (!accountToDelete) return;
+    setIsDeleting(true);
     try {
-      await AccountService.delete(code);
+      await AccountService.delete(accountToDelete.code);
       await loadAccounts();
+      setAccountToDelete(null);
     } catch (error: any) {
       alert(error.message);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -79,8 +85,6 @@ const AccountsPage: React.FC = () => {
     setEditingAccount(account);
     setIsModalOpen(true);
   };
-
-  // --- EXCEL LOGIC ---
 
   const handleDownloadTemplate = () => {
     const headers = ['Nombre', 'Banco', 'Numero', 'Tipo', 'Saldo', 'Moneda'];
@@ -110,13 +114,7 @@ const AccountsPage: React.FC = () => {
         const worksheet = workbook.Sheets[firstSheetName];
         const jsonData = XLSX.utils.sheet_to_json(worksheet);
         
-        if (jsonData.length === 0) {
-          alert("El archivo parece estar vacío.");
-          return;
-        }
-
-        let successCount = 0;
-        let errorCount = 0;
+        if (jsonData.length === 0) return;
 
         for (const row of jsonData as any[]) {
           try {
@@ -129,40 +127,21 @@ const AccountsPage: React.FC = () => {
             const currency: Currency = (currRaw === 'USD') ? 'USD' : 'HNL';
             const balance = parseFloat(row['Saldo'] || row['saldo'] || '0') || 0;
 
-            if (!name || !bank) {
-              errorCount++;
-              continue;
-            }
+            if (!name || !bank) continue;
 
-            const accountData: AccountFormData = {
+            await AccountService.create({
               name: String(name),
               bankName: String(bank),
               accountNumber: String(number),
               type: type,
               initialBalance: balance,
               currency: currency
-            };
-
-            await AccountService.create(accountData);
-            successCount++;
-
-          } catch (err) {
-            console.error("Error importing row:", row, err);
-            errorCount++;
-          }
+            });
+          } catch (err) { console.error(err); }
         }
-
         await loadAccounts();
-        alert(`Importación completada.\n✅ Exitosos: ${successCount}\n❌ Fallidos: ${errorCount}`);
-
-      } catch (error) {
-        console.error("Error parsing Excel:", error);
-        alert("Error al leer el archivo Excel.");
-      } finally {
-        setIsImporting(false);
-      }
+      } catch (error) { console.error(error); } finally { setIsImporting(false); }
     };
-
     reader.readAsBinaryString(file);
   };
 
@@ -180,17 +159,30 @@ const AccountsPage: React.FC = () => {
     acc.code.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600"></div>
-      </div>
-    );
-  }
+  if (loading) return <div className="flex items-center justify-center h-full"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600"></div></div>;
 
   return (
     <div className="space-y-6">
-      {/* Header & Actions */}
+      {/* DELETE CONFIRMATION UI */}
+      {accountToDelete && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => !isDeleting && setAccountToDelete(null)} />
+              <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden p-6 animate-fadeIn">
+                  <div className="flex flex-col items-center text-center space-y-4">
+                      <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center">
+                          {isDeleting ? <Loader size={32} className="animate-spin"/> : <Trash2 size={32}/>}
+                      </div>
+                      <h3 className="text-xl font-bold text-slate-800">¿Eliminar Cuenta?</h3>
+                      <p className="text-sm text-slate-600">Vas a eliminar <strong>{accountToDelete.name}</strong>. Esta acción no se puede deshacer.</p>
+                      <div className="flex gap-3 w-full pt-2">
+                          <button onClick={() => setAccountToDelete(null)} disabled={isDeleting} className="flex-1 py-3 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold hover:bg-slate-50 disabled:opacity-50">Cancelar</button>
+                          <button onClick={handleDelete} disabled={isDeleting} className="flex-1 py-3 bg-rose-600 text-white rounded-xl font-bold hover:bg-rose-700 disabled:opacity-50">Sí, Eliminar</button>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
+
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Cuentas Bancarias</h1>
@@ -198,63 +190,32 @@ const AccountsPage: React.FC = () => {
         </div>
         
         <div className="flex flex-wrap items-center gap-3">
-          {/* Excel Actions Group */}
           <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handleFileSelect} 
-              accept=".xlsx, .xls" 
-              className="hidden" 
-            />
-            <button 
-              onClick={handleDownloadTemplate}
-              className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-brand-600 rounded-md transition-colors text-sm font-medium border-r border-slate-100"
-              title="Descargar Plantilla Excel"
-            >
+            <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept=".xlsx, .xls" className="hidden" />
+            <button onClick={handleDownloadTemplate} className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-brand-600 rounded-md transition-colors text-sm font-medium border-r border-slate-100">
               <FileSpreadsheet size={16} />
               <span className="hidden sm:inline">Plantilla</span>
             </button>
-            <button 
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isImporting}
-              className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-emerald-600 rounded-md transition-colors text-sm font-medium disabled:opacity-50"
-              title="Subir archivo Excel"
-            >
-              {isImporting ? <div className="animate-spin h-4 w-4 border-2 border-emerald-600 border-t-transparent rounded-full"/> : <Upload size={16} />}
+            <button onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-emerald-600 rounded-md transition-colors text-sm font-medium disabled:opacity-50">
+              {isImporting ? <Loader size={16} className="animate-spin" /> : <Upload size={16} />}
               <span className="hidden sm:inline">Importar</span>
             </button>
           </div>
-
-          <div className="w-px h-8 bg-slate-200 mx-1 hidden sm:block"></div>
-
-          <button 
-            onClick={openNewModal}
-            className="flex items-center justify-center space-x-2 bg-brand-600 text-white px-5 py-2.5 rounded-xl hover:bg-brand-700 transition-all shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 active:scale-95"
-          >
+          <button onClick={openNewModal} className="flex items-center justify-center space-x-2 bg-brand-600 text-white px-5 py-2.5 rounded-xl hover:bg-brand-700 transition-all shadow-lg">
             <Plus size={20} />
             <span className="font-bold">Nueva Cuenta</span>
           </button>
         </div>
       </div>
 
-      {/* Main Content */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        {/* Search Toolbar */}
         <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center">
           <div className="relative w-full max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input 
-              type="text"
-              placeholder="Buscar cuenta..."
-              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none text-sm transition-all"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+            <input type="text" placeholder="Buscar cuenta..." className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl outline-none text-sm" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
           </div>
         </div>
 
-        {/* Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -267,19 +228,7 @@ const AccountsPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredAccounts.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
-                    <div className="flex flex-col items-center justify-center space-y-3">
-                      <div className="bg-slate-50 p-4 rounded-full">
-                        <Search size={32} className="opacity-20" />
-                      </div>
-                      <p>No se encontraron cuentas</p>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                filteredAccounts.map((account) => (
+              {filteredAccounts.map((account) => (
                   <tr key={account.code} className="hover:bg-slate-50/80 transition-colors group">
                     <td className="px-6 py-4">
                       <div className="flex items-center space-x-4">
@@ -293,71 +242,33 @@ const AccountsPage: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex flex-col">
-                        <span className="text-slate-700 font-medium text-sm">{account.bankName}</span>
-                        <span className="text-slate-400 text-xs font-mono mt-0.5">{account.accountNumber}</span>
-                      </div>
+                        <span className="text-slate-700 font-medium text-sm block">{account.bankName}</span>
+                        <span className="text-slate-400 text-xs font-mono">{account.accountNumber}</span>
                     </td>
+                    <td className="px-6 py-4 text-right font-mono font-bold text-slate-800">{formatCurrency(account.initialBalance, account.currency)}</td>
                     <td className="px-6 py-4 text-right">
-                       <span className={`font-mono font-bold text-sm px-2.5 py-1 rounded-lg ${
-                         account.currency === 'HNL' 
-                           ? 'bg-indigo-50 text-indigo-700' 
-                           : 'bg-emerald-50 text-emerald-700'
-                       }`}>
-                         {formatCurrency(account.initialBalance, account.currency)}
-                       </span>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex justify-end">
                         {account.type === 'ACTIVO' ? (
-                            <span className="inline-flex items-center space-x-1 px-2 py-1 rounded-full text-[10px] font-bold bg-emerald-100/50 text-emerald-700 border border-emerald-100">
-                              <TrendingUp size={10} />
-                              <span>ACTIVO</span>
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center space-x-1 px-2 py-1 rounded-full text-[10px] font-bold bg-rose-100/50 text-rose-700 border border-rose-100">
-                              <TrendingDown size={10} />
-                              <span>PASIVO</span>
-                            </span>
-                          )}
-                      </div>
+                            <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-bold">ACTIVO</span>
+                        ) : (
+                            <span className="px-2 py-1 bg-rose-100 text-rose-700 rounded-full text-[10px] font-bold">PASIVO</span>
+                        )}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end space-x-1 opacity-60 group-hover:opacity-100 transition-opacity">
-                        <button 
-                          onClick={() => openEditModal(account)}
-                          className="p-2 text-slate-500 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
-                          title="Editar"
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        
+                      <div className="flex items-center justify-end space-x-1">
+                        <button onClick={() => openEditModal(account)} className="p-2 text-slate-500 hover:text-brand-600 transition-colors"><Edit2 size={16} /></button>
                         {!account.isSystem && (
-                          <button 
-                            onClick={() => handleDelete(account.code)}
-                            className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                            title="Eliminar"
-                          >
-                            <Trash2 size={16} />
-                          </button>
+                          <button onClick={() => setAccountToDelete(account)} className="p-2 text-slate-500 hover:text-rose-600 transition-colors"><Trash2 size={16} /></button>
                         )}
                       </div>
                     </td>
                   </tr>
-                ))
-              )}
+                ))}
             </tbody>
           </table>
         </div>
       </div>
 
-      <AccountModal 
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSubmit={editingAccount ? handleUpdate : handleCreate}
-        editingAccount={editingAccount}
-        isSubmitting={isSubmitting}
-      />
+      <AccountModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSubmit={editingAccount ? handleUpdate : handleCreate} editingAccount={editingAccount} isSubmitting={isSubmitting} />
     </div>
   );
 };

@@ -120,7 +120,7 @@ export const ServiceItemService = {
           accountCode: data.accountCode,
           propertyCode: propertyCode,
           propertyName: propertyName,
-          serviceCode: data.serviceCode // TRAZABILIDAD INDIVIDUAL
+          serviceCode: data.serviceCode // IMPORTANTE: TRAZABILIDAD
       });
   }
 };

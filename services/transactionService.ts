@@ -74,7 +74,6 @@ export const TransactionService = {
       await delay(300);
       const data = localStorage.getItem(STORAGE_KEY);
       let transactions: Transaction[] = data ? JSON.parse(data) : [];
-      // (Mapping local sigue igual para otros campos, pero asume serviceCode si existe en el objeto)
       return transactions.map(t => ({...t})).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }
   },
