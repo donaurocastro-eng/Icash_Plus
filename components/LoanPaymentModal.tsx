@@ -67,6 +67,10 @@ const LoanPaymentModal: React.FC<LoanPaymentModalProps> = ({ isOpen, onClose, on
 
   const currencySymbol = loan.currency === 'HNL' ? 'L' : '$';
 
+  const formatMoney = (amt: number) => {
+    return new Intl.NumberFormat('es-HN', { minimumFractionDigits: 2 }).format(amt);
+  };
+
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
@@ -86,7 +90,7 @@ const LoanPaymentModal: React.FC<LoanPaymentModalProps> = ({ isOpen, onClose, on
               <div className="bg-slate-50 p-4 rounded-lg text-sm border border-slate-200 shadow-sm">
                   <div className="flex justify-between items-center mb-2">
                       <span className="font-bold text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-200">Cuota #{nextPayment.paymentNumber}</span>
-                      <span className="text-xs text-slate-500 font-mono">Saldo: {currencySymbol} {nextPayment.remainingBalance.toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
+                      <span className="text-xs text-slate-500 font-mono">Saldo: {currencySymbol} {formatMoney(nextPayment.remainingBalance)}</span>
                   </div>
                   <div className="flex items-center text-slate-600 gap-2">
                       <Clock size={16} className="text-amber-500"/>
@@ -118,10 +122,10 @@ const LoanPaymentModal: React.FC<LoanPaymentModalProps> = ({ isOpen, onClose, on
             <label className="block text-xs font-bold text-slate-500 mb-1">Cuenta de Origen</label>
             <div className="relative">
                 <CreditCard size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
-                <select className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white" 
+                <select className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white font-mono text-xs" 
                     value={accountId} onChange={e => setAccountId(e.target.value)}>
                     <option value="">Seleccionar...</option>
-                    {accounts.map(a => <option key={a.code} value={a.code}>{a.name} ({a.currency}) - {a.initialBalance}</option>)}
+                    {accounts.map(a => <option key={a.code} value={a.code}>{a.name} ({a.currency}) - Saldo: {formatMoney(a.currentBalance ?? 0)}</option>)}
                 </select>
             </div>
           </div>

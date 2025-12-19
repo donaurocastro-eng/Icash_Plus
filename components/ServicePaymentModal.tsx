@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { X, Save, AlertCircle, DollarSign, Calendar, CreditCard, Tag } from 'lucide-react';
 import { PropertyServiceItem, ServicePaymentFormData, Account, Category } from '../types';
@@ -88,6 +89,10 @@ const ServicePaymentModal: React.FC<ServicePaymentModalProps> = ({
 
   if (!isOpen || !serviceItem) return null;
 
+  const formatMoney = (amt: number) => {
+    return new Intl.NumberFormat('es-HN', { minimumFractionDigits: 2 }).format(amt);
+  };
+
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
@@ -129,13 +134,13 @@ const ServicePaymentModal: React.FC<ServicePaymentModalProps> = ({
             <div className="relative">
                 <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                 <select
-                    className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 bg-white"
+                    className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 bg-white font-mono text-xs"
                     value={formData.accountCode}
                     onChange={e => setFormData({...formData, accountCode: e.target.value})}
                 >
                     <option value="">Seleccionar Cuenta...</option>
                     {accounts.map(a => (
-                        <option key={a.code} value={a.code}>{a.name} ({a.currency})</option>
+                        <option key={a.code} value={a.code}>{a.name} ({a.currency}) - Saldo: {formatMoney(a.currentBalance ?? 0)}</option>
                     ))}
                 </select>
             </div>

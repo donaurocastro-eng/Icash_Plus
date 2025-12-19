@@ -124,6 +124,10 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
 
   const filteredCategories = categories.filter(c => c.type === formData.type);
 
+  const formatMoney = (amount: number) => {
+    return new Intl.NumberFormat('es-HN', { minimumFractionDigits: 2 }).format(amount);
+  };
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div 
@@ -224,14 +228,14 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
                 <div className="relative">
                     <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                     <select
-                    className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none bg-white"
+                    className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none bg-white font-mono text-xs"
                     value={formData.accountCode}
                     onChange={e => setFormData({...formData, accountCode: e.target.value})}
                     >
                     <option value="">Seleccione cuenta...</option>
                     {accounts.map(acc => (
                         <option key={acc.code} value={acc.code}>
-                        {acc.name} ({acc.currency}) - {acc.initialBalance}
+                        {acc.name} ({acc.currency}) - Saldo: {formatMoney(acc.currentBalance ?? 0)}
                         </option>
                     ))}
                     </select>
@@ -244,7 +248,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
                     <div className="relative">
                         <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400" size={18} />
                         <select
-                        className="w-full pl-10 pr-4 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                        className="w-full pl-10 pr-4 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white font-mono text-xs"
                         value={formData.destinationAccountCode}
                         onChange={e => setFormData({...formData, destinationAccountCode: e.target.value})}
                         >
@@ -253,7 +257,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
                             .filter(a => a.code !== formData.accountCode)
                             .map(acc => (
                             <option key={acc.code} value={acc.code}>
-                            {acc.name} ({acc.currency})
+                            {acc.name} ({acc.currency}) - Saldo: {formatMoney(acc.currentBalance ?? 0)}
                             </option>
                         ))}
                         </select>

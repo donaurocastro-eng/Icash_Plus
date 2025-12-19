@@ -240,4 +240,56 @@ const DashboardPage: React.FC = () => {
                 {transactions.slice(0, 5).map(tx => (
                   <tr key={tx.code} className="hover:bg-slate-50">
                     <td className="px-6 py-3">
-                      <div className="flex flex-
+                      <div className="flex flex-col">
+                        <span className="font-medium text-slate-700">{tx.description}</span>
+                        <span className="text-xs text-slate-400 font-mono">{new Date(tx.date).toLocaleDateString()}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-3">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-600">
+                        {tx.categoryName}
+                      </span>
+                    </td>
+                    <td className="px-6 py-3 text-right font-medium">
+                      <span className={tx.type === 'INGRESO' ? 'text-emerald-600' : 'text-rose-600'}>
+                        {tx.type === 'INGRESO' ? '+' : '-'}{formatHNL(Number(tx.amount))}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 flex flex-col space-y-4">
+          <div className="flex items-center space-x-3">
+            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-full">
+              <Users size={20} />
+            </div>
+            <div>
+              <h3 className="font-bold text-slate-800">Inmuebles</h3>
+              <p className="text-xs text-slate-500">Resumen de Alquileres</p>
+            </div>
+          </div>
+          <div className="space-y-4 pt-2">
+            <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
+              <span className="text-sm text-slate-600">Contratos Activos</span>
+              <span className="font-bold text-slate-800">{activeContracts.length}</span>
+            </div>
+             <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
+              <span className="text-sm text-slate-600">Proyección Mensual</span>
+              <span className="font-bold text-emerald-600">{formatHNL(projectedRent)}</span>
+            </div>
+            <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
+              <span className="text-sm text-slate-600">Valor Estimado</span>
+              <span className="font-bold text-slate-700">{formatHNL(totals.hnl.realEstate)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default DashboardPage;

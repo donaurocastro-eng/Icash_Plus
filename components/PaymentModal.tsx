@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { X, Save, AlertCircle, Calendar, CreditCard, Clock, FileText } from 'lucide-react';
 import { Contract, PaymentFormData, Account } from '../types';
@@ -42,13 +43,10 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     if (isOpen && contract) {
       loadAccounts();
       
-      // LOGIC: Use passed initialDate, or contract next payment date, or today
       let targetDateStr = '';
       let dateForDisplay: Date;
       
       if (initialDate) {
-          // Manual extraction to ensure we get "YYYY-MM-DD" of the local date object passed
-          // without relying on timezone offsets or ISO conversions that might shift the day.
           const y = initialDate.getFullYear();
           const m = String(initialDate.getMonth() + 1).padStart(2, '0');
           const d = String(initialDate.getDate()).padStart(2, '0');
@@ -59,17 +57,13 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               ? contract.nextPaymentDate.substring(0, 10) 
               : new Date().toISOString().split('T')[0];
           dateForDisplay = new Date(targetDateStr);
-          // Fix timezone for display only
           dateForDisplay = new Date(dateForDisplay.valueOf() + dateForDisplay.getTimezoneOffset() * 60000);
       } else {
           targetDateStr = new Date().toISOString().split('T')[0];
           dateForDisplay = new Date();
       }
       
-      // Set Billable Period (YYYY-MM)
       const billablePeriod = targetDateStr.substring(0, 7);
-
-      // Create readable display
       const monthName = dateForDisplay.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
       const displayMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
 
@@ -77,11 +71,11 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
       setFormData({
         contractCode: contract.code,
-        date: targetDateStr, // Initially set transaction date to due date, user can change it
+        date: targetDateStr, 
         amount: initialAmount !== undefined ? initialAmount : contract.amount,
         accountCode: '',
         description: initialDescription,
-        billablePeriod: billablePeriod // LOCKED to the schedule
+        billablePeriod: billablePeriod 
       });
       setError(null);
     }
@@ -90,7 +84,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const loadAccounts = async () => {
     try {
       const data = await AccountService.getAll();
-      setAccounts(data.filter(a => a.type === 'ACTIVO')); // Only show active accounts for receiving payment
+      setAccounts(data.filter(a => a.type === 'ACTIVO')); 
     } catch (e) {
       console.error(e);
     }
@@ -107,12 +101,15 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
   if (!isOpen || !contract) return null;
 
+  const formatMoney = (amt: number) => {
+    return new Intl.NumberFormat('es-HN', { minimumFractionDigits: 2 }).format(amt);
+  };
+
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all scale-100 max-h-[95vh] flex flex-col">
         
-        {/* HEADER */}
         <div className="px-5 py-3 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
           <div>
             <h3 className="text-base font-bold text-slate-800">Registrar Pago</h3>
@@ -127,7 +124,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                 <div className="bg-red-50 text-red-600 text-xs p-2.5 rounded-lg flex items-center"><AlertCircle size={14} className="mr-2 shrink-0" />{error}</div>
             )}
 
-            {/* PERIOD INFO BOX (COMPACT) */}
             <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3 flex items-center gap-3">
                 <div className="bg-white p-1.5 rounded-full text-indigo-600 shadow-sm shrink-0">
                     <Clock size={16} />
@@ -178,13 +174,13 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                 <div className="relative">
                 <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                 <select 
-                    className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 bg-white font-medium text-slate-700 text-sm"
+                    className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 bg-white font-mono text-xs"
                     value={formData.accountCode} 
                     onChange={e => setFormData({...formData, accountCode: e.target.value})}
                 >
                     <option value="">Seleccionar Cuenta...</option>
                     {accounts.map(acc => (
-                    <option key={acc.code} value={acc.code}>{acc.name} ({acc.currency})</option>
+                    <option key={acc.code} value={acc.code}>{acc.name} ({acc.currency}) - Saldo: {formatMoney(acc.currentBalance ?? 0)}</option>
                     ))}
                 </select>
                 </div>
