@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { X, Save, AlertCircle } from 'lucide-react';
 import { Category, CategoryFormData, CategoryType } from '../types';
@@ -101,7 +102,7 @@ const CategoryModal: React.FC<CategoryModalProps> = ({
             <label className="block text-sm font-medium text-slate-700">Nombre de la Categoría</label>
             <input
               type="text"
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-shadow"
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-shadow"
               placeholder="Ej: Alimentación, Salario, Transporte"
               value={formData.name}
               onChange={e => setFormData({...formData, name: e.target.value})}
@@ -120,7 +121,7 @@ const CategoryModal: React.FC<CategoryModalProps> = ({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex-1 flex items-center justify-center px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 font-medium shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 flex items-center justify-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? (
                 <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />

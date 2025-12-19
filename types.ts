@@ -10,6 +10,7 @@ export interface Account {
   accountNumber: string;  
   type: AccountType;      
   initialBalance: number; 
+  currentBalance?: number; // Saldo calculado en tiempo real
   currency: Currency;     
   isSystem: boolean;      
   createdAt: string;
@@ -52,7 +53,7 @@ export interface Transaction {
   propertyCode?: string;  
   propertyName?: string;
   contractCode?: string; 
-  serviceCode?: string; // Nuevo campo para trazabilidad de servicios específicos
+  serviceCode?: string; 
   billablePeriod?: string; 
 
   destinationAccountCode?: string;
@@ -81,7 +82,7 @@ export interface TransactionFormData {
   propertyCode?: string;
   propertyName?: string;
   contractCode?: string;
-  serviceCode?: string; // Nuevo campo para trazabilidad de servicios específicos
+  serviceCode?: string; 
   billablePeriod?: string; 
   tenantCode?: string; 
   loanId?: string;
@@ -262,8 +263,8 @@ export interface LoanFormData {
     currency: Currency;
     loanDate: string;
     notes?: string;
-    interestRate?: number;
-    term?: number;
+    interestRate?: number; 
+    term?: number; 
     monthlyInsurance?: number;
 }
 

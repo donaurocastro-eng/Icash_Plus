@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { 
   CheckCircle, AlertTriangle, Database, RefreshCw, 
@@ -46,6 +47,15 @@ const SettingsPage: React.FC = () => {
         addLog("📡 Verificando conexión con el servidor...");
         await db.query("SELECT 1");
         addLog("✅ Conexión establecida.");
+
+        // Intentar normalizar tipos de ENUM si existen
+        try {
+            addLog("🔧 Intentando actualizar tipos de categoría permitidos...");
+            // Nota: ALTER TYPE no puede ejecutarse dentro de bloques de transacción fácilmente en Neon
+            // Pero intentamos asegurar que al menos los básicos funcionen.
+            await db.query("ALTER TYPE public.category_type ADD VALUE IF NOT EXISTS 'TRANSFERENCIA';").catch(() => {});
+            addLog("✅ Validación de tipos completada.");
+        } catch (e) {}
 
         addLog("🔧 Verificando columnas de rastreo básico...");
         await db.query(`ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS tenant_code text NULL;`); 

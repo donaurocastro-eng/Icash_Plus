@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { X, Save, AlertCircle, Calendar, ArrowDownCircle, ArrowUpCircle, ArrowRightLeft, CreditCard, Tag } from 'lucide-react';
 import { TransactionFormData, Category, Account, Transaction } from '../types';
@@ -52,7 +53,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
             type: editingTransaction.type,
             categoryCode: editingTransaction.categoryCode,
             accountCode: editingTransaction.accountCode,
-            destinationAccountCode: '', // Editing transfers not supported directly
+            destinationAccountCode: '', 
             propertyCode: editingTransaction.propertyCode || '',
             propertyName: editingTransaction.propertyName || '',
             serviceCode: editingTransaction.serviceCode || ''
@@ -151,7 +152,6 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
             </div>
           )}
 
-          {/* Type Selection */}
           <div className="grid grid-cols-3 gap-3">
             <div 
               className={`cursor-pointer border rounded-lg p-2 flex flex-col items-center justify-center transition-all ${formData.type === 'GASTO' ? 'bg-rose-50 border-rose-500 text-rose-700 font-medium ring-1 ring-rose-500' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
@@ -179,7 +179,6 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Left Column */}
             <div className="space-y-4">
               <div className="space-y-1">
                 <label className="block text-sm font-medium text-slate-700">Fecha</label>
@@ -187,7 +186,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
                   <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                   <input
                     type="date"
-                    className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                    className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                     value={formData.date}
                     onChange={e => setFormData({...formData, date: e.target.value})}
                   />
@@ -199,7 +198,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
                 <input
                   type="number"
                   step="0.01"
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none font-mono text-lg"
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none font-mono text-lg"
                   placeholder="0.00"
                   value={formData.amount || ''}
                   onChange={e => setFormData({...formData, amount: parseFloat(e.target.value)})}
@@ -209,7 +208,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
               <div className="space-y-1">
                 <label className="block text-sm font-medium text-slate-700">Descripción</label>
                 <textarea
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none resize-none h-24"
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none h-24"
                   placeholder={formData.type === 'TRANSFERENCIA' ? "Pago de Tarjeta, Ahorro..." : "Detalle..."}
                   value={formData.description}
                   onChange={e => setFormData({...formData, description: e.target.value})}
@@ -217,7 +216,6 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
               </div>
             </div>
 
-            {/* Right Column */}
             <div className="space-y-4">
               <div className="space-y-1">
                 <label className="block text-sm font-medium text-slate-700">
@@ -226,7 +224,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
                 <div className="relative">
                     <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                     <select
-                    className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none bg-white"
+                    className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none bg-white"
                     value={formData.accountCode}
                     onChange={e => setFormData({...formData, accountCode: e.target.value})}
                     >
@@ -270,7 +268,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
                     <div className="relative">
                         <Tag className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                         <select
-                        className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none bg-white"
+                        className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none bg-white"
                         value={formData.categoryCode}
                         onChange={e => setFormData({...formData, categoryCode: e.target.value})}
                         >
@@ -286,20 +284,19 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
                   </div>
               )}
 
-              {/* Property & Service Section (Optional) */}
               <div className="pt-2 border-t border-slate-100 mt-2">
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Información Adicional (Opcional)</span>
                 <div className="grid grid-cols-2 gap-2 mb-2">
                   <input
                     type="text"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none text-sm"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
                     placeholder="Cod. Propiedad"
                     value={formData.propertyCode}
                     onChange={e => setFormData({...formData, propertyCode: e.target.value})}
                   />
                   <input
                     type="text"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none text-sm"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
                     placeholder="Cod. Servicio"
                     value={formData.serviceCode}
                     onChange={e => setFormData({...formData, serviceCode: e.target.value})}
@@ -307,7 +304,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
                 </div>
                 <input
                   type="text"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none text-sm"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
                   placeholder="Nombre Propiedad"
                   value={formData.propertyName}
                   onChange={e => setFormData({...formData, propertyName: e.target.value})}
@@ -327,7 +324,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex-1 flex items-center justify-center px-4 py-3 bg-brand-600 text-white rounded-lg hover:bg-brand-700 font-medium shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 flex items-center justify-center px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? (
                 <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />

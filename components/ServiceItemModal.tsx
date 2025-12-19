@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { X, Save, AlertCircle, Zap, Home, Tag, CreditCard } from 'lucide-react';
 import { PropertyServiceItem, PropertyServiceItemFormData, Property, Category, Account } from '../types';
@@ -88,7 +89,9 @@ const ServiceItemModal: React.FC<ServiceItemModalProps> = ({
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
           <div>
             <h3 className="text-lg font-bold text-slate-800">{editingItem ? 'Editar Servicio' : 'Nuevo Servicio Recurrente'}</h3>
-            <p className="text-xs text-slate-500 mt-1">Agua, Luz, Seguridad, etc.</p>
+            <p className="text-xs text-slate-500 mt-1">
+              {editingItem ? `Código: ${editingItem.code}` : 'Agua, Luz, Seguridad, etc.'}
+            </p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={20} /></button>
         </div>
@@ -101,7 +104,7 @@ const ServiceItemModal: React.FC<ServiceItemModalProps> = ({
           <div className="space-y-1">
             <label className="block text-sm font-medium text-slate-700">Propiedad (Edificio/Casa)</label>
             <select
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none bg-white"
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
               value={formData.propertyCode}
               onChange={e => setFormData({...formData, propertyCode: e.target.value})}
             >
@@ -118,7 +121,7 @@ const ServiceItemModal: React.FC<ServiceItemModalProps> = ({
                 <Zap className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                 <input
                 type="text"
-                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
+                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                 placeholder="Ej: Agua Potable"
                 value={formData.name}
                 onChange={e => setFormData({...formData, name: e.target.value})}
@@ -131,7 +134,7 @@ const ServiceItemModal: React.FC<ServiceItemModalProps> = ({
             <div className="relative">
                 <Tag className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                 <select
-                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none bg-white"
+                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
                 value={formData.defaultCategoryCode}
                 onChange={e => setFormData({...formData, defaultCategoryCode: e.target.value})}
                 >
@@ -148,7 +151,7 @@ const ServiceItemModal: React.FC<ServiceItemModalProps> = ({
             <div className="relative">
                 <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                 <select
-                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none bg-white"
+                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
                 value={formData.defaultAccountCode}
                 onChange={e => setFormData({...formData, defaultAccountCode: e.target.value})}
                 >
@@ -165,7 +168,7 @@ const ServiceItemModal: React.FC<ServiceItemModalProps> = ({
             <label className="block text-sm font-medium text-slate-700">Costo Estimado Mensual</label>
             <input
               type="number" step="0.01"
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none font-mono"
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
               value={formData.defaultAmount}
               onChange={e => setFormData({...formData, defaultAmount: parseFloat(e.target.value)})}
             />
@@ -175,7 +178,7 @@ const ServiceItemModal: React.FC<ServiceItemModalProps> = ({
               <input 
                 type="checkbox" 
                 id="active"
-                className="w-4 h-4 text-brand-600 border-gray-300 rounded focus:ring-brand-500"
+                className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
                 checked={formData.active}
                 onChange={e => setFormData({...formData, active: e.target.checked})}
               />
@@ -184,8 +187,8 @@ const ServiceItemModal: React.FC<ServiceItemModalProps> = ({
 
           <div className="pt-4 flex space-x-3 border-t border-slate-100">
             <button type="button" onClick={onClose} className="flex-1 px-4 py-2 text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 font-medium">Cancelar</button>
-            <button type="submit" disabled={isSubmitting} className="flex-1 flex items-center justify-center px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 font-medium shadow-md disabled:opacity-50">
-              {isSubmitting ? <span className="animate-spin">...</span> : <><Save size={18} className="mr-2" /> Guardar</>}
+            <button type="submit" disabled={isSubmitting} className="flex-1 flex items-center justify-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium shadow-md disabled:opacity-50">
+              {isSubmitting ? <span className="animate-spin h-5 w-5 border-2 border-white/30 border-t-white rounded-full"></span> : <><Save size={18} className="mr-2" /> Guardar</>}
             </button>
           </div>
         </form>

@@ -103,6 +103,7 @@ export const TransactionService = {
           const destRes = await db.query('SELECT name FROM accounts WHERE code=$1', [data.destinationAccountCode]);
           if (destRes.length > 0) destAccountName = destRes[0].name;
 
+          // REGISTRO 1: SALIDA (Siempre es GASTO para la cuenta origen)
           await db.query(`
             INSERT INTO transactions (
                 code, date, description, amount, type, category_code, category_name, account_code, account_name,
@@ -117,6 +118,8 @@ export const TransactionService = {
               data.destinationAccountCode, destAccountName,
               data.loanId || null, data.loanCode || null, data.paymentNumber || null]);
 
+          // REGISTRO 2: ENTRADA (Siempre es INGRESO para la cuenta destino)
+          // Esto garantiza que si el destino es un PASIVO, se reste de la deuda.
           const newCodeIn = newCode + '-IN';
           await db.query(`
             INSERT INTO transactions (

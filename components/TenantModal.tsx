@@ -91,7 +91,7 @@ const TenantModal: React.FC<TenantModalProps> = ({
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                 <input
                 type="text"
-                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-shadow"
+                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-shadow"
                 placeholder="Juan Pérez"
                 value={formData.fullName}
                 onChange={e => setFormData({...formData, fullName: e.target.value})}
@@ -106,7 +106,7 @@ const TenantModal: React.FC<TenantModalProps> = ({
                 <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                 <input
                 type="text"
-                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-shadow"
+                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-shadow"
                 placeholder="+504 9999-9999"
                 value={formData.phone}
                 onChange={e => setFormData({...formData, phone: e.target.value})}
@@ -120,7 +120,7 @@ const TenantModal: React.FC<TenantModalProps> = ({
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                 <input
                 type="email"
-                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-shadow"
+                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-shadow"
                 placeholder="juan@ejemplo.com"
                 value={formData.email}
                 onChange={e => setFormData({...formData, email: e.target.value})}
@@ -128,7 +128,6 @@ const TenantModal: React.FC<TenantModalProps> = ({
             </div>
           </div>
 
-          {/* Status Selector */}
           <div className="space-y-1 pt-1">
             <label className="block text-sm font-medium text-slate-700">Estado del Inquilino</label>
             <div className="grid grid-cols-2 gap-3">
@@ -170,7 +169,7 @@ const TenantModal: React.FC<TenantModalProps> = ({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex-1 flex items-center justify-center px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 font-medium shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 flex items-center justify-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? (
                 <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />

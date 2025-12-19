@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { X, Save, AlertCircle, DollarSign, Coins, Building2, Hash, LayoutTemplate, TrendingUp, TrendingDown } from 'lucide-react';
 import { Account, AccountFormData } from '../types';
@@ -99,7 +100,7 @@ const AccountModal: React.FC<AccountModalProps> = ({
         <form onSubmit={handleSubmit} className="p-8 space-y-6">
           {error && (
             <div className="bg-rose-50 text-rose-600 text-sm p-4 rounded-xl flex items-start shadow-sm border border-rose-100">
-              <AlertCircle size={18} className="mr-2 shrink-0 mt-0.5" />
+              <AlertCircle size={18} className="mr-2 shrink-0" />
               <span>{error}</span>
             </div>
           )}
@@ -182,7 +183,7 @@ const AccountModal: React.FC<AccountModalProps> = ({
                 <LayoutTemplate className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                 <input
                   type="text"
-                  className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all placeholder:text-slate-400 text-slate-800 font-medium"
+                  className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all placeholder:text-slate-400 text-slate-800 font-medium"
                   placeholder="Ej: Nómina Principal"
                   value={formData.name}
                   onChange={e => setFormData({...formData, name: e.target.value})}
@@ -197,7 +198,7 @@ const AccountModal: React.FC<AccountModalProps> = ({
                   <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                   <input
                     type="text"
-                    className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all placeholder:text-slate-400"
+                    className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all placeholder:text-slate-400"
                     placeholder="Ej: BAC"
                     value={formData.bankName}
                     onChange={e => setFormData({...formData, bankName: e.target.value})}
@@ -211,7 +212,7 @@ const AccountModal: React.FC<AccountModalProps> = ({
                   <Hash className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                   <input
                     type="text"
-                    className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all placeholder:text-slate-400"
+                    className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all placeholder:text-slate-400"
                     placeholder="**** 1234"
                     value={formData.accountNumber}
                     onChange={e => setFormData({...formData, accountNumber: e.target.value})}
@@ -231,7 +232,7 @@ const AccountModal: React.FC<AccountModalProps> = ({
                 <input
                   type="number"
                   step="0.01"
-                  className="w-full pl-10 pr-4 py-4 text-xl font-bold text-slate-800 bg-white border-2 border-slate-200 rounded-xl focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 outline-none transition-all placeholder:text-slate-300 font-mono"
+                  className="w-full pl-10 pr-4 py-4 text-xl font-bold text-slate-800 bg-white border-2 border-slate-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-slate-300 font-mono"
                   placeholder="0.00"
                   value={formData.initialBalance || ''}
                   onChange={e => setFormData({...formData, initialBalance: parseFloat(e.target.value) || 0})}
@@ -252,7 +253,7 @@ const AccountModal: React.FC<AccountModalProps> = ({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex-1 flex items-center justify-center px-6 py-3.5 bg-brand-600 text-white rounded-xl hover:bg-brand-700 font-bold shadow-lg shadow-brand-600/20 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+              className="flex-1 flex items-center justify-center px-6 py-3.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-bold shadow-lg shadow-indigo-600/20 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {isSubmitting ? (
                 <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />

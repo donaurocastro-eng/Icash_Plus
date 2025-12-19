@@ -26,7 +26,6 @@ const DashboardPage: React.FC = () => {
   
   const [schemaError, setSchemaError] = useState<string | null>(null);
   
-  // Tasa de cambio para visualización consolidada (referencial)
   const EXCHANGE_RATE = 25.00;
 
   useEffect(() => {
@@ -61,7 +60,7 @@ const DashboardPage: React.FC = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
       </div>
     );
   }
@@ -85,66 +84,52 @@ const DashboardPage: React.FC = () => {
     );
   }
 
-  // --- CALCULATIONS ---
-
   const totals = {
     hnl: { assets: 0, liabilities: 0, realEstate: 0, loans: 0 },
     usd: { assets: 0, liabilities: 0, realEstate: 0, loans: 0 }
   };
 
-  // 1. Accounts
   accounts.forEach(acc => {
     const target = acc.currency === 'HNL' ? totals.hnl : totals.usd;
-    const balance = Number(acc.initialBalance);
+    const balance = Number(acc.currentBalance ?? 0);
+    
     if (acc.type === 'ACTIVO') {
         target.assets += balance;
     } else {
-        // PASIVO: Sum Absolute Value (Magnitude of Debt)
-        target.liabilities += Math.abs(balance);
+        target.liabilities += -balance; 
     }
   });
 
-  // 2. Properties (Assets)
   properties.forEach(prop => {
     const target = prop.currency === 'HNL' ? totals.hnl : totals.usd;
-    const value = Number(prop.value);
-    target.realEstate += value;
-    target.assets += value;
+    const val = Number(prop.value ?? 0);
+    target.realEstate += val;
+    target.assets += val;
   });
 
-  // 3. Loans (Liabilities)
-  const activeLoans = loans.filter(l => !l.isArchived);
-  activeLoans.forEach(loan => {
+  loans.filter(l => !l.isArchived).forEach(loan => {
       const target = loan.currency === 'HNL' ? totals.hnl : totals.usd;
-      let outstandingBalance = Number(loan.initialAmount);
+      let outstanding = Number(loan.initialAmount ?? 0);
       
-      // Calculate remaining balance based on payment plan
       if (loan.paymentPlan && loan.paymentPlan.length > 0) {
-          // Sort strictly by paymentNumber to ensure correct order
-          const paidInstallments = loan.paymentPlan
+          const paid = loan.paymentPlan
             .filter(p => p.status === 'PAID')
             .sort((a, b) => a.paymentNumber - b.paymentNumber);
             
-          if (paidInstallments.length > 0) {
-              // The remaining balance after the last paid installment is the current debt
-              const lastPayment = paidInstallments[paidInstallments.length - 1];
-              outstandingBalance = Number(lastPayment.remainingBalance);
+          if (paid.length > 0) {
+              outstanding = Number(paid[paid.length - 1].remainingBalance);
           }
       }
       
-      // Ensure positive magnitude for debt summation
-      const debtAmount = Math.abs(outstandingBalance);
-      target.liabilities += debtAmount;
-      target.loans += debtAmount;
+      const debt = Math.max(0, outstanding);
+      target.liabilities += debt;
+      target.loans += debt;
   });
 
-  // --- CONSOLIDATED CALCULATIONS (Base HNL) ---
   const consolidatedAssetsHNL = totals.hnl.assets + (totals.usd.assets * EXCHANGE_RATE);
   const consolidatedLiabilitiesHNL = totals.hnl.liabilities + (totals.usd.liabilities * EXCHANGE_RATE);
-  // Net Worth = Assets - Liabilities (since Liabilities are now positive magnitudes)
   const consolidatedNetWorthHNL = consolidatedAssetsHNL - consolidatedLiabilitiesHNL;
 
-  // --- CASHFLOW ---
   const now = new Date();
   const currentMonthTx = transactions.filter(t => {
     const d = new Date(t.date);
@@ -157,7 +142,6 @@ const DashboardPage: React.FC = () => {
   const activeContracts = contracts.filter(c => c.status === 'ACTIVE');
   const projectedRent = activeContracts.reduce((sum, c) => sum + Number(c.amount), 0);
 
-  // --- FORMATTERS ---
   const formatHNL = (n: number) => new Intl.NumberFormat('es-HN', { style: 'currency', currency: 'HNL', minimumFractionDigits: 2 }).format(n);
   const formatUSD = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
 
@@ -165,31 +149,29 @@ const DashboardPage: React.FC = () => {
     <div className="space-y-6 pb-8">
       <div>
         <h1 className="text-2xl font-bold text-slate-800">Panel Financiero</h1>
-        <p className="text-slate-500">Resumen de tu situación patrimonial.</p>
+        <p className="text-slate-500">Estado patrimonial basado en historial de transacciones.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* CONSOLIDATED NET WORTH (HNL) */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden group">
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
             <Wallet size={48} className="text-indigo-600" />
           </div>
-          <p className="text-slate-500 text-sm font-medium">Patrimonio Neto (Consolidado)</p>
+          <p className="text-slate-500 text-sm font-medium">Patrimonio Neto (Total)</p>
           <h3 className="text-2xl font-bold text-indigo-900 mt-1">
             {formatHNL(consolidatedNetWorthHNL)}
           </h3>
           <div className="mt-2 text-xs text-slate-400 flex flex-col gap-0.5">
-            <span>Activos Totales: <span className="text-emerald-600 font-medium">{formatHNL(consolidatedAssetsHNL)}</span></span>
-            <span>Pasivos Totales: <span className="text-red-500 font-medium">{formatHNL(consolidatedLiabilitiesHNL)}</span></span>
+            <span>Activos: <span className="text-emerald-600 font-medium">{formatHNL(consolidatedAssetsHNL)}</span></span>
+            <span>Pasivos: <span className="text-red-500 font-medium">{formatHNL(consolidatedLiabilitiesHNL)}</span></span>
           </div>
         </div>
 
-        {/* USD Net Worth (Pure USD) */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden group">
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
             <DollarSign size={48} className="text-emerald-600" />
           </div>
-          <p className="text-slate-500 text-sm font-medium">Patrimonio Neto (Solo USD)</p>
+          <p className="text-slate-500 text-sm font-medium">Patrimonio Neto (USD)</p>
           <h3 className="text-2xl font-bold text-emerald-900 mt-1">
             {formatUSD(totals.usd.assets - totals.usd.liabilities)}
           </h3>
@@ -199,12 +181,11 @@ const DashboardPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Loans / Debt Summary */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden">
            <div className="absolute top-0 right-0 p-4 opacity-10">
             <Landmark size={48} className="text-rose-600" />
           </div>
-          <p className="text-slate-500 text-sm font-medium">Deuda Total (Préstamos)</p>
+          <p className="text-slate-500 text-sm font-medium">Deuda en Préstamos</p>
           <div className="flex flex-col mt-1">
              <h3 className="text-2xl font-bold text-rose-700">
               {formatHNL(totals.hnl.loans)}
@@ -213,17 +194,16 @@ const DashboardPage: React.FC = () => {
                 <span className="text-sm font-bold text-rose-500"> + {formatUSD(totals.usd.loans)}</span>
             )}
           </div>
-          <div className="mt-2 text-xs text-slate-500">
-             {activeLoans.length} préstamos activos
+          <div className="mt-2 text-xs text-slate-500 font-medium">
+             {loans.filter(l => !l.isArchived).length} préstamos activos
           </div>
         </div>
 
-        {/* Monthly Cashflow */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden">
            <div className="absolute top-0 right-0 p-4 opacity-10">
-            <TrendingUp size={48} className="text-brand-600" />
+            <TrendingUp size={48} className="text-indigo-600" />
           </div>
-          <p className="text-slate-500 text-sm font-medium">Flujo de Caja (Este Mes)</p>
+          <p className="text-slate-500 text-sm font-medium">Flujo Mensual (Efectivo)</p>
           <div className="flex items-end space-x-2 mt-1">
              <h3 className={`text-2xl font-bold ${monthlyIncome - monthlyExpense >= 0 ? 'text-slate-800' : 'text-red-600'}`}>
               {formatHNL(monthlyIncome - monthlyExpense)}
@@ -260,56 +240,4 @@ const DashboardPage: React.FC = () => {
                 {transactions.slice(0, 5).map(tx => (
                   <tr key={tx.code} className="hover:bg-slate-50">
                     <td className="px-6 py-3">
-                      <div className="flex flex-col">
-                        <span className="font-medium text-slate-700">{tx.description}</span>
-                        <span className="text-xs text-slate-400">{new Date(tx.date).toLocaleDateString()}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-3">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-600">
-                        {tx.categoryName}
-                      </span>
-                    </td>
-                    <td className="px-6 py-3 text-right font-medium">
-                      <span className={tx.type === 'INGRESO' ? 'text-emerald-600' : 'text-rose-600'}>
-                        {tx.type === 'INGRESO' ? '+' : '-'}{formatHNL(Number(tx.amount))}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 flex flex-col space-y-4">
-          <div className="flex items-center space-x-3">
-            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-full">
-              <Users size={20} />
-            </div>
-            <div>
-              <h3 className="font-bold text-slate-800">Alquileres</h3>
-              <p className="text-xs text-slate-500">Resumen</p>
-            </div>
-          </div>
-          <div className="space-y-4 pt-2">
-            <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
-              <span className="text-sm text-slate-600">Contratos Activos</span>
-              <span className="font-bold text-slate-800">{activeContracts.length}</span>
-            </div>
-             <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
-              <span className="text-sm text-slate-600">Proyección Mensual</span>
-              <span className="font-bold text-emerald-600">{formatHNL(projectedRent)}</span>
-            </div>
-            <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
-              <span className="text-sm text-slate-600">Valor Inmuebles</span>
-              <span className="font-bold text-slate-700">{formatHNL(totals.hnl.realEstate)}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default DashboardPage;
+                      <div className="flex flex-

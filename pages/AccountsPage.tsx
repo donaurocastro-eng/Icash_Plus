@@ -11,13 +11,11 @@ const AccountsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
 
-  // Delete State
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -159,11 +157,10 @@ const AccountsPage: React.FC = () => {
     acc.code.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  if (loading) return <div className="flex items-center justify-center h-full"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600"></div></div>;
+  if (loading) return <div className="flex items-center justify-center h-full"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div></div>;
 
   return (
     <div className="space-y-6">
-      {/* DELETE CONFIRMATION UI */}
       {accountToDelete && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
               <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => !isDeleting && setAccountToDelete(null)} />
@@ -192,7 +189,7 @@ const AccountsPage: React.FC = () => {
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
             <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept=".xlsx, .xls" className="hidden" />
-            <button onClick={handleDownloadTemplate} className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-brand-600 rounded-md transition-colors text-sm font-medium border-r border-slate-100">
+            <button onClick={handleDownloadTemplate} className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-indigo-600 rounded-md transition-colors text-sm font-medium border-r border-slate-100">
               <FileSpreadsheet size={16} />
               <span className="hidden sm:inline">Plantilla</span>
             </button>
@@ -201,7 +198,7 @@ const AccountsPage: React.FC = () => {
               <span className="hidden sm:inline">Importar</span>
             </button>
           </div>
-          <button onClick={openNewModal} className="flex items-center justify-center space-x-2 bg-brand-600 text-white px-5 py-2.5 rounded-xl hover:bg-brand-700 transition-all shadow-lg">
+          <button onClick={openNewModal} className="flex items-center justify-center space-x-2 bg-indigo-600 text-white px-5 py-2.5 rounded-xl hover:bg-indigo-700 transition-all shadow-lg">
             <Plus size={20} />
             <span className="font-bold">Nueva Cuenta</span>
           </button>
@@ -222,7 +219,7 @@ const AccountsPage: React.FC = () => {
               <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
                 <th className="px-6 py-4 font-semibold">Cuenta</th>
                 <th className="px-6 py-4 font-semibold">Banco / Detalle</th>
-                <th className="px-6 py-4 font-semibold text-right">Saldo Inicial</th>
+                <th className="px-6 py-4 font-semibold text-right">Saldo Actual</th>
                 <th className="px-6 py-4 font-semibold text-right">Estado</th>
                 <th className="px-6 py-4 font-semibold text-right">Acciones</th>
               </tr>
@@ -232,7 +229,7 @@ const AccountsPage: React.FC = () => {
                   <tr key={account.code} className="hover:bg-slate-50/80 transition-colors group">
                     <td className="px-6 py-4">
                       <div className="flex items-center space-x-4">
-                        <div className={`p-3 rounded-xl shadow-sm ${account.isSystem ? 'bg-amber-100 text-amber-600' : 'bg-white border border-slate-100 text-brand-600'}`}>
+                        <div className={`p-3 rounded-xl shadow-sm ${account.isSystem ? 'bg-amber-100 text-amber-600' : 'bg-white border border-slate-100 text-indigo-600'}`}>
                           {account.isSystem ? <Wallet size={20} /> : <CreditCard size={20} />}
                         </div>
                         <div>
@@ -245,7 +242,14 @@ const AccountsPage: React.FC = () => {
                         <span className="text-slate-700 font-medium text-sm block">{account.bankName}</span>
                         <span className="text-slate-400 text-xs font-mono">{account.accountNumber}</span>
                     </td>
-                    <td className="px-6 py-4 text-right font-mono font-bold text-slate-800">{formatCurrency(account.initialBalance, account.currency)}</td>
+                    <td className="px-6 py-4 text-right">
+                        <div className="flex flex-col items-end">
+                            <span className="font-mono font-bold text-slate-800 text-lg">
+                                {formatCurrency(account.currentBalance ?? account.initialBalance, account.currency)}
+                            </span>
+                            <span className="text-[10px] text-slate-400 uppercase font-bold">Calculado</span>
+                        </div>
+                    </td>
                     <td className="px-6 py-4 text-right">
                         {account.type === 'ACTIVO' ? (
                             <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-bold">ACTIVO</span>
@@ -255,7 +259,7 @@ const AccountsPage: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end space-x-1">
-                        <button onClick={() => openEditModal(account)} className="p-2 text-slate-500 hover:text-brand-600 transition-colors"><Edit2 size={16} /></button>
+                        <button onClick={() => openEditModal(account)} className="p-2 text-slate-500 hover:text-indigo-600 transition-colors"><Edit2 size={16} /></button>
                         {!account.isSystem && (
                           <button onClick={() => setAccountToDelete(account)} className="p-2 text-slate-500 hover:text-rose-600 transition-colors"><Trash2 size={16} /></button>
                         )}

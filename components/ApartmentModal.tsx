@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { X, Save, AlertCircle, Home } from 'lucide-react';
 import { Apartment, ApartmentFormData, Property } from '../types';
@@ -85,7 +86,7 @@ const ApartmentModal: React.FC<ApartmentModalProps> = ({
           <div className="space-y-1">
             <label className="block text-sm font-medium text-slate-700">Propiedad Principal (Edificio)</label>
             <select
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none bg-white"
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
               value={formData.propertyCode}
               onChange={e => setFormData({...formData, propertyCode: e.target.value})}
             >
@@ -102,7 +103,7 @@ const ApartmentModal: React.FC<ApartmentModalProps> = ({
                 <Home className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                 <input
                 type="text"
-                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
+                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                 placeholder="Ej: Apto 101, Local B"
                 value={formData.name}
                 onChange={e => setFormData({...formData, name: e.target.value})}
@@ -113,7 +114,7 @@ const ApartmentModal: React.FC<ApartmentModalProps> = ({
           <div className="space-y-1">
             <label className="block text-sm font-medium text-slate-700">Estado</label>
             <select
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none bg-white"
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
               value={formData.status}
               onChange={e => setFormData({...formData, status: e.target.value as any})}
             >
@@ -125,8 +126,8 @@ const ApartmentModal: React.FC<ApartmentModalProps> = ({
 
           <div className="pt-4 flex space-x-3 border-t border-slate-100">
             <button type="button" onClick={onClose} className="flex-1 px-4 py-2 text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 font-medium">Cancelar</button>
-            <button type="submit" disabled={isSubmitting} className="flex-1 flex items-center justify-center px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 font-medium shadow-md disabled:opacity-50">
-              {isSubmitting ? <span className="animate-spin">...</span> : <><Save size={18} className="mr-2" /> Guardar</>}
+            <button type="submit" disabled={isSubmitting} className="flex-1 flex items-center justify-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium shadow-md disabled:opacity-50">
+              {isSubmitting ? <span className="animate-spin h-5 w-5 border-2 border-white/30 border-t-white rounded-full"></span> : <><Save size={18} className="mr-2" /> Guardar</>}
             </button>
           </div>
         </form>

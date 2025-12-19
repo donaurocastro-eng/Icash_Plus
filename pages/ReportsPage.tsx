@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { 
   Calendar, 
@@ -119,7 +120,7 @@ const ReportsPage: React.FC = () => {
       } catch (e) { return null; }
   };
 
-  // --- BALANCE SHEET ---
+  // --- BALANCE SHEET (RESTAURADO CON CLASIFICACIÓN POR TIPO) ---
   const calculateConsolidatedBalance = () => {
     const balance = {
       assets: { total: 0, details: [] as any[] },
@@ -127,32 +128,56 @@ const ReportsPage: React.FC = () => {
       equity: 0
     };
 
-    const processItem = (amount: number, currency: string, name: string, type: 'ACTIVO' | 'PASIVO', category: string, code: string) => {
-        const numAmount = Number(amount) || 0;
-        let finalAmount = numAmount;
-        
-        if (currency === 'USD') finalAmount = numAmount * exchangeRate;
-
-        if (type === 'ACTIVO') {
-            balance.assets.total += finalAmount;
-            balance.assets.details.push({ name, code, amountHNL: finalAmount, original: numAmount, currency, category });
-        } else {
-            const absAmount = Math.abs(finalAmount);
-            const absOriginal = Math.abs(numAmount);
-            
-            balance.liabilities.total += absAmount;
-            balance.liabilities.details.push({ name, code, amountHNL: absAmount, original: absOriginal, currency, category });
-        }
-    };
-
+    // 1. Procesar Cuentas Bancarias y Tarjetas (Respetando el TIPO definido)
     accounts.forEach(acc => {
-        processItem(acc.initialBalance, acc.currency, acc.name, acc.type, acc.type === 'ACTIVO' ? 'Activos Líquidos' : 'Pasivos Corrientes', acc.code);
+        const currentVal = Number(acc.currentBalance || 0);
+        let valHNL = currentVal;
+        if (acc.currency === 'USD') valHNL = currentVal * exchangeRate;
+
+        if (acc.type === 'ACTIVO') {
+            // Activos suman directamente (Bancos, Efectivo)
+            balance.assets.total += valHNL;
+            balance.assets.details.push({ 
+                name: acc.name, 
+                code: acc.code, 
+                amountHNL: valHNL, 
+                original: currentVal, 
+                currency: acc.currency, 
+                category: 'Activos Líquidos' 
+            });
+        } else {
+            // Pasivos (Tarjetas): El consumo genera saldo negativo, la deuda es positiva.
+            const debtHNL = -valHNL;
+            balance.liabilities.total += debtHNL;
+            balance.liabilities.details.push({ 
+                name: acc.name, 
+                code: acc.code, 
+                amountHNL: debtHNL, 
+                original: -currentVal, 
+                currency: acc.currency, 
+                category: 'Pasivos Corrientes (Tarjetas/Cuentas)' 
+            });
+        }
     });
 
+    // 2. Procesar Propiedades (Activos fijos)
     properties.forEach(prop => {
-        processItem(prop.value, prop.currency, prop.name, 'ACTIVO', 'Bienes Inmuebles', prop.code);
+        const currentVal = Number(prop.value || 0);
+        let valHNL = currentVal;
+        if (prop.currency === 'USD') valHNL = currentVal * exchangeRate;
+
+        balance.assets.total += valHNL;
+        balance.assets.details.push({ 
+            name: prop.name, 
+            code: prop.code, 
+            amountHNL: valHNL, 
+            original: currentVal, 
+            currency: prop.currency, 
+            category: 'Bienes Inmuebles' 
+        });
     });
 
+    // 3. Procesar Préstamos (Pasivos fijos)
     loans.filter(l => !l.isArchived).forEach(loan => {
         let outstandingBalance = Number(loan.initialAmount);
         if (loan.paymentPlan && loan.paymentPlan.length > 0) {
@@ -163,8 +188,20 @@ const ReportsPage: React.FC = () => {
                 outstandingBalance = Number(paidInstallments[paidInstallments.length - 1].remainingBalance);
             }
         }
-        if (!isNaN(outstandingBalance) && Math.abs(outstandingBalance) > 0.01) {
-            processItem(outstandingBalance, loan.currency, `Préstamo: ${loan.lenderName}`, 'PASIVO', 'Préstamos Bancarios', loan.loanCode);
+        
+        let valHNL = outstandingBalance;
+        if (loan.currency === 'USD') valHNL = outstandingBalance * exchangeRate;
+
+        if (valHNL > 0.01) {
+            balance.liabilities.total += valHNL;
+            balance.liabilities.details.push({ 
+                name: `Préstamo: ${loan.lenderName}`, 
+                code: loan.loanCode, 
+                amountHNL: valHNL, 
+                original: outstandingBalance, 
+                currency: loan.currency, 
+                category: 'Préstamos Bancarios' 
+            });
         }
     });
 
@@ -200,8 +237,6 @@ const ReportsPage: React.FC = () => {
   };
 
   // --- PROPERTY REPORTS ---
-  
-  // 1. Single Property History (Month by Month)
   const calculatePropertyReport = () => {
       if (!selectedPropCode || selectedPropCode === 'ALL') return [];
       const months = Array.from({ length: 12 }, (_, i) => ({
@@ -229,7 +264,6 @@ const ReportsPage: React.FC = () => {
       return months;
   };
 
-  // 2. Comparative Report (All Properties for One Month)
   const calculateComparativePropertyReport = (): ComparativePropertyStats[] => {
       return properties.map(prop => {
           let income = 0;
@@ -240,7 +274,6 @@ const ReportsPage: React.FC = () => {
               const parts = getTxDateParts(tx.date);
               if (!parts) return;
               
-              // Check matching month and year
               if (parts.year === selectedYear && (parts.month - 1) === selectedMonth) {
                    const amt = Number(tx.amount);
                    if (tx.type === 'INGRESO') income += amt;
@@ -268,18 +301,10 @@ const ReportsPage: React.FC = () => {
           const acc = accounts.find(a => a.code === accCode);
           if (!acc) return;
 
-          // 1. Calculate Movements WITHIN the month
           const monthTx = transactions.filter(tx => {
               const parts = getTxDateParts(tx.date);
               if (!parts) return false;
               return parts.year === selectedYear && (parts.month - 1) === selectedMonth && tx.accountCode === accCode;
-          });
-
-          const transferInTx = transactions.filter(tx => {
-              const parts = getTxDateParts(tx.date);
-              if (!parts) return false;
-              const destCode = (tx as any).destinationAccountCode; 
-              return parts.year === selectedYear && (parts.month - 1) === selectedMonth && destCode === accCode && tx.type === 'TRANSFERENCIA';
           });
 
           let income = 0;
@@ -287,20 +312,16 @@ const ReportsPage: React.FC = () => {
           let transfersOut = 0;
           let transfersIn = 0;
 
-          // Logic for standard transactions
           monthTx.forEach(tx => {
               const amt = Number(tx.amount);
-              // Identify Transfers by Category Code logic we agreed on
               if (tx.categoryCode === 'CAT-EXP-013') transfersOut += amt;
               else if (tx.categoryCode === 'CAT-INC-007') transfersIn += amt;
               else if (tx.type === 'INGRESO') income += amt;
               else if (tx.type === 'GASTO') expense += amt;
           });
 
-          // 2. Calculate Initial Balance of the Month
-          let calculatedInitial = acc.initialBalance; // Start with current balance
-          
-          // Filter ALL transactions that happened AFTER the start of selected month
+          // Calcular Saldo Inicial del Mes revirtiendo transacciones posteriores
+          let calculatedInitial = Number(acc.currentBalance || 0); 
           const startOfSelectMonth = new Date(selectedYear, selectedMonth, 1);
           const futureTx = transactions.filter(tx => {
               if (!tx.date) return false;
@@ -308,17 +329,15 @@ const ReportsPage: React.FC = () => {
               return txDate >= startOfSelectMonth && (tx.accountCode === accCode || (tx as any).destinationAccountCode === accCode);
           });
 
-          // Reverse them to find initial
           futureTx.forEach(tx => {
               const amt = Number(tx.amount);
               if (tx.accountCode === accCode) {
-                  if (tx.type === 'INGRESO') calculatedInitial -= amt; // Reverse income
-                  if (tx.type === 'GASTO') calculatedInitial += amt; // Reverse expense
+                  if (tx.type === 'INGRESO') calculatedInitial -= amt; 
+                  if (tx.type === 'GASTO') calculatedInitial += amt; 
                   if (tx.type === 'TRANSFERENCIA') calculatedInitial += amt; 
               }
           });
 
-          // 3. Final Balance of Month
           const finalBal = calculatedInitial + income - expense - transfersOut + transfersIn;
 
           report.push({
@@ -341,10 +360,8 @@ const ReportsPage: React.FC = () => {
 
   const balance = calculateConsolidatedBalance();
   const cashflow = calculateCashflow();
-  
   const propertyReport = calculatePropertyReport();
   const comparativeReport = calculateComparativePropertyReport();
-  
   const accountReport = calculateAccountReport();
   
   const selectedPropName = properties.find(p => p.code === selectedPropCode)?.name || 'Seleccionar Propiedad';
@@ -352,9 +369,7 @@ const ReportsPage: React.FC = () => {
   const realEstateAssets = balance.assets.details.filter(d => d.category === 'Bienes Inmuebles');
   const loansLiabilities = balance.liabilities.details.filter(d => d.category === 'Préstamos Bancarios');
   const otherLiabilities = balance.liabilities.details.filter(d => d.category !== 'Préstamos Bancarios');
-  const totalLoansHNL = loansLiabilities.reduce((sum, item) => sum + item.amountHNL, 0);
 
-  // Totals for Account Report
   const totalAccountReport = {
       initial: accountReport.reduce((sum, r) => sum + (r.currency === 'USD' ? r.initialBalance * exchangeRate : r.initialBalance), 0),
       income: accountReport.reduce((sum, r) => sum + (r.currency === 'USD' ? r.income * exchangeRate : r.income), 0),
@@ -364,7 +379,6 @@ const ReportsPage: React.FC = () => {
       final: accountReport.reduce((sum, r) => sum + (r.currency === 'USD' ? r.finalBalance * exchangeRate : r.finalBalance), 0),
   };
 
-  // Totals for Comparative Report
   const totalComparative = {
       income: comparativeReport.reduce((sum, r) => sum + r.income, 0),
       expense: comparativeReport.reduce((sum, r) => sum + r.expense, 0),
@@ -402,26 +416,22 @@ const ReportsPage: React.FC = () => {
                 <div className="space-y-6">
                     <div className="flex justify-between items-center border-b border-indigo-500/50 pb-2"><h3 className="font-bold text-indigo-400 text-lg">Activos</h3></div>
                     <div>
-                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Activos Líquidos</h4>
-                        <div className="space-y-2">{liquidAssets.map((item, i) => (<div key={i} className="flex justify-between text-sm hover:bg-slate-800/50 p-1 rounded transition-colors"><span className="text-slate-300">{item.name} {item.currency === 'USD' && <span className="text-xs text-emerald-500 ml-1">(USD)</span>}</span><span className="font-mono text-slate-100">{formatMoney(item.amountHNL)}</span></div>))}</div>
-                    </div>
-                    <div>
-                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 mt-4">Bienes Inmuebles</h4>
-                        <div className="space-y-2">{realEstateAssets.map((item, i) => (<div key={i} className="flex justify-between text-sm hover:bg-slate-800/50 p-1 rounded transition-colors"><span className="text-slate-300">{item.name} {item.currency === 'USD' && <span className="text-xs text-emerald-500 ml-1">(USD)</span>}</span><span className="font-mono text-slate-100">{formatMoney(item.amountHNL)}</span></div>))}</div>
+                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Disponibilidad y Propiedades</h4>
+                        <div className="space-y-2">
+                            {liquidAssets.map((item, i) => (<div key={i} className="flex justify-between text-sm hover:bg-slate-800/50 p-1 rounded transition-colors"><span className="text-slate-300">{item.name} {item.currency === 'USD' && <span className="text-xs text-emerald-500 ml-1">(USD)</span>}</span><span className="font-mono text-slate-100">{formatMoney(item.amountHNL)}</span></div>))}
+                            {realEstateAssets.map((item, i) => (<div key={i} className="flex justify-between text-sm hover:bg-slate-800/50 p-1 rounded transition-colors"><span className="text-slate-300">{item.name}</span><span className="font-mono text-slate-100">{formatMoney(item.amountHNL)}</span></div>))}
+                        </div>
                     </div>
                     <div className="pt-4 border-t border-slate-700 flex justify-between items-end mt-4"><span className="text-slate-400 font-bold">TOTAL ACTIVOS</span><span className="text-2xl font-bold text-emerald-400">{formatMoney(balance.assets.total)}</span></div>
                 </div>
                 <div className="space-y-6">
                     <div className="flex justify-between items-center border-b border-rose-500/50 pb-2"><h3 className="font-bold text-rose-400 text-lg">Pasivos</h3></div>
                      <div>
-                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Préstamos Bancarios</h4>
-                        <div className="space-y-2">{loansLiabilities.map((item, i) => (<div key={i} className="flex justify-between text-sm hover:bg-slate-800/50 p-1 rounded transition-colors"><span className="text-slate-300">{item.name}</span><span className="font-mono text-slate-100">{formatMoney(item.amountHNL)}</span></div>))}
-                            {loansLiabilities.length > 0 && (<div className="flex justify-between text-sm pt-2 mt-2 border-t border-slate-800"><span className="text-rose-400 font-bold italic">Subtotal Préstamos</span><span className="font-mono font-bold text-rose-400">{formatMoney(totalLoansHNL)}</span></div>)}
+                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Tarjetas y Préstamos (Deuda acumulada)</h4>
+                        <div className="space-y-2">
+                            {otherLiabilities.map((item, i) => (<div key={i} className="flex justify-between text-sm hover:bg-slate-800/50 p-1 rounded transition-colors"><span className="text-slate-300">{item.name} {item.currency === 'USD' && <span className="text-xs text-emerald-500 ml-1">(USD)</span>}</span><span className="font-mono text-slate-100">{formatMoney(item.amountHNL)}</span></div>))}
+                            {loansLiabilities.map((item, i) => (<div key={i} className="flex justify-between text-sm hover:bg-slate-800/50 p-1 rounded transition-colors"><span className="text-slate-300">{item.name}</span><span className="font-mono text-slate-100">{formatMoney(item.amountHNL)}</span></div>))}
                         </div>
-                    </div>
-                     <div>
-                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 mt-4">Otras Deudas</h4>
-                        <div className="space-y-2">{otherLiabilities.map((item, i) => (<div key={i} className="flex justify-between text-sm hover:bg-slate-800/50 p-1 rounded transition-colors"><span className="text-slate-300">{item.name} {item.currency === 'USD' && <span className="text-xs text-emerald-500 ml-1">(USD)</span>}</span><span className="font-mono text-slate-100">{formatMoney(item.amountHNL)}</span></div>))}</div>
                     </div>
                     <div className="pt-4 border-t border-slate-700 flex justify-between items-end mt-4"><span className="text-slate-400 font-bold">TOTAL PASIVOS</span><span className="text-2xl font-bold text-rose-400">{formatMoney(balance.liabilities.total)}</span></div>
                     <div className="mt-12 bg-slate-800/50 p-6 rounded-xl border border-slate-700"><div className="flex justify-between items-center"><div><p className="text-slate-400 text-sm uppercase tracking-wider font-bold">Patrimonio Neto</p></div><div className="text-right"><p className="text-3xl font-bold text-white">{formatMoney(balance.equity)}</p></div></div></div>
@@ -430,7 +440,7 @@ const ReportsPage: React.FC = () => {
         </div>
       )}
 
-      {/* --- CASHFLOW TAB --- */}
+      {/* --- LAS OTRAS TABS SE MANTIENEN IGUAL --- */}
       {activeTab === 'CASHFLOW' && (
         <div className="space-y-6">
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap gap-4 items-center">
@@ -456,7 +466,6 @@ const ReportsPage: React.FC = () => {
         </div>
       )}
 
-      {/* --- PROPERTY REPORT TAB --- */}
       {activeTab === 'BY_PROPERTY' && (
         <div className="space-y-6">
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap gap-4 items-center">
@@ -480,7 +489,6 @@ const ReportsPage: React.FC = () => {
                 <select className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-sm" value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))}>{[2023, 2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}</select>
             </div>
             
-            {/* VIEW A: SINGLE PROPERTY HISTORY */}
             {selectedPropCode && selectedPropCode !== 'ALL' && (
                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                     <div className="px-6 py-4 border-b border-slate-100 bg-indigo-50 flex justify-between"><h3 className="font-bold text-indigo-900">Reporte Anual: {selectedPropName}</h3><span className="font-mono text-indigo-600 font-bold">{selectedYear}</span></div>
@@ -493,7 +501,6 @@ const ReportsPage: React.FC = () => {
                  </div>
             )}
 
-            {/* VIEW B: COMPARATIVE MONTHLY REPORT */}
             {selectedPropCode === 'ALL' && (
                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                     <div className="px-6 py-4 border-b border-slate-100 bg-indigo-50 flex justify-between">
@@ -528,14 +535,9 @@ const ReportsPage: React.FC = () => {
                     </table>
                  </div>
             )}
-
-            {!selectedPropCode && (
-                <div className="text-center p-12 bg-slate-50 rounded-xl border border-slate-200 border-dashed"><Building size={48} className="text-slate-300 mx-auto mb-3" /><p className="text-slate-500">Selecciona una propiedad o "TODAS".</p></div>
-            )}
         </div>
       )}
 
-      {/* --- ACCOUNT REPORT TAB --- */}
       {activeTab === 'BY_ACCOUNT' && (
         <div className="space-y-6">
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
@@ -561,7 +563,6 @@ const ReportsPage: React.FC = () => {
                                     : 'bg-white border-slate-200 text-slate-600 hover:bg-white'
                                 }`}
                             >
-                                {selectedAccountCodes.includes(acc.code) ? <CheckSquare size={16} className="text-indigo-600"/> : <Square size={16} className="text-slate-300"/>}
                                 <span className="truncate">{acc.name} ({acc.currency})</span>
                             </button>
                         ))}
@@ -569,7 +570,7 @@ const ReportsPage: React.FC = () => {
                 </div>
             </div>
 
-            {selectedAccountCodes.length > 0 ? (
+            {selectedAccountCodes.length > 0 && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm text-left">
@@ -579,28 +580,23 @@ const ReportsPage: React.FC = () => {
                                     <th className="px-4 py-3 text-right">Saldo Inicial</th>
                                     <th className="px-4 py-3 text-right text-emerald-600">Ingresos</th>
                                     <th className="px-4 py-3 text-right text-rose-600">Gastos</th>
-                                    <th className="px-4 py-3 text-center text-blue-600">Transferencias (Neto)</th>
+                                    <th className="px-4 py-3 text-center text-blue-600">Transf. (Neto)</th>
                                     <th className="px-4 py-3 text-right font-bold">Saldo Final</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {accountReport.map(row => (
                                     <tr key={row.accountCode} className="hover:bg-slate-50">
-                                        <td className="px-4 py-3 font-medium text-slate-700">{row.accountName} <span className="text-xs text-slate-400 font-normal">({row.currency})</span></td>
+                                        <td className="px-4 py-3 font-medium text-slate-700">{row.accountName}</td>
                                         <td className="px-4 py-3 text-right font-mono">{formatMoney(row.initialBalance, row.currency as any)}</td>
                                         <td className="px-4 py-3 text-right font-mono text-emerald-600">{formatMoney(row.income, row.currency as any)}</td>
                                         <td className="px-4 py-3 text-right font-mono text-rose-600">{formatMoney(row.expense, row.currency as any)}</td>
-                                        <td className="px-4 py-3 text-center font-mono text-blue-600">
-                                            {formatMoney(row.transfersIn - row.transfersOut, row.currency as any)}
-                                            <div className="text-[10px] text-slate-400">
-                                                (Ent: {formatMoney(row.transfersIn, row.currency as any)} / Sal: {formatMoney(row.transfersOut, row.currency as any)})
-                                            </div>
-                                        </td>
+                                        <td className="px-4 py-3 text-center font-mono text-blue-600">{formatMoney(row.transfersIn - row.transfersOut, row.currency as any)}</td>
                                         <td className="px-4 py-3 text-right font-mono font-bold bg-slate-50/50">{formatMoney(row.finalBalance, row.currency as any)}</td>
                                     </tr>
                                 ))}
                                 <tr className="bg-slate-100 border-t-2 border-slate-200 font-bold text-slate-800">
-                                    <td className="px-4 py-3">TOTAL CONSOLIDADO (HNL)</td>
+                                    <td className="px-4 py-3">TOTAL (HNL)</td>
                                     <td className="px-4 py-3 text-right">{formatMoney(totalAccountReport.initial)}</td>
                                     <td className="px-4 py-3 text-right text-emerald-700">{formatMoney(totalAccountReport.income)}</td>
                                     <td className="px-4 py-3 text-right text-rose-700">{formatMoney(totalAccountReport.expense)}</td>
@@ -610,11 +606,6 @@ const ReportsPage: React.FC = () => {
                             </tbody>
                         </table>
                     </div>
-                </div>
-            ) : (
-                <div className="text-center p-12 bg-slate-50 rounded-xl border border-slate-200 border-dashed">
-                    <Wallet size={48} className="text-slate-300 mx-auto mb-3" />
-                    <p className="text-slate-500">Selecciona una o más cuentas para ver su reporte.</p>
                 </div>
             )}
         </div>

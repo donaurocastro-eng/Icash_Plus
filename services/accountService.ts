@@ -1,3 +1,4 @@
+
 import { Account, AccountFormData } from '../types';
 import { db } from './db';
 
@@ -38,24 +39,42 @@ const generateNextCode = (existingAccounts: Account[]): string => {
 export const AccountService = {
   getAll: async (): Promise<Account[]> => {
     if (db.isConfigured()) {
+      // MOTOR DE CÁLCULO UNIFICADO (SQL)
+      // Basado estrictamente en transacciones: Ingreso (+), Gasto (-)
       const rows = await db.query(`
         SELECT 
-          code, 
-          name, 
-          bank_name as "bankName", 
-          account_number as "accountNumber", 
-          type, 
-          initial_balance as "initialBalance", 
-          currency, 
-          is_system as "isSystem", 
-          created_at as "createdAt" 
-        FROM accounts
-        ORDER BY created_at ASC
+          a.code, 
+          a.name, 
+          a.bank_name as "bankName", 
+          a.account_number as "accountNumber", 
+          a.type, 
+          a.initial_balance as "initialBalance", 
+          a.currency, 
+          a.is_system as "isSystem", 
+          a.created_at as "createdAt",
+          (
+            COALESCE((
+              SELECT SUM(
+                CASE 
+                  WHEN UPPER(CAST(t.type AS TEXT)) = 'INGRESO' THEN CAST(t.amount AS NUMERIC)
+                  WHEN UPPER(CAST(t.type AS TEXT)) = 'GASTO' THEN -CAST(t.amount AS NUMERIC)
+                  ELSE 0 
+                END
+              ) 
+              FROM transactions t 
+              WHERE t.account_code = a.code
+            ), 0)
+          ) as "currentBalance"
+        FROM accounts a
+        ORDER BY a.created_at ASC
       `);
-      // Convert numeric strings to numbers if needed (Postgres returns numeric as string)
-      return rows.map(r => ({ ...r, initialBalance: Number(r.initialBalance) }));
+      return rows.map(r => ({ 
+        ...r, 
+        initialBalance: Number(r.initialBalance || 0),
+        currentBalance: Number(r.currentBalance || 0)
+      }));
     } else {
-      // LOCAL FALLBACK
+      // MOTOR DE CÁLCULO UNIFICADO (LOCAL)
       await delay(300);
       const data = localStorage.getItem(STORAGE_KEY);
       let accounts: Account[] = data ? JSON.parse(data) : [];
@@ -63,14 +82,31 @@ export const AccountService = {
         accounts = [...DEFAULT_ACCOUNTS, ...accounts];
         localStorage.setItem(STORAGE_KEY, JSON.stringify(accounts));
       }
-      return accounts;
+
+      const txData = localStorage.getItem('icash_plus_transactions');
+      const transactions = txData ? JSON.parse(txData) : [];
+
+      return accounts.map(acc => {
+          const movements = transactions
+            .filter((t: any) => (t.accountCode === acc.code || t.account_code === acc.code))
+            .reduce((sum: number, t: any) => {
+                const amt = Number(t.amount || 0);
+                const type = (t.type || '').toUpperCase();
+                // Lógica de Flujo de Caja Puro
+                return sum + (type === 'INGRESO' ? amt : -amt);
+            }, 0);
+
+          return { 
+            ...acc, 
+            initialBalance: Number(acc.initialBalance || 0),
+            currentBalance: movements 
+          };
+      });
     }
   },
 
   create: async (data: AccountFormData): Promise<Account> => {
     if (db.isConfigured()) {
-      // For ID generation in SQL, we can do a quick select or use a sequence. 
-      // To keep it consistent with the logic, let's fetch max code first.
       const rows = await db.query('SELECT code FROM accounts');
       const existing = rows.map(r => ({ code: r.code } as Account));
       const newCode = generateNextCode(existing);
@@ -83,11 +119,11 @@ export const AccountService = {
       return {
         code: newCode,
         ...data,
+        currentBalance: 0, // Nueva cuenta empieza en 0 hasta que tenga transacciones
         isSystem: false,
         createdAt: new Date().toISOString()
       };
     } else {
-      // LOCAL FALLBACK
       await delay(300);
       const existingAccounts = await AccountService.getAll();
       const newCode = generateNextCode(existingAccounts);
@@ -98,6 +134,7 @@ export const AccountService = {
         accountNumber: data.accountNumber,
         type: data.type,
         initialBalance: Number(data.initialBalance),
+        currentBalance: 0,
         currency: data.currency,
         isSystem: false,
         createdAt: new Date().toISOString()
@@ -116,14 +153,9 @@ export const AccountService = {
         WHERE code=$7
       `, [data.name, data.bankName, data.accountNumber, data.type, data.initialBalance, data.currency, code]);
       
-      return {
-        code,
-        ...data,
-        isSystem: false, // assuming update doesn't change system status
-        createdAt: new Date().toISOString() // won't match DB exactly but fine for UI return
-      };
+      const all = await AccountService.getAll();
+      return all.find(a => a.code === code)!;
     } else {
-      // LOCAL FALLBACK
       await delay(200);
       const existingAccounts = await AccountService.getAll();
       const index = existingAccounts.findIndex(a => a.code === code);
@@ -134,8 +166,7 @@ export const AccountService = {
         bankName: data.bankName,
         accountNumber: data.accountNumber,
         type: data.type,
-        initialBalance: Number(data.initialBalance),
-        currency: data.currency
+        initialBalance: Number(data.initialBalance)
       };
       existingAccounts[index] = updatedAccount;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(existingAccounts));
@@ -147,6 +178,7 @@ export const AccountService = {
     if (code === CASH_CODE) throw new Error("No se puede eliminar la cuenta principal.");
     
     if (db.isConfigured()) {
+      await db.query('DELETE FROM transactions WHERE account_code=$1', [code]);
       await db.query('DELETE FROM accounts WHERE code=$1', [code]);
     } else {
       await delay(200);

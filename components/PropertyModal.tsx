@@ -102,7 +102,7 @@ const PropertyModal: React.FC<PropertyModalProps> = ({
             <label className="block text-sm font-medium text-slate-700">Nombre Propiedad</label>
             <input
               type="text"
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-shadow"
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-shadow"
               placeholder="p. ej., Apartamento 101"
               value={formData.name}
               onChange={e => setFormData({...formData, name: e.target.value})}
@@ -114,11 +114,11 @@ const PropertyModal: React.FC<PropertyModalProps> = ({
             <label className="block text-sm font-medium text-slate-700">Código de Propiedad</label>
             <input
               type="text"
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-shadow"
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-shadow"
               placeholder="p. ej., AP-101"
               value={formData.code}
               onChange={e => setFormData({...formData, code: e.target.value})}
-              disabled={!!editingProperty} // Lock code on edit
+              disabled={!!editingProperty} 
             />
             <p className="text-xs text-slate-400">Opcional. Si lo dejas en blanco, se generará uno automáticamente.</p>
           </div>
@@ -127,7 +127,7 @@ const PropertyModal: React.FC<PropertyModalProps> = ({
             <label className="block text-sm font-medium text-slate-700">Clave Catastral (Opcional)</label>
             <input
               type="text"
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-shadow"
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-shadow"
               placeholder="p. ej., 0801-1999-12345"
               value={formData.cadastralKey}
               onChange={e => setFormData({...formData, cadastralKey: e.target.value})}
@@ -139,7 +139,7 @@ const PropertyModal: React.FC<PropertyModalProps> = ({
             <input
               type="number"
               step="0.01"
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-shadow font-mono"
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-shadow font-mono"
               placeholder="0.00"
               value={formData.annualTax}
               onChange={e => setFormData({...formData, annualTax: parseFloat(e.target.value) || 0})}
@@ -152,7 +152,7 @@ const PropertyModal: React.FC<PropertyModalProps> = ({
               <input
                 type="number"
                 step="0.01"
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-shadow font-mono"
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-shadow font-mono"
                 placeholder="0.00"
                 value={formData.value}
                 onChange={e => setFormData({...formData, value: parseFloat(e.target.value) || 0})}
@@ -161,7 +161,7 @@ const PropertyModal: React.FC<PropertyModalProps> = ({
             <div className="space-y-1">
               <label className="block text-sm font-medium text-slate-700">Moneda del Valor</label>
               <select
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-shadow bg-white"
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-shadow bg-white"
                 value={formData.currency}
                 onChange={e => setFormData({...formData, currency: e.target.value as any})}
               >
@@ -182,7 +182,7 @@ const PropertyModal: React.FC<PropertyModalProps> = ({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex-1 flex items-center justify-center px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 font-medium shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 flex items-center justify-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? (
                 <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
