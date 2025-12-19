@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useRef } from 'react';
-import { Plus, Search, Trash2, ArrowDownCircle, ArrowUpCircle, Calendar, ArrowRightLeft, Edit2, FileSpreadsheet, Upload, Filter, Loader, X, AlertTriangle, CheckCircle, Download, Info, Wallet } from 'lucide-react';
+import { Plus, Search, Trash2, ArrowDownCircle, ArrowUpCircle, Calendar, ArrowRightLeft, Edit2, FileSpreadsheet, Upload, Filter, Loader, X, AlertTriangle, CheckCircle, Download, Info, Wallet, Copy } from 'lucide-react';
 import { Transaction, TransactionFormData, Account, Category, Property, PropertyServiceItem, Loan } from '../types';
 import { TransactionService } from '../services/transactionService';
 import { AccountService } from '../services/accountService';
@@ -9,6 +9,7 @@ import { PropertyService } from '../services/propertyService';
 import { ServiceItemService } from '../services/serviceItemService';
 import { LoanService } from '../services/loanService';
 import TransactionModal from '../components/TransactionModal';
+import DuplicateTransactionsModal from '../components/DuplicateTransactionsModal';
 import * as XLSX from 'xlsx';
 
 const TransactionsPage: React.FC = () => {
@@ -30,6 +31,7 @@ const TransactionsPage: React.FC = () => {
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
@@ -387,6 +389,10 @@ const TransactionsPage: React.FC = () => {
                     <Upload size={16} />
                     <span className="hidden sm:inline">Importar Masivo</span>
                 </button>
+                <button onClick={() => setIsDuplicateModalOpen(true)} className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-amber-600 rounded-md transition-colors text-sm font-bold border-r border-slate-100" title="Verificar transacciones repetidas">
+                    <Copy size={16} />
+                    <span className="hidden sm:inline">Verificar Duplicados</span>
+                </button>
                 <button onClick={handleExportExcel} disabled={isExporting} className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-blue-600 rounded-md transition-colors text-sm font-bold">
                     {isExporting ? <Loader size={16} className="animate-spin"/> : <Download size={16} />}
                     <span className="hidden sm:inline">Exportar</span>
@@ -494,6 +500,12 @@ const TransactionsPage: React.FC = () => {
       </div>
 
       <TransactionModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSubmit={editingTransaction ? handleUpdate : handleCreate} editingTransaction={editingTransaction} isSubmitting={isSubmitting} />
+      
+      <DuplicateTransactionsModal 
+        isOpen={isDuplicateModalOpen} 
+        onClose={() => { setIsDuplicateModalOpen(false); loadTransactions(); }} 
+        transactions={transactions}
+      />
     </div>
   );
 };
