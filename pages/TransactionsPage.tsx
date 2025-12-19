@@ -1,5 +1,6 @@
+
 import React, { useEffect, useState, useRef } from 'react';
-import { Plus, Search, Trash2, ArrowDownCircle, ArrowUpCircle, Calendar, ArrowRightLeft, Edit2, FileSpreadsheet, Upload, Filter, Loader, X, AlertTriangle, CheckCircle, Download, Info } from 'lucide-react';
+import { Plus, Search, Trash2, ArrowDownCircle, ArrowUpCircle, Calendar, ArrowRightLeft, Edit2, FileSpreadsheet, Upload, Filter, Loader, X, AlertTriangle, CheckCircle, Download, Info, Wallet } from 'lucide-react';
 import { Transaction, TransactionFormData, Account, Category, Property, PropertyServiceItem, Loan } from '../types';
 import { TransactionService } from '../services/transactionService';
 import { AccountService } from '../services/accountService';
@@ -120,11 +121,8 @@ const TransactionsPage: React.FC = () => {
     }
   };
 
-  // --- ROBUST EXCEL LOGIC WITH REFERENCE SHEETS ---
   const handleDownloadTemplate = () => {
     const wb = XLSX.utils.book_new();
-    
-    // 1. MAIN IMPORT SHEET
     const headers = [
       'Fecha (YYYY-MM-DD)', 
       'Descripcion', 
@@ -148,31 +146,26 @@ const TransactionsPage: React.FC = () => {
     wsMain['!cols'] = headers.map(h => ({ wch: h.length + 5 }));
     XLSX.utils.book_append_sheet(wb, wsMain, "Importar_Movimientos");
 
-    // 2. REFERENCE: ACCOUNTS
     const accHeaders = ['Codigo', 'Nombre', 'Banco', 'Moneda', 'Tipo'];
     const accData = accounts.map(a => [a.code, a.name, a.bankName, a.currency, a.type]);
     const wsAcc = XLSX.utils.aoa_to_sheet([accHeaders, ...accData]);
     XLSX.utils.book_append_sheet(wb, wsAcc, "REF_CUENTAS");
 
-    // 3. REFERENCE: CATEGORIES
     const catHeaders = ['Codigo', 'Nombre', 'Tipo'];
     const catData = categories.map(c => [c.code, c.name, c.type]);
     const wsCat = XLSX.utils.aoa_to_sheet([catHeaders, ...catData]);
     XLSX.utils.book_append_sheet(wb, wsCat, "REF_CATEGORIAS");
 
-    // 4. REFERENCE: PROPERTIES
     const propHeaders = ['Codigo', 'Nombre'];
     const propData = properties.map(p => [p.code, p.name]);
     const wsProp = XLSX.utils.aoa_to_sheet([propHeaders, ...propData]);
     XLSX.utils.book_append_sheet(wb, wsProp, "REF_PROPIEDADES");
 
-    // 5. REFERENCE: SERVICES
     const servHeaders = ['Codigo', 'Nombre', 'Cod_Propiedad'];
     const servData = services.map(s => [s.code, s.name, s.propertyCode]);
     const wsServ = XLSX.utils.aoa_to_sheet([servHeaders, ...servData]);
     XLSX.utils.book_append_sheet(wb, wsServ, "REF_SERVICIOS");
 
-    // 6. REFERENCE: LOANS
     const loanHeaders = ['Codigo', 'Acreedor', 'Monto_Original'];
     const loanData = loans.map(l => [l.loanCode, l.lenderName, l.initialAmount]);
     const wsLoan = XLSX.utils.aoa_to_sheet([loanHeaders, ...loanData]);
@@ -289,15 +282,29 @@ const TransactionsPage: React.FC = () => {
     return new Intl.NumberFormat('es-HN', { minimumFractionDigits: 2 }).format(amount);
   };
 
+  // --- LÓGICA DE FILTRADO ACTUALIZADA ---
   const filteredTransactions = transactions.filter(t => {
     if (!t.date) return false;
     const parts = t.date.split('-');
     if (parts.length < 2) return false;
+    
+    // Filtro Fecha
     const tYear = parseInt(parts[0]);
     const tMonth = parseInt(parts[1]) - 1;
     const matchesDate = tYear === selectedYear && tMonth === selectedMonth;
-    const matchesSearch = t.description.toLowerCase().includes(searchTerm.toLowerCase()) || t.code.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesDate && matchesSearch;
+    
+    // Filtro Búsqueda
+    const matchesSearch = t.description.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          t.code.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    // Filtro Tipo de Cuenta (ACTIVO/PASIVO)
+    let matchesAccountType = true;
+    if (selectedAccountType !== 'ALL') {
+        const acc = accounts.find(a => a.code === t.accountCode);
+        matchesAccountType = acc ? acc.type === selectedAccountType : false;
+    }
+
+    return matchesDate && matchesSearch && matchesAccountType;
   });
 
   if (loading) return <div className="flex items-center justify-center h-full"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div></div>;
@@ -402,6 +409,17 @@ const TransactionsPage: React.FC = () => {
           
           <div className="flex items-center gap-2 border-l border-slate-200 pl-4">
              <Filter size={16} className="text-slate-400" />
+             {/* FILTRO TIPO DE CUENTA */}
+             <div className="flex items-center bg-white border border-slate-300 rounded-lg px-2 mr-2">
+                <Wallet size={14} className="text-slate-400 mr-2" />
+                <select className="py-2 bg-transparent outline-none text-sm font-bold text-slate-700" 
+                    value={selectedAccountType} onChange={(e) => setSelectedAccountType(e.target.value as any)}>
+                    <option value="ALL">TODAS LAS CUENTAS</option>
+                    <option value="ACTIVO">SOLO ACTIVOS (BANCOS)</option>
+                    <option value="PASIVO">SOLO PASIVOS (TARJETAS)</option>
+                </select>
+             </div>
+
              <select className="px-3 py-2 bg-white border border-slate-300 rounded-lg outline-none text-sm font-bold" value={selectedMonth} onChange={(e) => setSelectedMonth(parseInt(e.target.value))}>
                 {Array.from({length: 12}, (_, i) => (<option key={i} value={i}>{new Date(0, i).toLocaleDateString('es-ES', {month: 'long'}).toUpperCase()}</option>))}
              </select>
