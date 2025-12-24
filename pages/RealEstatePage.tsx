@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useRef } from 'react';
 import { 
   Plus, Search, Edit2, Trash2, Building, Home, Users, FileText, Zap, 
@@ -608,7 +609,7 @@ const RealEstatePage: React.FC = () => {
                  <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50"><tr><th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Unidad</th><th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Propiedad</th><th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Estado</th><th className="px-6 py-3 text-right text-[10px] font-black text-slate-500 uppercase">Acciones</th></tr></thead>
                     <tbody className="divide-y">
-                        {apartments.map(a => (
+                        {apartments.filter(a => a.name.toLowerCase().includes(searchTerm.toLowerCase()) || properties.find(p => p.code === a.propertyCode)?.name.toLowerCase().includes(searchTerm.toLowerCase())).map(a => (
                             <tr key={a.code} className="hover:bg-slate-50">
                                 <td className="px-6 py-3 font-bold text-slate-700">{a.name}</td>
                                 <td className="px-6 py-3 text-xs text-slate-500 font-medium">{properties.find(p => p.code === a.propertyCode)?.name || a.propertyCode}</td>
@@ -643,7 +644,10 @@ const RealEstatePage: React.FC = () => {
                  <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50"><tr><th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Código</th><th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Inquilino</th><th className="px-6 py-3 text-right text-[10px] font-black text-slate-500 uppercase">Monto</th><th className="px-6 py-3 text-right text-[10px] font-black text-slate-500 uppercase">Acciones</th></tr></thead>
                     <tbody className="divide-y">
-                        {contracts.map(c => (
+                        {contracts.filter(c => {
+                            const tenantName = tenants.find(t => t.code === c.tenantCode)?.fullName.toLowerCase() || '';
+                            return c.code.toLowerCase().includes(searchTerm.toLowerCase()) || tenantName.includes(searchTerm.toLowerCase());
+                        }).map(c => (
                             <tr key={c.code} className="hover:bg-slate-50">
                                 <td className="px-6 py-3 font-black text-indigo-600 font-mono text-[11px]">{c.code}</td>
                                 <td className="px-6 py-3 text-slate-700 font-bold">{tenants.find(t => t.code === c.tenantCode)?.fullName || c.tenantCode}</td>
@@ -669,7 +673,24 @@ const RealEstatePage: React.FC = () => {
                         </tr>
                     </thead>
                     <tbody className="divide-y">
-                        {contracts.filter(c => c.status === 'ACTIVE').sort((a,b) => a.nextPaymentDate.localeCompare(b.nextPaymentDate)).map(c => (
+                        {contracts.filter(c => {
+                            // Triple Validación: Contrato Activo + Inquilino Activo + No Expirado Cronológicamente
+                            if (c.status !== 'ACTIVE') return false;
+                            
+                            const tenant = tenants.find(t => t.code === c.tenantCode);
+                            if (!tenant || tenant.status !== 'ACTIVE') return false;
+
+                            const today = new Date();
+                            today.setHours(0, 0, 0, 0);
+                            if (c.endDate) {
+                                const end = new Date(c.endDate);
+                                if (end < today) return false;
+                            }
+
+                            const tenantName = tenant?.fullName.toLowerCase() || '';
+                            const unitName = apartments.find(a => a.code === c.apartmentCode)?.name.toLowerCase() || '';
+                            return tenantName.includes(searchTerm.toLowerCase()) || unitName.includes(searchTerm.toLowerCase());
+                        }).sort((a,b) => a.nextPaymentDate.localeCompare(b.nextPaymentDate)).map(c => (
                             <tr key={c.code} className="hover:bg-slate-50 transition-colors">
                                 <td className="px-6 py-3">
                                     <div className="font-bold text-slate-800">{apartments.find(a => a.code === c.apartmentCode)?.name || c.apartmentCode}</div>
@@ -714,7 +735,30 @@ const RealEstatePage: React.FC = () => {
                         </tr>
                     </thead>
                     <tbody className="divide-y">
-                        {contracts.filter(c => c.status === 'ACTIVE' && new Date(c.nextPaymentDate) < new Date()).map(c => {
+                        {contracts.filter(c => {
+                            // Triple Validación: Contrato Activo + Inquilino Activo + No Expirado Cronológicamente + Debe estar Overdue
+                            if (c.status !== 'ACTIVE') return false;
+                            
+                            const tenant = tenants.find(t => t.code === c.tenantCode);
+                            if (!tenant || tenant.status !== 'ACTIVE') return false;
+
+                            const today = new Date();
+                            today.setHours(0, 0, 0, 0);
+                            
+                            // Si el contrato terminó antes de hoy, no sugerirlo como morosidad activa (se asume fin de relación)
+                            if (c.endDate) {
+                                const end = new Date(c.endDate);
+                                if (end < today) return false;
+                            }
+
+                            // La fecha programada debe ser estrictamente menor a hoy
+                            const nextPay = new Date(c.nextPaymentDate);
+                            if (nextPay >= today) return false;
+
+                            const tenantName = tenant?.fullName.toLowerCase() || '';
+                            const unitName = apartments.find(a => a.code === c.apartmentCode)?.name.toLowerCase() || '';
+                            return tenantName.includes(searchTerm.toLowerCase()) || unitName.includes(searchTerm.toLowerCase());
+                        }).map(c => {
                             const days = calculateDaysDiff(c.nextPaymentDate);
                             return (
                                 <tr key={c.code} className="hover:bg-rose-50/30 transition-colors">
@@ -741,13 +785,21 @@ const RealEstatePage: React.FC = () => {
                                 </tr>
                             );
                         })}
-                        {contracts.filter(c => c.status === 'ACTIVE' && new Date(c.nextPaymentDate) < new Date()).length === 0 && (
+                        {contracts.filter(c => {
+                            if (c.status !== 'ACTIVE') return false;
+                            const tenant = tenants.find(t => t.code === c.tenantCode);
+                            if (!tenant || tenant.status !== 'ACTIVE') return false;
+                            const today = new Date();
+                            today.setHours(0,0,0,0);
+                            if (c.endDate && new Date(c.endDate) < today) return false;
+                            return new Date(c.nextPaymentDate) < today;
+                        }).length === 0 && (
                             <tr>
                                 <td colSpan={4} className="px-6 py-20 text-center">
                                     <div className="flex flex-col items-center gap-3 text-emerald-500">
                                         <CheckCircle size={48} className="opacity-20" />
                                         <p className="font-bold text-lg">¡Excelente!</p>
-                                        <p className="text-slate-400 text-xs font-medium">Sin morosidad.</p>
+                                        <p className="text-slate-400 text-xs font-medium">Sin morosidad activa.</p>
                                     </div>
                                 </td>
                             </tr>
@@ -767,7 +819,10 @@ const RealEstatePage: React.FC = () => {
                         </tr>
                     </thead>
                     <tbody className="divide-y">
-                        {services.map(s => (
+                        {services.filter(s => {
+                            const propName = properties.find(p => p.code === s.propertyCode)?.name.toLowerCase() || '';
+                            return s.name.toLowerCase().includes(searchTerm.toLowerCase()) || propName.includes(searchTerm.toLowerCase()) || s.code.toLowerCase().includes(searchTerm.toLowerCase());
+                        }).map(s => (
                             <tr key={s.code} className="hover:bg-slate-50">
                                 <td className="px-6 py-3">
                                     <span className="font-mono text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 font-black">
