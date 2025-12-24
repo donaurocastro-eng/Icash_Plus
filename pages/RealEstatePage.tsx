@@ -4,7 +4,7 @@ import {
   Plus, Search, Edit2, Trash2, Building, Home, Users, FileText, Zap, 
   DollarSign, Calendar, Clock, CheckCircle, TrendingUp, MoreVertical, Key,
   CreditCard, List, AlertTriangle, ArrowRight, User, Loader, X, Filter, RefreshCw,
-  FileSpreadsheet, Upload, Info, Receipt
+  FileSpreadsheet, Upload, Info, Receipt, LayoutGrid, BarChart3, PieChart, Phone
 } from 'lucide-react';
 import { 
   Property, Apartment, Tenant, Contract, PropertyServiceItem, Transaction, Category, Account,
@@ -421,6 +421,19 @@ const RealEstatePage: React.FC = () => {
       return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   };
 
+  // Helper logic for Property Stats in 'UNITS' tab
+  const getPropertyStats = (propCode: string) => {
+      const propUnits = apartments.filter(a => a.propertyCode === propCode);
+      const rentedCount = propUnits.filter(a => a.status === 'RENTED').length;
+      const totalUnits = propUnits.length;
+      
+      const totalGeneration = contracts
+        .filter(c => c.status === 'ACTIVE' && propUnits.some(u => u.code === c.apartmentCode))
+        .reduce((sum, c) => sum + c.amount, 0);
+
+      return { totalUnits, rentedCount, totalGeneration };
+  };
+
   if(loading) return <div className="flex justify-center items-center h-full"><div className="animate-spin h-12 w-12 border-b-2 border-indigo-600 rounded-full"></div></div>;
 
   return (
@@ -590,15 +603,35 @@ const RealEstatePage: React.FC = () => {
           <div className="bg-white rounded-xl border shadow-sm overflow-hidden min-h-[300px]">
              {activeTab === 'PROPERTIES' && (
                  <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50"><tr><th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Nombre</th><th className="px-6 py-3 text-right text-[10px] font-black text-slate-500 uppercase">Valor</th><th className="px-6 py-3 text-right text-[10px] font-black text-slate-500 uppercase">Acciones</th></tr></thead>
+                    <thead className="bg-slate-50">
+                        <tr>
+                            <th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">ID / Código</th>
+                            <th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Nombre Propiedad</th>
+                            <th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Clave Catastral</th>
+                            <th className="px-6 py-3 text-right text-[10px] font-black text-slate-500 uppercase">Impuesto Anual</th>
+                            <th className="px-6 py-3 text-right text-[10px] font-black text-slate-500 uppercase">Valor</th>
+                            <th className="px-6 py-3 text-right text-[10px] font-black text-slate-500 uppercase">Acciones</th>
+                        </tr>
+                    </thead>
                     <tbody className="divide-y">
-                        {properties.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(p => (
+                        {properties.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.code.toLowerCase().includes(searchTerm.toLowerCase())).map(p => (
                             <tr key={p.code} className="hover:bg-slate-50">
+                                <td className="px-6 py-3">
+                                    <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded font-mono font-black text-[11px] border border-indigo-100">
+                                        {p.code}
+                                    </span>
+                                </td>
                                 <td className="px-6 py-3 font-bold text-slate-700">{p.name}</td>
-                                <td className="px-6 py-3 text-right font-mono font-bold text-slate-600">{p.value.toLocaleString()} {p.currency}</td>
+                                <td className="px-6 py-3 font-mono text-xs text-slate-500">{p.cadastralKey || 'N/A'}</td>
+                                <td className="px-6 py-3 text-right font-black text-rose-600">
+                                    {p.annualTax ? p.annualTax.toLocaleString() : '0'} <span className="text-[9px]">{p.currency}</span>
+                                </td>
+                                <td className="px-6 py-3 text-right font-mono font-bold text-slate-600">
+                                    {p.value.toLocaleString()} <span className="text-[9px]">{p.currency}</span>
+                                </td>
                                 <td className="px-6 py-3 text-right">
-                                    <button onClick={() => { setSelectedProperty(p); setShowPropertyModal(true); }} className="p-1.5 text-slate-400 hover:text-indigo-600"><Edit2 size={16}/></button>
-                                    <button onClick={() => setItemToDelete({type:'PROPERTY', code:p.code, label:p.name})} className="p-1.5 text-slate-400 hover:text-rose-600"><Trash2 size={16}/></button>
+                                    <button onClick={() => { setSelectedProperty(p); setShowPropertyModal(true); }} className="p-1.5 text-slate-400 hover:text-indigo-600 transition-colors"><Edit2 size={16}/></button>
+                                    <button onClick={() => setItemToDelete({type:'PROPERTY', code:p.code, label:p.name})} className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors"><Trash2 size={16}/></button>
                                 </td>
                             </tr>
                         ))}
@@ -606,31 +639,140 @@ const RealEstatePage: React.FC = () => {
                  </table>
              )}
              {activeTab === 'UNITS' && (
-                 <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50"><tr><th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Unidad</th><th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Propiedad</th><th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Estado</th><th className="px-6 py-3 text-right text-[10px] font-black text-slate-500 uppercase">Acciones</th></tr></thead>
-                    <tbody className="divide-y">
-                        {apartments.filter(a => a.name.toLowerCase().includes(searchTerm.toLowerCase()) || properties.find(p => p.code === a.propertyCode)?.name.toLowerCase().includes(searchTerm.toLowerCase())).map(a => (
-                            <tr key={a.code} className="hover:bg-slate-50">
-                                <td className="px-6 py-3 font-bold text-slate-700">{a.name}</td>
-                                <td className="px-6 py-3 text-xs text-slate-500 font-medium">{properties.find(p => p.code === a.propertyCode)?.name || a.propertyCode}</td>
-                                <td className="px-6 py-3"><span className={`px-2 py-0.5 rounded text-[10px] font-black ${a.status === 'RENTED' ? 'bg-indigo-100 text-indigo-700' : 'bg-emerald-100 text-emerald-700'}`}>{a.status}</span></td>
-                                <td className="px-6 py-3 text-right">
-                                    <button onClick={() => { setSelectedApartment(a); setShowApartmentModal(true); }} className="p-1.5 text-slate-400 hover:text-indigo-600"><Edit2 size={16}/></button>
-                                    <button onClick={() => setItemToDelete({type:'APARTMENT', code:a.code, label:a.name})} className="p-1.5 text-slate-400 hover:text-rose-600"><Trash2 size={16}/></button>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                 </table>
+                 <div className="p-6 bg-slate-50/30 space-y-12">
+                    {properties.map(p => {
+                        // Filter apartments belonging to this property that match search term
+                        const propUnits = apartments.filter(a => 
+                            a.propertyCode === p.code && 
+                            (a.name.toLowerCase().includes(searchTerm.toLowerCase()) || a.code.toLowerCase().includes(searchTerm.toLowerCase()))
+                        );
+
+                        // If searching and no units match, don't show this property block
+                        if (searchTerm && propUnits.length === 0) return null;
+                        
+                        // Also don't show properties with NO units ever defined
+                        if (!searchTerm && apartments.filter(a => a.propertyCode === p.code).length === 0) return null;
+
+                        const { totalUnits, rentedCount, totalGeneration } = getPropertyStats(p.code);
+                        const occupancyRate = totalUnits > 0 ? (rentedCount / totalUnits) * 100 : 0;
+
+                        return (
+                            <div key={p.code} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-fadeIn">
+                                {/* Property Performance Header */}
+                                <div className="p-5 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                                    <div className="flex items-start gap-4">
+                                        <div className="bg-indigo-600 p-3 rounded-xl text-white shadow-lg shadow-indigo-100">
+                                            <Building size={24}/>
+                                        </div>
+                                        <div>
+                                            <div className="flex items-center gap-2">
+                                                <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">{p.name}</h3>
+                                                <span className="font-mono text-[10px] bg-white px-2 py-0.5 border border-slate-200 rounded font-black text-slate-400">{p.code}</span>
+                                            </div>
+                                            <div className="flex items-center gap-4 mt-2">
+                                                <div className="flex flex-col">
+                                                    <span className="text-[9px] font-black text-slate-400 uppercase">Ocupación</span>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-sm font-bold text-slate-700">{rentedCount} / {totalUnits}</span>
+                                                        <div className="w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                                            <div className="bg-indigo-500 h-full rounded-full" style={{ width: `${occupancyRate}%` }} />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex flex-col items-end">
+                                        <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest flex items-center gap-1">
+                                            <TrendingUp size={12}/> Generación Mensual
+                                        </span>
+                                        <span className="text-2xl font-black text-slate-800 font-mono tracking-tighter">
+                                            {totalGeneration.toLocaleString()} <span className="text-xs font-bold text-slate-400">{p.currency}</span>
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Property Units Table */}
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-sm">
+                                        <thead className="bg-slate-50/50 border-b border-slate-100">
+                                            <tr>
+                                                <th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Código Unidad</th>
+                                                <th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Nombre / Identificador</th>
+                                                <th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Estado</th>
+                                                <th className="px-6 py-3 text-right text-[10px] font-black text-slate-500 uppercase">Gestión</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-50">
+                                            {propUnits.map(a => (
+                                                <tr key={a.code} className="hover:bg-slate-50/50 group transition-colors">
+                                                    <td className="px-6 py-3">
+                                                        <span className="font-mono text-[11px] font-black text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                                            {a.code}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-3 font-bold text-slate-700">{a.name}</td>
+                                                    <td className="px-6 py-3">
+                                                        <span className={`px-2.5 py-1 rounded text-[10px] font-black uppercase tracking-tight ${
+                                                            a.status === 'RENTED' ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' : 
+                                                            a.status === 'AVAILABLE' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' :
+                                                            'bg-rose-100 text-rose-700 border border-rose-200'
+                                                        }`}>
+                                                            {a.status === 'RENTED' ? 'OCUPADO' : a.status === 'AVAILABLE' ? 'DISPONIBLE' : 'MANTENIMIENTO'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-3 text-right">
+                                                        <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                            <button onClick={() => { setSelectedApartment(a); setShowApartmentModal(true); }} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-white rounded border border-transparent hover:border-slate-200 transition-all"><Edit2 size={16}/></button>
+                                                            <button onClick={() => setItemToDelete({type:'APARTMENT', code:a.code, label:a.name})} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-white rounded border border-transparent hover:border-slate-200 transition-all"><Trash2 size={16}/></button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        );
+                    })}
+                 </div>
              )}
              {activeTab === 'TENANTS' && (
                  <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50"><tr><th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Inquilino</th><th className="px-6 py-3 text-center text-[10px] font-black text-slate-500 uppercase">Estado</th><th className="px-6 py-3 text-right text-[10px] font-black text-slate-500 uppercase">Acciones</th></tr></thead>
+                    <thead className="bg-slate-50">
+                        <tr>
+                            <th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Código</th>
+                            <th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Nombre Completo</th>
+                            <th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Teléfono</th>
+                            <th className="px-6 py-3 text-center text-[10px] font-black text-slate-500 uppercase">Estado</th>
+                            <th className="px-6 py-3 text-right text-[10px] font-black text-slate-500 uppercase">Acciones</th>
+                        </tr>
+                    </thead>
                     <tbody className="divide-y">
-                        {tenants.filter(t => t.fullName.toLowerCase().includes(searchTerm.toLowerCase())).map(t => (
+                        {tenants.filter(t => t.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || t.code.toLowerCase().includes(searchTerm.toLowerCase())).map(t => (
                             <tr key={t.code} className="hover:bg-slate-50">
+                                <td className="px-6 py-3">
+                                    <span className="font-mono text-[11px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
+                                        {t.code}
+                                    </span>
+                                </td>
                                 <td className="px-6 py-3 font-bold text-slate-700">{t.fullName}</td>
-                                <td className="px-6 py-3 text-center"><span className={`px-2 py-0.5 rounded text-[10px] font-black ${t.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>ACTIVO</span></td>
+                                <td className="px-6 py-3">
+                                    {t.phone ? (
+                                        <div className="flex items-center gap-2 text-slate-600">
+                                            <Phone size={14} className="text-slate-400"/>
+                                            <span className="font-medium text-xs">{t.phone}</span>
+                                        </div>
+                                    ) : (
+                                        <span className="text-slate-300 text-xs italic">No registrado</span>
+                                    )}
+                                </td>
+                                <td className="px-6 py-3 text-center">
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-black ${t.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-400 border border-slate-200'}`}>
+                                        {t.status === 'ACTIVE' ? 'ACTIVO' : 'INACTIVO'}
+                                    </span>
+                                </td>
                                 <td className="px-6 py-3 text-right">
                                     <button onClick={() => { setSelectedTenant(t); setShowTenantModal(true); }} className="p-1.5 text-slate-400 hover:text-indigo-600"><Edit2 size={16}/></button>
                                     <button onClick={() => setItemToDelete({type:'TENANT', code:t.code, label:t.fullName})} className="p-1.5 text-slate-400 hover:text-rose-600"><Trash2 size={16}/></button>
@@ -642,17 +784,40 @@ const RealEstatePage: React.FC = () => {
              )}
              {activeTab === 'CONTRACTS' && (
                  <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50"><tr><th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Código</th><th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Inquilino</th><th className="px-6 py-3 text-right text-[10px] font-black text-slate-500 uppercase">Monto</th><th className="px-6 py-3 text-right text-[10px] font-black text-slate-500 uppercase">Acciones</th></tr></thead>
+                    <thead className="bg-slate-50">
+                        <tr>
+                            <th className="px-4 py-3 text-[10px] font-black text-slate-500 uppercase">Código</th>
+                            <th className="px-4 py-3 text-[10px] font-black text-slate-500 uppercase">Cod. Inquilino</th>
+                            <th className="px-4 py-3 text-[10px] font-black text-slate-500 uppercase">Inquilino</th>
+                            <th className="px-4 py-3 text-[10px] font-black text-slate-500 uppercase">Vigencia (Desde/Hasta)</th>
+                            <th className="px-4 py-3 text-right text-[10px] font-black text-slate-500 uppercase">Monto</th>
+                            <th className="px-4 py-3 text-right text-[10px] font-black text-slate-500 uppercase">Acciones</th>
+                        </tr>
+                    </thead>
                     <tbody className="divide-y">
                         {contracts.filter(c => {
                             const tenantName = tenants.find(t => t.code === c.tenantCode)?.fullName.toLowerCase() || '';
-                            return c.code.toLowerCase().includes(searchTerm.toLowerCase()) || tenantName.includes(searchTerm.toLowerCase());
+                            return c.code.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                                   tenantName.includes(searchTerm.toLowerCase()) || 
+                                   c.tenantCode.toLowerCase().includes(searchTerm.toLowerCase());
                         }).map(c => (
                             <tr key={c.code} className="hover:bg-slate-50">
-                                <td className="px-6 py-3 font-black text-indigo-600 font-mono text-[11px]">{c.code}</td>
-                                <td className="px-6 py-3 text-slate-700 font-bold">{tenants.find(t => t.code === c.tenantCode)?.fullName || c.tenantCode}</td>
-                                <td className="px-6 py-3 text-right font-mono font-bold text-slate-600">{c.amount.toLocaleString()}</td>
-                                <td className="px-6 py-3 text-right flex justify-end gap-1">
+                                <td className="px-4 py-3 font-black text-indigo-600 font-mono text-[11px]">{c.code}</td>
+                                <td className="px-4 py-3 font-mono text-slate-500 text-[11px]">{c.tenantCode}</td>
+                                <td className="px-4 py-3 text-slate-700 font-bold text-xs">
+                                    {tenants.find(t => t.code === c.tenantCode)?.fullName || 'N/A'}
+                                </td>
+                                <td className="px-4 py-3 font-mono text-slate-500 text-[10px]">
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-bold">{c.startDate}</span>
+                                        <ArrowRight size={10} className="text-slate-300"/>
+                                        <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-bold">{c.endDate || 'Indefinido'}</span>
+                                    </div>
+                                </td>
+                                <td className="px-4 py-3 text-right font-mono font-black text-indigo-600">
+                                    {c.amount.toLocaleString()}
+                                </td>
+                                <td className="px-4 py-3 text-right flex justify-end gap-1">
                                     <button onClick={() => { setSelectedContract(c); setShowHistoryModal(true); }} title="Historial de Pagos" className="p-1.5 text-slate-400 hover:text-indigo-600"><Clock size={16}/></button>
                                     <button onClick={() => { setSelectedContract(c); setShowContractModal(true); }} className="p-1.5 text-slate-400 hover:text-indigo-600"><Edit2 size={16}/></button>
                                     <button onClick={() => setItemToDelete({type:'CONTRACT', code:c.code, label:c.code})} className="p-1.5 text-slate-400 hover:text-rose-600"><Trash2 size={16}/></button>
