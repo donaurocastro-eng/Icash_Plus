@@ -1,6 +1,5 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { GoogleGenAI } from "@google/genai";
 import { Send, Bot, User, Sparkles, RefreshCcw, ShieldAlert } from 'lucide-react';
 import { AccountService } from '../services/accountService';
 import { TransactionService } from '../services/transactionService';
@@ -28,7 +27,6 @@ const AssistantPage: React.FC = () => {
   const [initializing, setInitializing] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  const chatSession = useRef<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -82,38 +80,19 @@ const AssistantPage: React.FC = () => {
   const initializeChat = async () => {
     setInitializing(true);
     setError(null);
+    setMessages([
+      {
+        id: 'welcome',
+        role: 'model',
+        text: 'Hola. Soy tu asistente financiero personal de ICASH_PLUS. He analizado tus cuentas, movimientos y propiedades. ¿En qué puedo ayudarte hoy?',
+        timestamp: new Date()
+      }
+    ]);
     try {
-      const contextData = await gatherFinancialContext();
-      
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      
-      const systemInstruction = `
-        You are an expert financial assistant for the app ICASH_PLUS.
-        Your goal is to help the user understand their finances based on the provided data.
-        
-        DATA CONTEXT (JSON):
-        ${contextData}
-
-        INSTRUCTIONS:
-        1. Answer concisely and professionally.
-        2. Use the provided data to answer questions about balances, spending, income, and net worth.
-        3. If a user asks something not in the data, politely say you don't have that information.
-        4. Format currency correctly (HNL for Lempiras, USD for Dollars).
-        5. Speak in Spanish (Español) as the app is in Spanish.
-      `;
-
-      const chat = ai.chats.create({
-        model: 'gemini-3-flash-preview',
-        config: {
-          systemInstruction: systemInstruction,
-          temperature: 0.7,
-        }
-      });
-
-      chatSession.current = chat;
+      await gatherFinancialContext();
     } catch (err: any) {
       console.error(err);
-      setError(err.message || "No se pudo iniciar el asistente AI.");
+      setError(err.message || "No se pudo conectar con el servidor para iniciar el asistente.");
     } finally {
       setInitializing(false);
     }
@@ -121,7 +100,7 @@ const AssistantPage: React.FC = () => {
 
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!inputValue.trim() || loading || !chatSession.current) return;
+    if (!inputValue.trim() || loading) return;
 
     const userText = inputValue;
     setInputValue('');
@@ -136,13 +115,31 @@ const AssistantPage: React.FC = () => {
     setLoading(true);
 
     try {
-      const result = await chatSession.current.sendMessage({ message: userText });
-      const aiText = result.text;
+      const contextData = await gatherFinancialContext();
+
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: userText,
+          history: [...messages, userMsg],
+          contextData
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || "Error al conectar con la IA.");
+      }
+
+      const data = await response.json();
       
       const aiMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: 'model',
-        text: aiText || 'Lo siento, no pude generar una respuesta.',
+        text: data.text || 'Lo siento, no pude generar una respuesta.',
         timestamp: new Date()
       };
       setMessages(prev => [...prev, aiMsg]);

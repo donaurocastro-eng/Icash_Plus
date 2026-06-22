@@ -25,5 +25,8 @@
     "vite": "^5.1.6"
   },
   "requestFramePermissions": [],
-  "description": ""
+  "description": "",
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

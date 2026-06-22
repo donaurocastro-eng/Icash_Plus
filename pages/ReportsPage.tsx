@@ -12,11 +12,12 @@ import { AccountService } from '../services/accountService';
 import { TransactionService } from '../services/transactionService';
 import { PropertyService } from '../services/propertyService';
 import { LoanService } from '../services/loanService';
-import { Account, Transaction, Property, Loan, CategoryType } from '../types';
+import { CategoryService } from '../services/categoryService';
+import { Account, Transaction, Property, Loan, CategoryType, Category } from '../types';
 import ReportDrilldownModal from '../components/ReportDrilldownModal';
 import * as XLSX from 'xlsx';
 
-type ReportTab = 'BALANCE' | 'CASHFLOW' | 'BY_PROPERTY' | 'BY_ACCOUNT';
+type ReportTab = 'BALANCE' | 'CASHFLOW' | 'BY_PROPERTY' | 'BY_ACCOUNT' | 'EXPENSE_MATRIX';
 
 interface MonthlyStats {
     monthIndex: number;
@@ -65,6 +66,7 @@ const ReportsPage: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   const [loans, setLoans] = useState<Loan[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   
   // Filters
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
@@ -77,6 +79,9 @@ const ReportsPage: React.FC = () => {
   // Account Report State (Multi-Select)
   const [selectedAccountCodes, setSelectedAccountCodes] = useState<string[]>([]);
 
+  // Expense Matrix State (Multi-Select Expense Categories)
+  const [selectedExpenseCategories, setSelectedExpenseCategories] = useState<string[]>([]);
+
   // Modal State
   const [viewingMonthDetails, setViewingMonthDetails] = useState<MonthlyStats | null>(null);
 
@@ -84,16 +89,25 @@ const ReportsPage: React.FC = () => {
     const loadData = async () => {
       setLoading(true);
       try {
-        const [accData, txData, propData, loanData] = await Promise.all([
+        const [accData, txData, propData, loanData, catData] = await Promise.all([
           AccountService.getAll(),
           TransactionService.getAll(),
           PropertyService.getAll(),
-          LoanService.getAll()
+          LoanService.getAll(),
+          CategoryService.getAll()
         ]);
         setAccounts(accData);
         setTransactions(txData);
         setProperties(propData);
         setLoans(loanData);
+        setCategories(catData || []);
+
+        // Prepopulate with all existing unique expense categories from db/tx
+        const initialExpenseCats = Array.from(new Set([
+          ...(catData || []).filter(c => c.type === 'GASTO').map(c => c.name),
+          ...txData.filter(t => t.type === 'GASTO').map(t => t.categoryName)
+        ].filter(Boolean)));
+        setSelectedExpenseCategories(initialExpenseCats);
       } catch (e) {
         console.error("Error loading report data", e);
       } finally {
@@ -157,6 +171,24 @@ const ReportsPage: React.FC = () => {
         }
       } else if (activeTab === 'BY_ACCOUNT') {
         data = calculateAccountReport().map(r => ({ Cuenta: r.accountName, Saldo_Inicial: r.initialBalance, Ingresos: r.income, Gastos: r.expense, Final: r.finalBalance }));
+      } else if (activeTab === 'EXPENSE_MATRIX') {
+        const m = calculateExpenseMatrix();
+        data = m.rows.map(row => {
+          const exportRow: any = { Descripcion: row.categoryName };
+          m.months.forEach((mon, idx) => {
+            exportRow[mon.label] = row.monthlyValues[idx];
+          });
+          exportRow['Total'] = row.totalRow;
+          return exportRow;
+        });
+        
+        // Append totals row
+        const totalRow: any = { Descripcion: 'Total' };
+        m.months.forEach((mon, idx) => {
+          totalRow[mon.label] = m.columnTotals[idx];
+        });
+        totalRow['Total'] = m.grandTotal;
+        data.push(totalRow);
       }
 
       const ws = XLSX.utils.json_to_sheet(data);
@@ -327,6 +359,69 @@ const ReportsPage: React.FC = () => {
       return report;
   };
 
+  const getLast6Months = () => {
+    const list = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(selectedYear, selectedMonth - i, 1);
+      list.push({
+        year: d.getFullYear(),
+        month: d.getMonth(),
+        label: d.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }),
+        shortLabel: d.toLocaleDateString('es-ES', { month: 'long' })
+      });
+    }
+    return list;
+  };
+
+  const calculateExpenseMatrix = () => {
+    const list6Months = getLast6Months();
+    const allUniqueExpenseCats = Array.from(new Set([
+      ...categories.filter(c => c.type === 'GASTO').map(c => c.name),
+      ...transactions.filter(t => t.type === 'GASTO').map(t => t.categoryName)
+    ].filter(Boolean)));
+    
+    const activeRows = allUniqueExpenseCats.filter(catName => selectedExpenseCategories.includes(catName));
+    
+    const rows = activeRows.map(catName => {
+      const monthlyValues = list6Months.map(m => {
+        return transactions
+          .filter(tx => {
+            const parts = getTxDateParts(tx.date);
+            return (
+              tx.type === 'GASTO' &&
+              tx.categoryName === catName &&
+              parts &&
+              parts.year === m.year &&
+              (parts.month - 1) === m.month
+            );
+          })
+          .reduce((sum, tx) => sum + Number(tx.amount), 0);
+      });
+      
+      const totalRow = monthlyValues.reduce((a, b) => a + b, 0);
+      
+      return {
+        categoryName: catName,
+        monthlyValues,
+        totalRow
+      };
+    });
+
+    const columnTotals = list6Months.map((_, colIdx) => {
+      return rows.reduce((sum, row) => sum + row.monthlyValues[colIdx], 0);
+    });
+
+    const grandTotal = columnTotals.reduce((a, b) => a + b, 0);
+
+    return {
+      months: list6Months,
+      rows,
+      columnTotals,
+      grandTotal,
+      allUniqueExpenseCats
+    };
+  };
+
   if (loading) return <div className="flex justify-center items-center h-full"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600"></div></div>;
 
   const balance = calculateConsolidatedBalance();
@@ -334,6 +429,7 @@ const ReportsPage: React.FC = () => {
   const propertyReport = calculatePropertyReport();
   const comparativeReport = calculateComparativePropertyReport();
   const accountReport = calculateAccountReport();
+  const expenseMatrix = calculateExpenseMatrix();
 
   return (
     <div className="space-y-6">
@@ -363,6 +459,7 @@ const ReportsPage: React.FC = () => {
                 <button onClick={() => setActiveTab('CASHFLOW')} className={`whitespace-nowrap px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'CASHFLOW' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>Flujo Mensual</button>
                 <button onClick={() => setActiveTab('BY_PROPERTY')} className={`whitespace-nowrap px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'BY_PROPERTY' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>Por Propiedad</button>
                 <button onClick={() => setActiveTab('BY_ACCOUNT')} className={`whitespace-nowrap px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'BY_ACCOUNT' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>Por Cuenta</button>
+                <button onClick={() => setActiveTab('EXPENSE_MATRIX')} className={`whitespace-nowrap px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'EXPENSE_MATRIX' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>Matriz de Gastos (6 Meses)</button>
             </div>
         </div>
       </div>
@@ -492,6 +589,199 @@ const ReportsPage: React.FC = () => {
                     </table>
                 </div>
             )}
+        </div>
+      )}
+
+      {activeTab === 'EXPENSE_MATRIX' && (
+        <div className="space-y-6">
+          {/* Controls Panel */}
+          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="font-bold text-slate-700 text-base">Filtro de Categorías de Gastos</h3>
+                <p className="text-xs text-slate-500 font-medium">Selecciona las categorías que deseas visualizar en la matriz de gastos de los últimos 6 meses.</p>
+              </div>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => setSelectedExpenseCategories(expenseMatrix.allUniqueExpenseCats)}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-bold transition-colors"
+                >
+                  Seleccionar Todas
+                </button>
+                <button 
+                  onClick={() => setSelectedExpenseCategories([])}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-bold transition-colors"
+                >
+                  Desmarcar Todas
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {expenseMatrix.allUniqueExpenseCats.map(catName => {
+                const isSelected = selectedExpenseCategories.includes(catName);
+                return (
+                  <button
+                    key={catName}
+                    onClick={() => {
+                      setSelectedExpenseCategories(prev => 
+                        prev.includes(catName) ? prev.filter(c => c !== catName) : [...prev, catName]
+                      );
+                    }}
+                    className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-2 border ${
+                      isSelected 
+                        ? 'bg-[#00B0F0] text-white border-[#00B0F0]/10 shadow-sm' 
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-slate-400'}`}></span>
+                    <span>{catName}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Reference Date Controls */}
+            <div className="flex flex-wrap gap-4 items-center pt-2 border-t border-slate-100">
+              <span className="text-xs text-slate-500 font-bold">Mes de referencia final:</span>
+              <div className="flex gap-2">
+                <select className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium" value={selectedMonth} onChange={(e) => setSelectedMonth(parseInt(e.target.value))}>
+                  {Array.from({length: 12}, (_, i) => (<option key={i} value={i}>{new Date(0, i).toLocaleDateString('es-ES', {month: 'long'}).toUpperCase()}</option>))}
+                </select>
+                <select className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium" value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))}>
+                  {[2023, 2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Matrix Spreadsheet Table */}
+          {selectedExpenseCategories.length === 0 ? (
+            <div className="bg-slate-50 border border-slate-200 p-8 rounded-xl text-center text-slate-500 text-sm font-medium">
+              Por favor, selecciona al menos una categoría de gasto para visualizar la matriz.
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto p-1">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr>
+                    {/* Amarillo brillante de cabecera */}
+                    <th className="bg-[#FFEB3B] text-slate-900 border-2 border-slate-300 px-4 py-2.5 font-extrabold text-sm text-left uppercase w-64 min-w-[180px]">
+                      Descripción
+                    </th>
+                    {expenseMatrix.months.map((m, idx) => (
+                      <th key={idx} className="bg-[#FFEB3B] text-slate-900 border-2 border-slate-300 px-4 py-2.5 font-extrabold text-sm text-center capitalize min-w-[120px]">
+                        {m.shortLabel}
+                      </th>
+                    ))}
+                    <th className="bg-[#FFEB3B] text-slate-900 border-2 border-slate-300 px-4 py-2.5 font-extrabold text-sm text-right w-36 min-w-[130px] uppercase">
+                      Total
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {expenseMatrix.rows.map((row, rowIdx) => (
+                    <tr key={rowIdx} className="hover:bg-slate-50/70 transition-colors">
+                      {/* Azul brillante para las descripciones de categorías */}
+                      <td className="bg-[#00B0F0] text-white font-extrabold border-2 border-slate-300 px-4 py-2.5 text-sm uppercase">
+                        {row.categoryName}
+                      </td>
+                      {row.monthlyValues.map((val, valIdx) => {
+                        const m = expenseMatrix.months[valIdx];
+                        const cellTxs = transactions.filter(tx => {
+                          const parts = getTxDateParts(tx.date);
+                          return (
+                            tx.type === 'GASTO' &&
+                            tx.categoryName === row.categoryName &&
+                            parts &&
+                            parts.year === m.year &&
+                            (parts.month - 1) === m.month
+                          );
+                        });
+                        const hasTx = cellTxs.length > 0;
+                        return (
+                          <td 
+                            key={valIdx} 
+                            onClick={() => {
+                              if (hasTx) {
+                                setViewingMonthDetails({
+                                  monthIndex: m.month,
+                                  monthName: `${row.categoryName} (${m.label})`,
+                                  income: 0,
+                                  expense: val,
+                                  net: -val,
+                                  transactions: cellTxs
+                                });
+                              }
+                            }}
+                            title={hasTx ? `Clic para ver ${cellTxs.length} transacciones de de ${row.categoryName} en ${m.label}` : 'Sin transacciones'}
+                            className={`border border-slate-300 px-4 py-2.5 font-mono text-right text-sm font-medium transition-colors ${
+                              hasTx 
+                                ? 'bg-white hover:bg-slate-100 cursor-pointer text-slate-900 underline decoration-slate-300 decoration-dotted underline-offset-4 font-semibold' 
+                                : 'bg-slate-50/40 text-slate-400'
+                            }`}
+                          >
+                            {formatMoney(val)}
+                          </td>
+                        );
+                      })}
+                      {(() => {
+                        const rowTxs = transactions.filter(tx => {
+                          return (
+                            tx.type === 'GASTO' &&
+                            tx.categoryName === row.categoryName &&
+                            expenseMatrix.months.some(m => {
+                              const parts = getTxDateParts(tx.date);
+                              return parts && parts.year === m.year && (parts.month - 1) === m.month;
+                            })
+                          );
+                        });
+                        const hasRowTx = rowTxs.length > 0;
+                        return (
+                          <td 
+                            onClick={() => {
+                              if (hasRowTx) {
+                                setViewingMonthDetails({
+                                  monthIndex: selectedMonth,
+                                  monthName: `${row.categoryName} (Últimos 6 meses)`,
+                                  income: 0,
+                                  expense: row.totalRow,
+                                  net: -row.totalRow,
+                                  transactions: rowTxs
+                                });
+                              }
+                            }}
+                            title={hasRowTx ? `Clic para ver las ${rowTxs.length} transacciones de los últimos 6 meses` : ''}
+                            className={`border-2 border-slate-300 px-4 py-2.5 font-mono font-bold text-right text-sm transition-colors ${
+                              hasRowTx 
+                                ? 'bg-slate-100/70 hover:bg-slate-250 cursor-pointer text-slate-950 underline decoration-slate-400 decoration-dotted' 
+                                : 'bg-slate-100/30 text-slate-400'
+                            }`}
+                          >
+                            {formatMoney(row.totalRow)}
+                          </td>
+                        );
+                      })()}
+                    </tr>
+                  ))}
+                  {/* Fila Total inferior */}
+                  <tr className="bg-[#ECEFF1] font-bold text-slate-900">
+                    <td className="border-2 border-slate-300 px-4 py-3 text-sm font-extrabold uppercase text-left bg-slate-200/90 text-slate-900">
+                      Total
+                    </td>
+                    {expenseMatrix.columnTotals.map((tot, idx) => (
+                      <td key={idx} className="border-2 border-slate-300 px-4 py-3 font-mono font-bold text-right text-sm bg-slate-200/40 text-slate-900">
+                        {formatMoney(tot)}
+                      </td>
+                    ))}
+                    <td className="border-2 border-slate-400 px-4 py-3 font-mono font-extrabold text-right text-base bg-slate-200 text-slate-950">
+                      {formatMoney(expenseMatrix.grandTotal)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
       

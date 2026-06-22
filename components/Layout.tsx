@@ -1,10 +1,10 @@
+
 import React, { useEffect, useState } from 'react';
 import { 
   LayoutDashboard, 
   Wallet, 
   ArrowRightLeft, 
   Settings, 
-  LogOut,
   Menu,
   X,
   Tag,
@@ -37,7 +37,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentRoute, onNavigate }) =
       window.removeEventListener('storage', checkStatus);
       window.removeEventListener('db-config-changed', checkStatus);
     };
-  }, [currentRoute]);
+  }, []);
 
   const NavItem = ({ route, icon: Icon, label }: { route: AppRoute; icon: any; label: string }) => {
     const isActive = currentRoute === route;
@@ -47,89 +47,100 @@ const Layout: React.FC<LayoutProps> = ({ children, currentRoute, onNavigate }) =
           onNavigate(route);
           setIsMobileMenuOpen(false);
         }}
-        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 ${
+        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
           isActive 
-            ? 'bg-indigo-600 text-white shadow-md' 
+            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' 
             : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'
         }`}
       >
-        <Icon size={20} />
-        <span className="font-medium">{label}</span>
+        <Icon size={20} className={isActive ? 'text-white' : 'text-slate-400'} />
+        <span className="font-bold text-sm tracking-tight">{label}</span>
       </button>
     );
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex">
-      {/* Mobile Overlay */}
+    <div className="flex h-screen w-full bg-slate-50 overflow-hidden">
+      {/* Mobile Menu Overlay */}
       {isMobileMenuOpen && (
-        <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsMobileMenuOpen(false)} />
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] lg:hidden animate-fadeIn" 
+          onClick={() => setIsMobileMenuOpen(false)} 
+        />
       )}
 
       {/* Sidebar */}
       <aside className={`
-        fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 transform transition-transform duration-200 ease-in-out flex flex-col
+        fixed lg:static inset-y-0 left-0 z-[70] w-72 bg-white border-r border-slate-200 transform transition-transform duration-300 ease-in-out flex flex-col
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
-        <div className="h-full flex flex-col">
-          <div className="h-16 flex items-center px-6 border-b border-slate-100 shrink-0">
-            <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center mr-3 shadow-sm">
-              <span className="text-white font-bold text-lg">$</span>
+        <div className="flex flex-col h-full">
+          <div className="h-20 flex items-center px-8 border-b border-slate-100 shrink-0">
+            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center mr-3">
+              <span className="text-white font-black text-xl">$</span>
             </div>
-            <span className="text-xl font-bold text-slate-800 tracking-tight">ICASH<span className="text-indigo-600">_PLUS</span></span>
+            <span className="text-xl font-black text-slate-800 tracking-tighter uppercase">
+              ICASH<span className="text-indigo-600">_PLUS</span>
+            </span>
           </div>
 
-          <nav className="flex-1 px-3 py-6 space-y-1 overflow-y-auto">
-            <NavItem route={AppRoute.DASHBOARD} icon={LayoutDashboard} label="Panel General" />
-            <NavItem route={AppRoute.ACCOUNTS} icon={Wallet} label="Cuentas Bancarias" />
-            <NavItem route={AppRoute.CATEGORIES} icon={Tag} label="Categorías" />
-            <NavItem route={AppRoute.TRANSACTIONS} icon={ArrowRightLeft} label="Movimientos" />
-            <NavItem route={AppRoute.REAL_ESTATE} icon={Building} label="Bienes Raíces" />
-            <NavItem route={AppRoute.LOANS} icon={Landmark} label="Préstamos" />
-            <NavItem route={AppRoute.REPORTS} icon={PieChart} label="Reportes" />
-            <NavItem route={AppRoute.AI_ASSISTANT} icon={Bot} label="Asistente AI" />
-            <div className="pt-2 pb-2">
-              <div className="h-px bg-slate-100 mx-2"></div>
+          <nav className="flex-1 px-4 py-8 space-y-2 overflow-y-auto custom-scrollbar">
+            <div className="pb-4">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-4 mb-2">Principal</p>
+                <NavItem route={AppRoute.DASHBOARD} icon={LayoutDashboard} label="Panel General" />
+                <NavItem route={AppRoute.TRANSACTIONS} icon={ArrowRightLeft} label="Movimientos" />
             </div>
-            <NavItem route={AppRoute.SETTINGS} icon={Settings} label="Configuración" />
+
+            <div className="pb-4">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-4 mb-2">Activos y Rentas</p>
+                <NavItem route={AppRoute.REAL_ESTATE} icon={Building} label="Bienes Raíces" />
+                <NavItem route={AppRoute.ACCOUNTS} icon={Wallet} label="Bancos y Cuentas" />
+                <NavItem route={AppRoute.CATEGORIES} icon={Tag} label="Categorización" />
+            </div>
+
+            <div className="pb-4">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-4 mb-2">Análisis</p>
+                <NavItem route={AppRoute.LOANS} icon={Landmark} label="Préstamos" />
+                <NavItem route={AppRoute.REPORTS} icon={PieChart} label="Reportes" />
+                <NavItem route={AppRoute.AI_ASSISTANT} icon={Bot} label="Asistente AI" />
+            </div>
           </nav>
 
-          <div className="p-4 border-t border-slate-100 space-y-3 bg-slate-50/50">
-            <div className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-xs font-medium border ${
+          <div className="p-6 border-t border-slate-100 space-y-4 bg-slate-50/30 shrink-0">
+            <div className={`flex items-center space-x-3 px-4 py-3 rounded-xl text-xs font-bold border ${
               dbConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200'
             }`}>
-              {dbConnected ? <Cloud size={14} /> : <HardDrive size={14} />}
-              <span>{dbConnected ? 'Modo: Nube (Neon)' : 'Modo: Local'}</span>
-              <span className={`ml-auto w-2 h-2 rounded-full ${dbConnected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
+              {dbConnected ? <Cloud size={16} /> : <HardDrive size={16} />}
+              <span>{dbConnected ? 'Sincronizado' : 'Modo Offline'}</span>
             </div>
             
-            <button className="flex items-center space-x-2 text-slate-400 hover:text-red-500 transition-colors px-2 py-1 w-full text-sm">
-              <LogOut size={16} />
-              <span>Cerrar Sesión</span>
-            </button>
-            
-            {/* Version Badge */}
-            <div className="text-center pt-2">
-               <span className="text-[10px] font-mono text-slate-300">v1.3.1</span>
-            </div>
+            <NavItem route={AppRoute.SETTINGS} icon={Settings} label="Configuración" />
           </div>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden">
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:hidden shrink-0">
-          <span className="font-bold text-slate-800">ICASH_PLUS</span>
-          <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 text-slate-600 hover:bg-slate-100 rounded-md">
+      {/* Main Container */}
+      <div className="flex-1 flex flex-col min-w-0 h-full relative overflow-hidden">
+        {/* Mobile Navbar */}
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 lg:hidden shrink-0 z-50">
+          <div className="flex items-center">
+            <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center mr-2">
+              <span className="text-white font-bold text-sm">$</span>
+            </div>
+            <span className="font-black text-slate-800 tracking-tight text-xs uppercase">ICASH_PLUS</span>
+          </div>
+          <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 text-slate-600 hover:bg-slate-100 rounded-xl">
             {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
         </header>
-        <div className="flex-1 overflow-auto p-4 lg:p-8">
-          <div className="max-w-7xl mx-auto min-h-full pb-10">
+
+        {/* Scrolling Content Area */}
+        <main className="flex-1 overflow-y-auto bg-slate-50 custom-scrollbar">
+          <div className="max-w-7xl mx-auto p-4 lg:p-10 min-h-full pb-20">
             {children}
           </div>
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 };
