@@ -70,7 +70,14 @@ const BulkPaymentModal: React.FC<BulkPaymentModalProps> = ({
       const d = String(date.getDate()).padStart(2, '0');
       const dateStr = `${y}-${m}-${d}`;
       const match = history.find(p => p.startDate <= dateStr);
-      return match ? match.amount : currentAmount;
+      if (match) {
+          // Si el registro histórico no tiene fecha de fin, significa que es el periodo vigente actual, por lo que usamos el monto actual del contrato
+          if (!match.endDate) {
+              return currentAmount;
+          }
+          return match.amount;
+      }
+      return currentAmount;
   };
 
   const calculatePendingPayments = (

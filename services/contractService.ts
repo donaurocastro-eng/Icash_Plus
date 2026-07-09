@@ -129,6 +129,34 @@ export const ContractService = {
         WHERE code=$7
       `, [data.apartmentCode, data.tenantCode, data.startDate, data.endDate, data.amount, data.paymentDay, code, nextPay]);
       
+      // Sincronizar el historial de precios al editar el monto
+      try {
+        const prices = await db.query(`
+          SELECT id, start_date as "startDate", end_date as "endDate" FROM contract_prices
+          WHERE contract_code = $1
+          ORDER BY start_date DESC
+        `, [code]);
+
+        if (prices.length > 0) {
+          const activePrice = prices.find(p => !p.endDate) || prices[0];
+          // Si solo hay un registro histórico, sincronizar monto y fecha de inicio. De lo contrario, mantener la fecha del registro activo
+          const targetStartDate = prices.length === 1 ? data.startDate : (activePrice.startDate || data.startDate);
+          
+          await db.query(`
+            UPDATE contract_prices
+            SET amount = $1, start_date = $2
+            WHERE id = $3
+          `, [data.amount, targetStartDate, activePrice.id]);
+        } else {
+          await db.query(`
+            INSERT INTO contract_prices (contract_code, amount, start_date)
+            VALUES ($1, $2, $3)
+          `, [code, data.amount, data.startDate]);
+        }
+      } catch (e) {
+        console.warn("Could not sync price history during update:", e);
+      }
+      
       return { code, ...data, nextPaymentDate: nextPay, status: 'ACTIVE', createdAt: new Date().toISOString() } as Contract;
     } else {
       await delay(200);
@@ -167,8 +195,12 @@ export const ContractService = {
       }
 
       try {
+          // Obtener el monto de renta vigente actual como base o respaldo
+          const cRows = await db.query(`SELECT amount FROM contracts WHERE code=$1`, [contractCode]);
+          const currentContractAmount = cRows.length > 0 ? Number(cRows[0].amount) : 0;
+
           const rows = await db.query(`
-            SELECT amount FROM contract_prices
+            SELECT amount, end_date FROM contract_prices
             WHERE contract_code = $1
             AND start_date <= $2
             AND (end_date >= $2 OR end_date IS NULL)
@@ -176,10 +208,16 @@ export const ContractService = {
             LIMIT 1
           `, [contractCode, dateStr]);
 
-          if (rows.length > 0) return Number(rows[0].amount);
+          if (rows.length > 0) {
+              const matchedPrice = rows[0];
+              // Si es el precio vigente actual (end_date es nulo), usar el monto actual del contrato principal
+              if (!matchedPrice.end_date && currentContractAmount > 0) {
+                  return currentContractAmount;
+              }
+              return Number(matchedPrice.amount);
+          }
           
-          const cRows = await db.query(`SELECT amount FROM contracts WHERE code=$1`, [contractCode]);
-          return cRows.length > 0 ? Number(cRows[0].amount) : 0;
+          return currentContractAmount;
       } catch (e) {
           console.error("Error fetching historical price", e);
           return 0;
