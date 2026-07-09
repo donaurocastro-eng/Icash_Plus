@@ -36,6 +36,8 @@ const RealEstatePage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'PROPERTIES' | 'UNITS' | 'TENANTS' | 'CONTRACTS' | 'PAYMENTS' | 'DELINQUENT' | 'SERVICES'>('CONTRACTS');
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [tenantFilter, setTenantFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
+  const [contractFilter, setContractFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
   
   // Import Status
   const [isImporting, setIsImporting] = useState(false);
@@ -716,10 +718,10 @@ const RealEstatePage: React.FC = () => {
                                                     <td className="px-6 py-3">
                                                         <span className={`px-2.5 py-1 rounded text-[10px] font-black uppercase tracking-tight ${
                                                             a.status === 'RENTED' ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' : 
-                                                            a.status === 'AVAILABLE' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' :
-                                                            'bg-rose-100 text-rose-700 border border-rose-200'
+                                                            a.status === 'AVAILABLE' ? 'bg-red-100 text-red-700 border border-red-200' :
+                                                            'bg-amber-100 text-amber-700 border border-amber-200'
                                                         }`}>
-                                                            {a.status === 'RENTED' ? 'OCUPADO' : a.status === 'AVAILABLE' ? 'DISPONIBLE' : 'MANTENIMIENTO'}
+                                                            {a.status === 'RENTED' ? 'OCUPADO' : a.status === 'AVAILABLE' ? 'DESOCUPADO' : 'MANTENIMIENTO'}
                                                         </span>
                                                     </td>
                                                     <td className="px-6 py-3 text-right">
@@ -739,93 +741,239 @@ const RealEstatePage: React.FC = () => {
                  </div>
              )}
              {activeTab === 'TENANTS' && (
-                 <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50">
-                        <tr>
-                            <th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Código</th>
-                            <th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Nombre Completo</th>
-                            <th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Teléfono</th>
-                            <th className="px-6 py-3 text-center text-[10px] font-black text-slate-500 uppercase">Estado</th>
-                            <th className="px-6 py-3 text-right text-[10px] font-black text-slate-500 uppercase">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                        {tenants.filter(t => t.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || t.code.toLowerCase().includes(searchTerm.toLowerCase())).map(t => (
-                            <tr key={t.code} className="hover:bg-slate-50">
-                                <td className="px-6 py-3">
-                                    <span className="font-mono text-[11px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
-                                        {t.code}
-                                    </span>
-                                </td>
-                                <td className="px-6 py-3 font-bold text-slate-700">{t.fullName}</td>
-                                <td className="px-6 py-3">
-                                    {t.phone ? (
-                                        <div className="flex items-center gap-2 text-slate-600">
-                                            <Phone size={14} className="text-slate-400"/>
-                                            <span className="font-medium text-xs">{t.phone}</span>
-                                        </div>
-                                    ) : (
-                                        <span className="text-slate-300 text-xs italic">No registrado</span>
-                                    )}
-                                </td>
-                                <td className="px-6 py-3 text-center">
-                                    <span className={`px-2 py-0.5 rounded text-[10px] font-black ${t.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-400 border border-slate-200'}`}>
-                                        {t.status === 'ACTIVE' ? 'ACTIVO' : 'INACTIVO'}
-                                    </span>
-                                </td>
-                                <td className="px-6 py-3 text-right">
-                                    <button onClick={() => { setSelectedTenant(t); setShowTenantModal(true); }} className="p-1.5 text-slate-400 hover:text-indigo-600"><Edit2 size={16}/></button>
-                                    <button onClick={() => setItemToDelete({type:'TENANT', code:t.code, label:t.fullName})} className="p-1.5 text-slate-400 hover:text-rose-600"><Trash2 size={16}/></button>
-                                </td>
+                 <div className="flex flex-col w-full">
+                     {/* Sub-filtros para Inquilinos */}
+                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 p-4 bg-slate-50/50">
+                         <div className="flex items-center gap-1.5">
+                             <Filter size={14} className="text-slate-400" />
+                             <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Filtrar Estado de Inquilino:</span>
+                         </div>
+                         <div className="flex bg-slate-100 border border-slate-200/60 rounded-lg p-0.5 shadow-sm">
+                             <button
+                                 onClick={() => setTenantFilter('ALL')}
+                                 className={`px-3 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${
+                                     tenantFilter === 'ALL'
+                                         ? 'bg-indigo-600 text-white shadow-sm'
+                                         : 'text-slate-500 hover:bg-slate-50'
+                                 }`}
+                             >
+                                 Todos (${tenants.length})
+                             </button>
+                             <button
+                                 onClick={() => setTenantFilter('ACTIVE')}
+                                 className={`px-3 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${
+                                     tenantFilter === 'ACTIVE'
+                                         ? 'bg-emerald-600 text-white shadow-sm'
+                                         : 'text-slate-500 hover:bg-slate-50'
+                                 }`}
+                             >
+                                 Activos (${tenants.filter(t => t.status === 'ACTIVE').length})
+                             </button>
+                             <button
+                                 onClick={() => setTenantFilter('INACTIVE')}
+                                 className={`px-3 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${
+                                     tenantFilter === 'INACTIVE'
+                                         ? 'bg-slate-600 text-white shadow-sm'
+                                         : 'text-slate-500 hover:bg-slate-50'
+                                 }`}
+                             >
+                                 Inactivos (${tenants.filter(t => t.status !== 'ACTIVE').length})
+                             </button>
+                         </div>
+                     </div>
+
+                     <table className="w-full text-left text-sm">
+                        <thead className="bg-slate-50">
+                            <tr>
+                                <th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Código</th>
+                                <th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Nombre Completo</th>
+                                <th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase">Teléfono</th>
+                                <th className="px-6 py-3 text-center text-[10px] font-black text-slate-500 uppercase">Estado</th>
+                                <th className="px-6 py-3 text-right text-[10px] font-black text-slate-500 uppercase">Acciones</th>
                             </tr>
-                        ))}
-                    </tbody>
-                 </table>
+                        </thead>
+                        <tbody className="divide-y">
+                            {(() => {
+                                const filteredTenants = tenants.filter(t => {
+                                    const matchesSearch = t.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || t.code.toLowerCase().includes(searchTerm.toLowerCase());
+                                    const matchesStatus = 
+                                        tenantFilter === 'ALL' || 
+                                        (tenantFilter === 'ACTIVE' && t.status === 'ACTIVE') || 
+                                        (tenantFilter === 'INACTIVE' && t.status !== 'ACTIVE');
+                                    return matchesSearch && matchesStatus;
+                                });
+
+                                if (filteredTenants.length === 0) {
+                                    return (
+                                        <tr>
+                                            <td colSpan={5} className="px-6 py-16 text-center text-slate-400 font-medium">
+                                                No se encontraron inquilinos con el filtro seleccionado.
+                                            </td>
+                                        </tr>
+                                    );
+                                }
+
+                                return filteredTenants.map(t => (
+                                    <tr key={t.code} className="hover:bg-slate-50">
+                                        <td className="px-6 py-3">
+                                            <span className="font-mono text-[11px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
+                                                {t.code}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-3 font-bold text-slate-700">{t.fullName}</td>
+                                        <td className="px-6 py-3">
+                                            {t.phone ? (
+                                                <div className="flex items-center gap-2 text-slate-600">
+                                                    <Phone size={14} className="text-slate-400"/>
+                                                    <span className="font-medium text-xs">{t.phone}</span>
+                                                </div>
+                                            ) : (
+                                                <span className="text-slate-300 text-xs italic">No registrado</span>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-3 text-center">
+                                            <span className={`px-2 py-0.5 rounded text-[10px] font-black ${t.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-400 border border-slate-200'}`}>
+                                                {t.status === 'ACTIVE' ? 'ACTIVO' : 'INACTIVO'}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-3 text-right">
+                                            <button onClick={() => { setSelectedTenant(t); setShowTenantModal(true); }} className="p-1.5 text-slate-400 hover:text-indigo-600"><Edit2 size={16}/></button>
+                                            <button onClick={() => setItemToDelete({type:'TENANT', code:t.code, label:t.fullName})} className="p-1.5 text-slate-400 hover:text-rose-600"><Trash2 size={16}/></button>
+                                        </td>
+                                    </tr>
+                                ));
+                            })()}
+                        </tbody>
+                     </table>
+                 </div>
              )}
              {activeTab === 'CONTRACTS' && (
-                 <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50">
-                        <tr>
-                            <th className="px-4 py-3 text-[10px] font-black text-slate-500 uppercase">Código</th>
-                            <th className="px-4 py-3 text-[10px] font-black text-slate-500 uppercase">Cod. Inquilino</th>
-                            <th className="px-4 py-3 text-[10px] font-black text-slate-500 uppercase">Inquilino</th>
-                            <th className="px-4 py-3 text-[10px] font-black text-slate-500 uppercase">Vigencia (Desde/Hasta)</th>
-                            <th className="px-4 py-3 text-right text-[10px] font-black text-slate-500 uppercase">Monto</th>
-                            <th className="px-4 py-3 text-right text-[10px] font-black text-slate-500 uppercase">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                        {contracts.filter(c => {
-                            const tenantName = tenants.find(t => t.code === c.tenantCode)?.fullName.toLowerCase() || '';
-                            return c.code.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                                   tenantName.includes(searchTerm.toLowerCase()) || 
-                                   c.tenantCode.toLowerCase().includes(searchTerm.toLowerCase());
-                        }).map(c => (
-                            <tr key={c.code} className="hover:bg-slate-50">
-                                <td className="px-4 py-3 font-black text-indigo-600 font-mono text-[11px]">{c.code}</td>
-                                <td className="px-4 py-3 font-mono text-slate-500 text-[11px]">{c.tenantCode}</td>
-                                <td className="px-4 py-3 text-slate-700 font-bold text-xs">
-                                    {tenants.find(t => t.code === c.tenantCode)?.fullName || 'N/A'}
-                                </td>
-                                <td className="px-4 py-3 font-mono text-slate-500 text-[10px]">
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-bold">{c.startDate}</span>
-                                        <ArrowRight size={10} className="text-slate-300"/>
-                                        <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-bold">{c.endDate || 'Indefinido'}</span>
-                                    </div>
-                                </td>
-                                <td className="px-4 py-3 text-right font-mono font-black text-indigo-600">
-                                    {c.amount.toLocaleString()}
-                                </td>
-                                <td className="px-4 py-3 text-right flex justify-end gap-1">
-                                    <button onClick={() => { setSelectedContract(c); setShowHistoryModal(true); }} title="Historial de Pagos" className="p-1.5 text-slate-400 hover:text-indigo-600"><Clock size={16}/></button>
-                                    <button onClick={() => { setSelectedContract(c); setShowContractModal(true); }} className="p-1.5 text-slate-400 hover:text-indigo-600"><Edit2 size={16}/></button>
-                                    <button onClick={() => setItemToDelete({type:'CONTRACT', code:c.code, label:c.code})} className="p-1.5 text-slate-400 hover:text-rose-600"><Trash2 size={16}/></button>
-                                </td>
+                 <div className="flex flex-col w-full">
+                     {/* Sub-filtros para Contratos según Estado de Inquilino */}
+                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 p-4 bg-slate-50/50">
+                         <div className="flex items-center gap-1.5">
+                             <Filter size={14} className="text-slate-400" />
+                             <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Inquilino del Contrato:</span>
+                         </div>
+                         <div className="flex bg-slate-100 border border-slate-200/60 rounded-lg p-0.5 shadow-sm">
+                             <button
+                                 onClick={() => setContractFilter('ALL')}
+                                 className={`px-3 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${
+                                     contractFilter === 'ALL'
+                                         ? 'bg-indigo-600 text-white shadow-sm'
+                                         : 'text-slate-500 hover:bg-slate-50'
+                                 }`}
+                             >
+                                 Todos (${contracts.length})
+                             </button>
+                             <button
+                                 onClick={() => setContractFilter('ACTIVE')}
+                                 className={`px-3 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${
+                                     contractFilter === 'ACTIVE'
+                                         ? 'bg-emerald-600 text-white shadow-sm'
+                                         : 'text-slate-500 hover:bg-slate-50'
+                                 }`}
+                             >
+                                 Inq. Activo (${contracts.filter(c => {
+                                     const t = tenants.find(x => x.code === c.tenantCode);
+                                     return t && t.status === 'ACTIVE';
+                                 }).length})
+                             </button>
+                             <button
+                                 onClick={() => setContractFilter('INACTIVE')}
+                                 className={`px-3 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${
+                                     contractFilter === 'INACTIVE'
+                                         ? 'bg-slate-600 text-white shadow-sm'
+                                         : 'text-slate-500 hover:bg-slate-50'
+                                 }`}
+                             >
+                                 Inq. Inactivo (${contracts.filter(c => {
+                                     const t = tenants.find(x => x.code === c.tenantCode);
+                                     return !t || t.status !== 'ACTIVE';
+                                 }).length})
+                             </button>
+                         </div>
+                     </div>
+
+                     <table className="w-full text-left text-sm">
+                        <thead className="bg-slate-50">
+                            <tr>
+                                <th className="px-4 py-3 text-[10px] font-black text-slate-500 uppercase">Código</th>
+                                <th className="px-4 py-3 text-[10px] font-black text-slate-500 uppercase">Cod. Inquilino</th>
+                                <th className="px-4 py-3 text-[10px] font-black text-slate-500 uppercase">Inquilino</th>
+                                <th className="px-4 py-3 text-[10px] font-black text-slate-500 uppercase">Estado Inquilino</th>
+                                <th className="px-4 py-3 text-[10px] font-black text-slate-500 uppercase">Vigencia (Desde/Hasta)</th>
+                                <th className="px-4 py-3 text-right text-[10px] font-black text-slate-500 uppercase">Monto</th>
+                                <th className="px-4 py-3 text-right text-[10px] font-black text-slate-500 uppercase">Acciones</th>
                             </tr>
-                        ))}
-                    </tbody>
-                 </table>
+                        </thead>
+                        <tbody className="divide-y">
+                            {(() => {
+                                const filteredContracts = contracts.filter(c => {
+                                    const tenant = tenants.find(t => t.code === c.tenantCode);
+                                    const tenantName = tenant?.fullName.toLowerCase() || '';
+                                    const matchesSearch = c.code.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                                           tenantName.includes(searchTerm.toLowerCase()) || 
+                                           c.tenantCode.toLowerCase().includes(searchTerm.toLowerCase());
+                                    
+                                    const matchesFilter = 
+                                        contractFilter === 'ALL' ||
+                                        (contractFilter === 'ACTIVE' && tenant && tenant.status === 'ACTIVE') ||
+                                        (contractFilter === 'INACTIVE' && (!tenant || tenant.status !== 'ACTIVE'));
+                                        
+                                    return matchesSearch && matchesFilter;
+                                });
+
+                                if (filteredContracts.length === 0) {
+                                    return (
+                                        <tr>
+                                            <td colSpan={7} className="px-6 py-16 text-center text-slate-400 font-medium">
+                                                No se encontraron contratos con el filtro seleccionado.
+                                            </td>
+                                        </tr>
+                                    );
+                                }
+
+                                return filteredContracts.map(c => {
+                                    const t = tenants.find(x => x.code === c.tenantCode);
+                                    return (
+                                        <tr key={c.code} className="hover:bg-slate-50">
+                                            <td className="px-4 py-3 font-black text-indigo-600 font-mono text-[11px]">{c.code}</td>
+                                            <td className="px-4 py-3 font-mono text-slate-500 text-[11px]">{c.tenantCode}</td>
+                                            <td className="px-4 py-3 text-slate-700 font-bold text-xs">
+                                                {t?.fullName || 'N/A'}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
+                                                    t?.status === 'ACTIVE' 
+                                                        ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' 
+                                                        : 'bg-slate-100 text-slate-400 border border-slate-200'
+                                                }`}>
+                                                    {t?.status === 'ACTIVE' ? 'ACTIVO' : 'INACTIVO'}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3 font-mono text-slate-500 text-[10px]">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-bold">{c.startDate}</span>
+                                                    <ArrowRight size={10} className="text-slate-300"/>
+                                                    <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-bold">{c.endDate || 'Indefinido'}</span>
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-3 text-right font-mono font-black text-indigo-600">
+                                                {c.amount.toLocaleString()}
+                                            </td>
+                                            <td className="px-4 py-3 text-right flex justify-end gap-1">
+                                                <button onClick={() => { setSelectedContract(c); setShowHistoryModal(true); }} title="Historial de Pagos" className="p-1.5 text-slate-400 hover:text-indigo-600"><Clock size={16}/></button>
+                                                <button onClick={() => { setSelectedContract(c); setShowContractModal(true); }} className="p-1.5 text-slate-400 hover:text-indigo-600"><Edit2 size={16}/></button>
+                                                <button onClick={() => setItemToDelete({type:'CONTRACT', code:c.code, label:c.code})} className="p-1.5 text-slate-400 hover:text-rose-600"><Trash2 size={16}/></button>
+                                            </td>
+                                        </tr>
+                                    );
+                                });
+                            })()}
+                        </tbody>
+                     </table>
+                 </div>
              )}
              {activeTab === 'PAYMENTS' && (
                  <table className="w-full text-left text-sm">

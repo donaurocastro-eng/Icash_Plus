@@ -131,9 +131,11 @@ const ContractModal: React.FC<ContractModalProps> = ({
                         onChange={e => setFormData({...formData, apartmentCode: e.target.value})}
                     >
                         <option value="">Seleccionar...</option>
-                        {apartments.map(a => (
+                        {apartments
+                          .filter(a => a.status === 'AVAILABLE' || a.code === editingContract?.apartmentCode)
+                          .map(a => (
                             <option key={a.code} value={a.code}>
-                                {a.name} ({a.status === 'RENTED' && a.code !== editingContract?.apartmentCode ? 'Ocupado' : 'Disp.'})
+                                {a.name} ({a.status === 'RENTED' && a.code !== editingContract?.apartmentCode ? 'Ocupado' : 'Desocupado'})
                             </option>
                         ))}
                     </select>

@@ -132,21 +132,70 @@ export const ContractService = {
       // Sincronizar el historial de precios al editar el monto
       try {
         const prices = await db.query(`
-          SELECT id, start_date as "startDate", end_date as "endDate" FROM contract_prices
+          SELECT id, amount, start_date as "startDate", end_date as "endDate" FROM contract_prices
           WHERE contract_code = $1
           ORDER BY start_date DESC
         `, [code]);
 
+        const oldAmount = Number(currentContract.amount);
+        const newAmount = Number(data.amount);
+
         if (prices.length > 0) {
           const activePrice = prices.find(p => !p.endDate) || prices[0];
-          // Si solo hay un registro histórico, sincronizar monto y fecha de inicio. De lo contrario, mantener la fecha del registro activo
-          const targetStartDate = prices.length === 1 ? data.startDate : (activePrice.startDate || data.startDate);
           
-          await db.query(`
-            UPDATE contract_prices
-            SET amount = $1, start_date = $2
-            WHERE id = $3
-          `, [data.amount, targetStartDate, activePrice.id]);
+          if (oldAmount !== newAmount) {
+            // El monto ha cambiado!
+            const txCountRes = await db.query(`SELECT COUNT(*)::int as count FROM transactions WHERE contract_code=$1`, [code]);
+            const hasTransactions = txCountRes[0].count > 0;
+
+            if (hasTransactions) {
+              // Si tiene transacciones, cerramos el precio activo y creamos uno nuevo para no alterar retroactivamente el pasado
+              const todayStr = new Date().toISOString().split('T')[0];
+              const changeStartDate = todayStr;
+              const activeStartDate = activePrice.startDate ? toDateString(activePrice.startDate) : data.startDate;
+
+              if (changeStartDate > activeStartDate) {
+                const yesterday = new Date(new Date(changeStartDate).getTime() - 24 * 60 * 60 * 1000);
+                const endDateStr = toDateString(yesterday);
+
+                // Finalizar el precio activo previo
+                await db.query(`
+                  UPDATE contract_prices
+                  SET end_date = $1
+                  WHERE id = $2
+                `, [endDateStr, activePrice.id]);
+
+                // Insertar el nuevo precio a partir de hoy
+                await db.query(`
+                  INSERT INTO contract_prices (contract_code, amount, start_date, end_date)
+                  VALUES ($1, $2, $3, NULL)
+                `, [code, newAmount, changeStartDate]);
+              } else {
+                // Si la fecha de cambio es anterior o igual, solo actualizamos el monto
+                await db.query(`
+                  UPDATE contract_prices
+                  SET amount = $1
+                  WHERE id = $2
+                `, [newAmount, activePrice.id]);
+              }
+            } else {
+              // No tiene transacciones, es seguro corregir/actualizar el registro activo directamente
+              const targetStartDate = prices.length === 1 ? data.startDate : (activePrice.startDate || data.startDate);
+              await db.query(`
+                UPDATE contract_prices
+                SET amount = $1, start_date = $2
+                WHERE id = $3
+              `, [newAmount, targetStartDate, activePrice.id]);
+            }
+          } else {
+            // No cambió el monto, solo sincronizar la fecha de inicio del primer registro si es necesario
+            const targetStartDate = prices.length === 1 ? data.startDate : (activePrice.startDate || data.startDate);
+            await db.query(`
+              UPDATE contract_prices
+              SET start_date = $1
+              WHERE id = $2
+            `, [targetStartDate, activePrice.id]);
+          }
         } else {
           await db.query(`
             INSERT INTO contract_prices (contract_code, amount, start_date)
@@ -250,6 +299,25 @@ export const ContractService = {
 
   addPriceHistory: async (contractCode: string, amount: number, startDate: string, endDate?: string): Promise<void> => {
       if (db.isConfigured()) {
+          // Cerrar automáticamente cualquier precio activo previo cuyo inicio sea menor que el nuevo startDate
+          const previousActive = await db.query(`
+            SELECT id, start_date as "startDate" FROM contract_prices
+            WHERE contract_code = $1 AND end_date IS NULL AND start_date < $2
+          `, [contractCode, startDate]);
+
+          for (const prev of previousActive) {
+              const prevStart = toDateString(prev.startDate);
+              if (startDate > prevStart) {
+                  const yesterday = new Date(new Date(startDate).getTime() - 24 * 60 * 60 * 1000);
+                  const endDateStr = toDateString(yesterday);
+                  await db.query(`
+                    UPDATE contract_prices
+                    SET end_date = $1
+                    WHERE id = $2
+                  `, [endDateStr, prev.id]);
+              }
+          }
+
           await db.query(`
             INSERT INTO contract_prices (contract_code, amount, start_date, end_date)
             VALUES ($1, $2, $3, $4)

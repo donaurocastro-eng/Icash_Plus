@@ -69,6 +69,18 @@ export const TenantService = {
      if (db.isConfigured()) {
         await db.query(`UPDATE tenants SET full_name=$1, phone=$2, email=$3, status=$4 WHERE code=$5`,
           [data.fullName, data.phone, data.email, data.status, code]);
+
+        if (data.status === 'INACTIVE') {
+          const activeContracts = await db.query(`
+            SELECT apartment_code FROM contracts WHERE tenant_code = $1 AND status = 'ACTIVE'
+          `, [code]);
+          for (const contract of activeContracts) {
+            await db.query(`
+              UPDATE apartments SET status = 'AVAILABLE' WHERE code = $1
+            `, [contract.apartment_code]);
+          }
+        }
+
         return { code, ...data, createdAt: new Date().toISOString() };
      } else {
         await delay(200);
@@ -77,6 +89,24 @@ export const TenantService = {
         if (index === -1) throw new Error("Not found");
         existing[index] = { ...existing[index], ...data };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+
+        if (data.status === 'INACTIVE') {
+          const contractsData = localStorage.getItem('icash_plus_contracts');
+          const contracts = contractsData ? JSON.parse(contractsData) : [];
+          const tenantContracts = contracts.filter((c: any) => c.tenantCode === code && c.status === 'ACTIVE');
+          
+          const apartmentsData = localStorage.getItem('icash_plus_apartments');
+          let apartments = apartmentsData ? JSON.parse(apartmentsData) : [];
+          
+          tenantContracts.forEach((c: any) => {
+            const aptIndex = apartments.findIndex((a: any) => a.code === c.apartmentCode);
+            if (aptIndex !== -1) {
+              apartments[aptIndex].status = 'AVAILABLE';
+            }
+          });
+          localStorage.setItem('icash_plus_apartments', JSON.stringify(apartments));
+        }
+
         return existing[index];
      }
   },
